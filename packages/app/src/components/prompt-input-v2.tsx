@@ -6,7 +6,7 @@ import { Icon } from "@opencode-ai/ui/v2/icon"
 import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import type { ReferenceInfo } from "@opencode-ai/client/promise"
-import { createEffect, createMemo, on, Show } from "solid-js"
+import { createEffect, createMemo, on, onCleanup, Show } from "solid-js"
 import { ModelSelectorPopoverV2 } from "@/components/dialog-select-model"
 import { DialogSelectModelUnpaidV2 } from "@/components/dialog-select-model-unpaid-v2"
 import type { PromptInputProps } from "@/components/prompt-input/contracts"
@@ -37,6 +37,7 @@ export type PromptInputV2ComposerProps = {
   class?: string
   controller: PromptInputV2ComposerController
   borderUnderlay?: boolean
+  onDropStateChange?: (active: boolean, label: string) => void
 }
 
 export type PromptInputV2ControllerProps = Omit<PromptInputProps, "class" | "submission">
@@ -56,12 +57,14 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
     return language.t("ui.promptInput.dropFiles.imagePdf")
   })
 
+  createEffect(() => props.onDropStateChange?.(props.controller.state.drag === "active", dropLabel()))
+  onCleanup(() => props.onDropStateChange?.(false, dropLabel()))
+
   return (
     <div class="flex flex-col gap-3">
       <PromptInputV2
         controller={props.controller}
         borderUnderlay={props.borderUnderlay}
-        dropLabel={dropLabel()}
         class={props.class}
         variantControlVisible={!props.controller.model.loading}
         attachKeybind={command.keybindParts("file.attach")}

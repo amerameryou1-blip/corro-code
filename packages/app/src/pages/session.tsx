@@ -335,7 +335,7 @@ function SessionPanelFrame(props: ParentProps<{ newLayout: boolean; raised?: boo
   return (
     <div
       classList={{
-        "flex-1 min-h-0 flex flex-col": true,
+        "relative flex-1 min-h-0 flex flex-col": true,
         "bg-v2-background-bg-base": props.newLayout,
         "bg-background-stronger": !props.newLayout,
         "rounded-[10px] overflow-hidden": props.newLayout,
@@ -391,6 +391,7 @@ export default function Page() {
   const [ui, setUi] = createStore({
     pendingMessage: undefined as string | undefined,
     reviewSnap: false,
+    drop: { active: false, label: "" },
     scrollGesture: 0,
     scroll: {
       overflow: false,
@@ -2053,6 +2054,16 @@ export default function Page() {
   const sessionPanelContent = () => (
     <>
       {sessionSync() ?? ""}
+      <Show when={ui.drop.active && settings.general.newLayoutDesigns()}>
+        <div
+          data-component="session-dropzone"
+          class="pointer-events-none absolute inset-0 z-[80] grid place-items-center rounded-[inherit] bg-v2-background-bg-accent/5"
+        >
+          <div class="rounded-md bg-v2-background-bg-base px-3 py-1.5 text-[13px] font-[440] leading-5 text-v2-text-text-muted shadow-[var(--v2-elevation-raised)]">
+            {ui.drop.label}
+          </div>
+        </div>
+      </Show>
       <Show
         when={
           !isDesktop() && !!controller.identity.params.id && settings.general.newLayoutDesigns() && !mobileTabsBottom()
@@ -2229,7 +2240,13 @@ export default function Page() {
                         setFollowup("paused", id, true)
                       },
                     })
-                    return <PromptInputV2Composer controller={promptInputController} borderUnderlay />
+                    return (
+                      <PromptInputV2Composer
+                        controller={promptInputController}
+                        borderUnderlay
+                        onDropStateChange={(active, label) => setUi("drop", { active, label })}
+                      />
+                    )
                   }}
                 </Show>
               }
