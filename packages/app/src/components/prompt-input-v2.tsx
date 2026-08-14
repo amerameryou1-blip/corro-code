@@ -37,7 +37,7 @@ export type PromptInputV2ComposerProps = {
   class?: string
   controller: PromptInputV2ComposerController
   borderUnderlay?: boolean
-  onDropStateChange?: (active: boolean, label: string) => void
+  onDropStateChange?: (state: { active: boolean; label: string; image: boolean; pdf: boolean }) => void
 }
 
 export type PromptInputV2ControllerProps = Omit<PromptInputProps, "class" | "submission">
@@ -49,16 +49,24 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
   const dialog = useDialog()
   const command = useCommand()
   const language = useLanguage()
+  const dropInput = () => props.controller.model.selection.current()?.capabilities.input
   const dropLabel = createMemo(() => {
-    const input = props.controller.model.selection.current()?.capabilities.input
+    const input = dropInput()
     if (!input?.image && !input?.pdf) return language.t("ui.promptInput.dropFiles")
     if (!input.pdf) return language.t("ui.promptInput.dropFiles.image")
     if (!input.image) return language.t("ui.promptInput.dropFiles.pdf")
     return language.t("ui.promptInput.dropFiles.imagePdf")
   })
 
-  createEffect(() => props.onDropStateChange?.(props.controller.state.drag === "active", dropLabel()))
-  onCleanup(() => props.onDropStateChange?.(false, dropLabel()))
+  createEffect(() =>
+    props.onDropStateChange?.({
+      active: props.controller.state.drag === "active",
+      label: dropLabel(),
+      image: dropInput()?.image ?? false,
+      pdf: dropInput()?.pdf ?? false,
+    }),
+  )
+  onCleanup(() => props.onDropStateChange?.({ active: false, label: dropLabel(), image: false, pdf: false }))
 
   return (
     <div class="flex flex-col gap-3">

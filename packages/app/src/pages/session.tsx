@@ -24,6 +24,7 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { debounce } from "@solid-primitives/scheduled"
+import createPresence from "solid-presence"
 import { useLocal } from "@/context/local"
 import { FileProvider, selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { createStore } from "solid-js/store"
@@ -34,7 +35,7 @@ import { SelectV2 } from "@opencode-ai/ui/v2/select-v2"
 import { isScrollKeyTarget, scrollKey, scrollKeyOwner } from "@opencode-ai/ui/scroll-view"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
+import { Icon } from "@opencode-ai/ui/icon"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { previewSelectedLines } from "@opencode-ai/session-ui/pierre/selection-bridge"
 import { Button } from "@opencode-ai/ui/button"
@@ -392,13 +393,18 @@ export default function Page() {
   const [ui, setUi] = createStore({
     pendingMessage: undefined as string | undefined,
     reviewSnap: false,
-    drop: { active: false, label: "" },
+    drop: { active: false, label: "", image: false, pdf: false },
     scrollGesture: 0,
     scroll: {
       overflow: false,
       bottom: true,
       jump: false,
     },
+  })
+  const [dropzone, setDropzone] = createSignal<HTMLDivElement>()
+  const dropPresence = createPresence({
+    show: () => ui.drop.active && settings.general.newLayoutDesigns(),
+    element: () => dropzone() ?? null,
   })
 
   const composer = createSessionComposerController()
@@ -2055,26 +2061,105 @@ export default function Page() {
   const sessionPanelContent = () => (
     <>
       {sessionSync() ?? ""}
-      <Show when={ui.drop.active && settings.general.newLayoutDesigns()}>
+      <Show when={settings.general.newLayoutDesigns()}>
         <div
+          data-slot="session-dropzone-blur"
+          data-visible={ui.drop.active}
+          class="pointer-events-none absolute inset-0 z-[79] rounded-[inherit] opacity-[0.001] backdrop-blur-[3px] transition-opacity duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] will-change-[opacity,backdrop-filter] data-[visible=true]:opacity-100 motion-reduce:transition-none"
+          style={{
+            "-webkit-mask-image":
+              "radial-gradient(ellipse 60% 48% at center, black 0%, rgba(0,0,0,0.82) 42%, transparent 100%)",
+            "mask-image":
+              "radial-gradient(ellipse 60% 48% at center, black 0%, rgba(0,0,0,0.82) 42%, transparent 100%)",
+          }}
+        />
+      </Show>
+      <Show when={dropPresence.present()}>
+        <div
+          ref={setDropzone}
           data-component="session-dropzone"
-          class="pointer-events-none absolute inset-0 z-[80] grid place-items-center rounded-[inherit] bg-v2-background-bg-accent/5 backdrop-blur-[3px]"
+          data-visible={ui.drop.active}
+          class="pointer-events-none absolute inset-0 z-[80] grid place-items-center overflow-hidden rounded-[inherit] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_var(--session-dropzone-wash),transparent)] opacity-100 transition-opacity duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] data-[visible=false]:opacity-0 motion-reduce:transition-none"
         >
-          <div class="flex flex-col items-center gap-5">
-            <div class="flex h-12 items-center" aria-hidden="true">
-              <div class="flex size-11 translate-x-2 rotate-[-8deg] items-center justify-center rounded-[10px] bg-v2-background-bg-base text-v2-icon-icon-muted shadow-[var(--v2-elevation-raised)]">
-                <IconV2 name="review" size="large" />
+          <div
+            class="absolute inset-0 bg-v2-background-bg-base/55"
+            style={{
+              "-webkit-mask-image":
+                "radial-gradient(ellipse 60% 48% at center, black 0%, rgba(0,0,0,0.82) 42%, transparent 100%)",
+              "mask-image":
+                "radial-gradient(ellipse 60% 48% at center, black 0%, rgba(0,0,0,0.82) 42%, transparent 100%)",
+            }}
+          />
+          <div
+            class="absolute inset-y-0 left-1/2 w-full -translate-x-1/2 md:max-w-200 2xl:max-w-[1000px]"
+            style={{
+              "-webkit-mask-image":
+                "linear-gradient(to right, transparent 0%, black 12%, black 88%, transparent 100%)",
+              "mask-image":
+                "linear-gradient(to right, transparent 0%, black 12%, black 88%, transparent 100%)",
+            }}
+          >
+            <div
+              class="absolute inset-0 opacity-60"
+              style={{
+                background:
+                  "repeating-linear-gradient(135deg, transparent 0px, transparent 12px, color-mix(in srgb, var(--v2-background-bg-accent) var(--session-dropzone-stripe), transparent) 12px, color-mix(in srgb, var(--v2-background-bg-accent) var(--session-dropzone-stripe), transparent) 24px)",
+                "-webkit-mask-image":
+                  "radial-gradient(ellipse 59% 40% at center, black 0%, rgba(0,0,0,0.72) 58%, transparent 100%)",
+                "mask-image":
+                  "radial-gradient(ellipse 59% 40% at center, black 0%, rgba(0,0,0,0.72) 58%, transparent 100%)",
+              }}
+            />
+          </div>
+          <div
+            data-slot="session-dropzone-content"
+            class="relative flex flex-col items-center gap-5 opacity-100 translate-y-0 transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] data-[visible=false]:translate-y-1 data-[visible=false]:opacity-0 motion-reduce:transition-none"
+            data-visible={ui.drop.active}
+          >
+            <div class="flex h-10 items-center gap-0.5" aria-hidden="true">
+              <Show when={ui.drop.image}>
+                <div
+                  class="flex size-9 items-center justify-center rounded-[9px] bg-[var(--session-dropzone-card)] text-v2-icon-icon-muted opacity-100 shadow-[var(--v2-elevation-raised)] transition-[opacity,transform] delay-50 duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] [[data-visible=false]_&]:translate-x-3 [[data-visible=false]_&]:rotate-[-2deg] [[data-visible=false]_&]:opacity-0 motion-reduce:transition-none"
+                  classList={{
+                    "z-0 translate-x-2 rotate-[-6deg]": ui.drop.pdf,
+                    "z-0 translate-x-0.5 rotate-[-4deg]": !ui.drop.pdf,
+                  }}
+                >
+                  <Icon name="photo" size="normal" class="text-v2-icon-icon-muted" />
+                </div>
+              </Show>
+              <div
+                class="flex size-9 items-center justify-center rounded-[9px] bg-[var(--session-dropzone-card)] text-v2-icon-icon-muted opacity-100 shadow-[var(--v2-elevation-raised)] transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] [[data-visible=false]_&]:scale-90 [[data-visible=false]_&]:opacity-0 motion-reduce:transition-none"
+                classList={{
+                  "z-10 -translate-y-2 rotate-[2deg]": ui.drop.image && ui.drop.pdf,
+                  "z-10 -translate-x-0.5 rotate-[4deg]": ui.drop.image && !ui.drop.pdf,
+                  "z-0 translate-x-0.5 rotate-[-4deg]": !ui.drop.image && ui.drop.pdf,
+                }}
+              >
+                <svg class="size-5 text-v2-icon-icon-muted" viewBox="0 0 16 16" fill="none">
+                  <path d="M12.75 8H3.25M8 12.75V3.25" stroke="currentColor" stroke-width="1" />
+                </svg>
               </div>
-              <div class="z-10 flex size-11 -translate-y-3 items-center justify-center rounded-[10px] bg-v2-background-bg-base text-v2-icon-icon-base shadow-[var(--v2-elevation-floating)]">
-                <IconV2 name="outline-share" size="large" />
-              </div>
-              <div class="flex size-11 -translate-x-2 rotate-[8deg] items-center justify-center rounded-[10px] bg-v2-background-bg-base text-v2-icon-icon-muted shadow-[var(--v2-elevation-raised)]">
-                <IconV2 name="folder" size="large" />
-              </div>
+              <Show when={ui.drop.pdf}>
+                <div
+                  class="flex size-9 items-center justify-center rounded-[9px] bg-[var(--session-dropzone-card)] text-v2-icon-icon-muted opacity-100 shadow-[var(--v2-elevation-raised)] transition-[opacity,transform] delay-50 duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] [[data-visible=false]_&]:-translate-x-3 [[data-visible=false]_&]:rotate-[2deg] [[data-visible=false]_&]:opacity-0 motion-reduce:transition-none"
+                  classList={{
+                    "z-20 -translate-x-1 rotate-[6deg]": ui.drop.image,
+                    "z-10 -translate-x-0.5 rotate-[4deg]": !ui.drop.image,
+                  }}
+                >
+                  <svg class="size-5 text-v2-icon-icon-muted" viewBox="0 0 16 16" fill="none">
+                    <path
+                      d="M8.66658 2.66667V6H11.9999M3.33325 2H8.66658L12.6666 6V14H3.33325V2Z"
+                      stroke="currentColor"
+                      stroke-width="1"
+                      stroke-linecap="square"
+                    />
+                  </svg>
+                </div>
+              </Show>
             </div>
-            <div class="rounded-lg bg-v2-background-bg-base px-4 py-2 text-[16px] font-[530] leading-6 text-v2-text-text-base shadow-[var(--v2-elevation-raised)]">
-              {ui.drop.label}
-            </div>
+            <div class="text-[15px] font-[530] leading-6 text-v2-text-text-base">{ui.drop.label}</div>
           </div>
         </div>
       </Show>
@@ -2258,7 +2343,7 @@ export default function Page() {
                       <PromptInputV2Composer
                         controller={promptInputController}
                         borderUnderlay
-                        onDropStateChange={(active, label) => setUi("drop", { active, label })}
+                        onDropStateChange={(drop) => setUi("drop", drop)}
                       />
                     )
                   }}
