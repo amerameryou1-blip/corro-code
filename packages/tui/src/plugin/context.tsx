@@ -1,6 +1,12 @@
 import type { PluginInfo } from "@opencode-ai/client"
 import type { Plugin } from "@opencode-ai/plugin/tui"
-import { createMarkdownCodeBlockRenderer, type MarkdownCodeBlockRenderer, type MarkdownOptions } from "@opentui/core"
+import {
+  CodeRenderable,
+  createMarkdownCodeBlockRenderer,
+  type MarkdownCodeBlockRenderer,
+  type MarkdownOptions,
+  type Renderable,
+} from "@opentui/core"
 import {
   batch,
   createContext,
@@ -88,8 +94,26 @@ export function combineMarkdownRenderers(
   for (const source of sources) {
     for (const [language, render] of Object.entries(source)) renderers.set(language, render)
   }
-  if (renderers.size === 0) return undefined
-  return createMarkdownCodeBlockRenderer(renderers)
+  const render = createMarkdownCodeBlockRenderer(renderers)
+  return (token, context) => {
+    if (token.type !== "code" && token.type !== "list") return render?.(token, context)
+    let fallback: Renderable | null | undefined
+    const custom = render?.(token, {
+      ...context,
+      defaultRender: () => (fallback ??= context.defaultRender()),
+    })
+    if (custom && custom !== fallback) return custom
+    const node = fallback ?? context.defaultRender()
+    if (!node) return undefined
+    deferCodePaint(node)
+    return node
+  }
+}
+
+function deferCodePaint(node: Renderable) {
+  // Streaming nodes already retain styled text; only completed fences opt into raw first paint.
+  if (node instanceof CodeRenderable && !node.streaming) node.drawUnstyledText = false
+  node.getChildren().forEach(deferCodePaint)
 }
 
 export function PluginProvider(props: ParentProps<{ packages: PackageResolver; directories: string[] }>) {

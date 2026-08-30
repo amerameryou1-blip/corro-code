@@ -1193,6 +1193,72 @@ test.each(["manual", "select"] as const)(
   },
 )
 
+test.each([80, 120].flatMap((width) => [false, true].map((nested) => ({ width, nested }))))(
+  "session code is highlighted on open and tab return: %j",
+  async (input) => {
+    await using state = await tmpdir()
+    const session = {
+      id: "ses_highlight",
+      title: "Highlight fixture",
+      projectID: "project",
+      location: { directory },
+      agent: "build",
+      model: { providerID: "fixture", id: "model" },
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      time: { created: 1, updated: 2 },
+    }
+    await using setup = await createAppFixture({
+      width: input.width,
+      state: state.path,
+      config: { animations: false, tabs: { enabled: true }, session: { sidebar: "hide" } },
+      args: { sessionID: session.id },
+      fetch: (url) => {
+        if (url.pathname === `/api/session/${session.id}`) return json({ data: session })
+        if (url.pathname === `/api/session/${session.id}/message`)
+          return json({
+            data: [
+              {
+                id: "msg_highlight",
+                type: "assistant",
+                agent: session.agent,
+                model: session.model,
+                time: { created: 2, completed: 3 },
+                content: [
+                  {
+                    type: "text",
+                    text: input.nested
+                      ? "- Example:\n\n  ```typescript\n  const flashFixture: number = 42\n  ```"
+                      : "```typescript\nconst flashFixture: number = 42\n```",
+                  },
+                ],
+              },
+            ],
+            cursor: {},
+          })
+        if (url.pathname === `/api/session/${session.id}/inbox`) return json({ data: [] })
+        if (url.pathname === `/api/session/${session.id}/permission`) return json({ data: [] })
+      },
+    })
+    await setup.ready
+    const line = () =>
+      setup.captureSpans().lines.find((line) => line.spans.some((span) => span.text.includes("flashFixture")))
+    await setup.waitForFrame((frame) => frame.includes("flashFixture"))
+    const first = line()
+    await setup.waitForFrame(() => (line()?.spans.filter((span) => span.text.trim()).length ?? 0) > 4)
+    const highlighted = line()
+    setup.mockInput.pressKey("x", { ctrl: true })
+    setup.mockInput.pressKey("n")
+    await setup.waitForFrame((frame) => !frame.includes("flashFixture"))
+    setup.mockInput.pressKey("1", { ctrl: true })
+    await setup.waitForFrame((frame) => frame.includes("flashFixture"))
+    const returned = line()
+    await setup.waitForFrame(() => (line()?.spans.filter((span) => span.text.trim()).length ?? 0) > 4)
+    expect(returned).toEqual(highlighted)
+    expect(first).toEqual(line())
+  },
+)
+
 async function createAppFixture(
   input: {
     width?: number
