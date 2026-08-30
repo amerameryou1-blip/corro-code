@@ -114,6 +114,7 @@ import { SessionLocationMissing } from "./location-missing"
 import { isRecord } from "../../util/record"
 import { createHistoryPrepend } from "./history"
 import { useSessionTerminals } from "../../context/session-terminals"
+import { installSyntaxHighlightCache } from "../../util/syntax-highlight-cache"
 
 addDefaultParsers(parsers.parsers)
 
@@ -161,6 +162,7 @@ export function Session(props: {
   visibleTerminalID?: string
   width?: number
 }) {
+  installSyntaxHighlightCache()
   const setEpilogue = useEpilogue()
   const clipboard = useClipboard()
   const writeExport = async (file: string, content: string) => {
