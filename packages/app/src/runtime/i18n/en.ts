@@ -574,6 +574,8 @@ export const dict = {
   "toast.session.listFailed.title": "Failed to load sessions for {{project}}",
   "toast.project.reloadFailed.title": "Failed to reload {{project}}",
   "toast.migration.failed.title": "Data migration failed",
+  "toast.migration.progress.clearingOldEvents": "Clearing old events",
+  "toast.migration.progress.migratingSessions": "Migrating sessions",
 
   "toast.update.title": "Update available",
   "toast.update.description": "A new version of OpenCode ({{version}}) is now available to install.",
@@ -740,6 +742,7 @@ export const dict = {
   "session.new.workspace.triggerLocal": "Local",
   "session.new.workspace.local": "Local repository",
   "session.new.workspace.existing": "Workspace…",
+  "session.new.workspace.existingLabel": "Workspace",
   "session.new.git.none": "No Git",
   "session.new.lastModified": "Last modified",
 
