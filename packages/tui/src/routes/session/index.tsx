@@ -3351,6 +3351,7 @@ function Write(props: ToolProps) {
         >
           <line_number fg={theme.text.subdued} minWidth={3} paddingRight={1}>
             <code
+              drawUnstyledText={false}
               conceal={false}
               fg={theme.text.default}
               filetype={filetype(stringValue(props.input.path))}

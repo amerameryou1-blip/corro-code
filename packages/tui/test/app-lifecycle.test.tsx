@@ -1193,7 +1193,7 @@ test.each(["manual", "select"] as const)(
   },
 )
 
-test.each([80, 120].flatMap((width) => [false, true].map((nested) => ({ width, nested }))))(
+test.each([80, 120].flatMap((width) => ["fence", "list", "write"].map((kind) => ({ width, kind }))))(
   "session code is highlighted on open and tab return: %j",
   async (input) => {
     await using state = await tmpdir()
@@ -1225,12 +1225,25 @@ test.each([80, 120].flatMap((width) => [false, true].map((nested) => ({ width, n
                 model: session.model,
                 time: { created: 2, completed: 3 },
                 content: [
-                  {
-                    type: "text",
-                    text: input.nested
-                      ? "- Example:\n\n  ```typescript\n  const flashFixture: number = 42\n  ```"
-                      : "```typescript\nconst flashFixture: number = 42\n```",
-                  },
+                  input.kind === "write"
+                    ? {
+                        type: "tool",
+                        id: "call_highlight",
+                        name: "write",
+                        time: { created: 2, completed: 3 },
+                        state: {
+                          status: "completed",
+                          input: { path: `${directory}/snippet.ts`, content: "const flashFixture: number = 42" },
+                          content: [{ type: "text", text: "Wrote file" }],
+                        },
+                      }
+                    : {
+                        type: "text",
+                        text:
+                          input.kind === "list"
+                            ? "- Example:\n\n  ```typescript\n  const flashFixture: number = 42\n  ```"
+                            : "```typescript\nconst flashFixture: number = 42\n```",
+                      },
                 ],
               },
             ],
