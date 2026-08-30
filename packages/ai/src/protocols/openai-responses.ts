@@ -32,6 +32,18 @@ const OpenAIResponsesImageGenerationTool = Schema.Struct({
   size: Schema.optional(OpenAIImage.Size),
 })
 
+const OpenAIResponsesReasoningItem = Schema.StructWithRest(
+  Schema.Struct({
+    type: Schema.tag("reasoning"),
+    id: Schema.String,
+    summary: Schema.Array(Schema.Struct({ type: Schema.tag("summary_text"), text: Schema.String })),
+    content: Schema.optional(Schema.Array(Schema.Struct({ type: Schema.tag("reasoning_text"), text: Schema.String }))),
+    encrypted_content: optionalNull(Schema.String),
+    status: Schema.optional(Schema.Literals(["in_progress", "completed", "incomplete"])),
+  }),
+  [Schema.Record(Schema.String, Schema.Unknown)],
+)
+
 const OpenAIResponsesHostedToolItem = Schema.Union([
   Schema.StructWithRest(
     Schema.Struct({
@@ -75,7 +87,9 @@ const OpenAIResponsesToolChoice = Schema.Union([
 
 const OpenAIResponsesCoreFields = {
   ...OpenResponses.coreFields,
-  input: Schema.Array(Schema.Union([OpenResponses.InputItem, OpenAIResponsesHostedToolItem])),
+  input: Schema.Array(
+    Schema.Union([OpenAIResponsesReasoningItem, OpenResponses.InputItem, OpenAIResponsesHostedToolItem]),
+  ),
   tools: optionalArray(OpenAIResponsesTools),
   tool_choice: Schema.optional(OpenAIResponsesToolChoice),
 }
@@ -90,6 +104,7 @@ const extension = {
   id: ADAPTER,
   name: NAME,
   lowerHostedToolItem: (item: unknown) => (Schema.is(OpenAIResponsesHostedToolItem)(item) ? item : undefined),
+  lowerReasoningItem: (item: unknown) => (Schema.is(OpenAIResponsesReasoningItem)(item) ? item : undefined),
 } satisfies OpenResponses.Extension
 
 const nativeImageToolInput = (tool: ToolDefinition) => {
@@ -185,12 +200,6 @@ const HOSTED_TOOLS = {
 } as const satisfies ResponsesHostedTools.Definitions
 
 const step = (state: OpenResponses.ParserState, event: OpenResponses.Event) => {
-  if (event.type === "response.reasoning_text.delta")
-    return event.item_id !== undefined
-      ? Effect.succeed(
-          OpenResponses.onReasoningDelta(state, event, OpenResponses.outputItemID(state, event) ?? event.item_id),
-        )
-      : ProviderShared.eventError(ADAPTER, `${event.type} is missing item_id`)
   if (event.type === "response.output_item.done" && event.item && ResponsesHostedTools.isItem(event.item, HOSTED_TOOLS))
     return ResponsesHostedTools.onDone(state, event.item, HOSTED_TOOLS)
   return OpenResponses.step(state, event)

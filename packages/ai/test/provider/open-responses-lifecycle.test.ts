@@ -71,7 +71,7 @@ function expectLifecycle(events: ReadonlyArray<LLMEvent>, completed: boolean) {
 }
 
 describe("Open Responses basic-item lifecycles", () => {
-  it.effect("closes implicit summary boundaries and ignores late events for completed reasoning", () =>
+  it.effect("keeps summary boundaries in one block and ignores late events for completed reasoning", () =>
     Effect.gen(function* () {
       const item = { type: "reasoning", id: "rs_1", encrypted_content: "encrypted-state" }
       const events = yield* collect(
@@ -102,27 +102,16 @@ describe("Open Responses basic-item lifecycles", () => {
       expect(events.filter((event) => event.type.startsWith("reasoning-"))).toEqual([
         {
           type: "reasoning-start",
-          id: "rs_1:0",
-          providerMetadata: { "openai-compatible": { itemId: "rs_1", reasoningEncryptedContent: null } },
+          id: "rs_1",
+          providerMetadata: undefined,
         },
-        { type: "reasoning-delta", id: "rs_1:0", text: "First" },
-        { type: "reasoning-end", id: "rs_1:0", providerMetadata: { "openai-compatible": { itemId: "rs_1" } } },
-        {
-          type: "reasoning-start",
-          id: "rs_1:1",
-          providerMetadata: { "openai-compatible": { itemId: "rs_1", reasoningEncryptedContent: null } },
-        },
-        { type: "reasoning-delta", id: "rs_1:1", text: "Second" },
-        { type: "reasoning-end", id: "rs_1:1", providerMetadata: { "openai-compatible": { itemId: "rs_1" } } },
-        {
-          type: "reasoning-start",
-          id: "rs_1:2",
-          providerMetadata: { "openai-compatible": { itemId: "rs_1", reasoningEncryptedContent: null } },
-        },
-        { type: "reasoning-delta", id: "rs_1:2", text: "Third" },
+        { type: "reasoning-delta", id: "rs_1", text: "First" },
+        { type: "reasoning-delta", id: "rs_1", text: "\n\nSecond" },
+        { type: "reasoning-delta", id: "rs_1", text: "\n\nThird" },
         {
           type: "reasoning-end",
-          id: "rs_1:2",
+          id: "rs_1",
+          text: "First\n\nSecond\n\nThird",
           providerMetadata: { "openai-compatible": { itemId: "rs_1", reasoningEncryptedContent: "encrypted-state" } },
         },
       ])
@@ -152,13 +141,19 @@ describe("Open Responses basic-item lifecycles", () => {
         {
           type: "reasoning-start",
           id: "rs_1",
-          providerMetadata: { "openai-compatible": { itemId: "rs_1", reasoningEncryptedContent: "encrypted-state" } },
+          providerMetadata: undefined,
         },
         {
           type: "reasoning-end",
           id: "rs_1",
           text: "Not streamed",
-          providerMetadata: { "openai-compatible": { itemId: "rs_1", reasoningEncryptedContent: "encrypted-state" } },
+          providerMetadata: {
+            "openai-compatible": {
+              itemId: "rs_1",
+              reasoningEncryptedContent: "encrypted-state",
+              reasoningItem: item,
+            },
+          },
         },
       ])
     }),
@@ -340,7 +335,7 @@ describe("Open Responses basic-item lifecycles", () => {
           providerExecuted: undefined,
           providerMetadata: { "openai-compatible": { itemId: "fc_1" } },
         },
-        { type: "reasoning-end", id: "rs_1:0" },
+        { type: "reasoning-end", id: "rs_1" },
       ])
     }),
   )
@@ -377,7 +372,8 @@ describe("Open Responses basic-item lifecycles", () => {
       expect(events.filter(LLMEvent.is.reasoningEnd)).toEqual([
         {
           type: "reasoning-end",
-          id: ":0",
+          id: "",
+          text: "Thinking",
           providerMetadata: { "openai-compatible": { itemId: "", reasoningEncryptedContent: "state" } },
         },
       ])
@@ -452,7 +448,7 @@ describe("Open Responses basic-item lifecycles", () => {
       )
       expect(events.filter(LLMEvent.is.toolInputEnd)).toEqual([])
       expect(events.filter(LLMEvent.is.toolCall)).toEqual([])
-      expect(events.filter(LLMEvent.is.reasoningEnd)).toEqual([{ type: "reasoning-end", id: "rs_1:0" }])
+      expect(events.filter(LLMEvent.is.reasoningEnd)).toEqual([{ type: "reasoning-end", id: "rs_1" }])
       expect(events.filter(LLMEvent.is.finish)).toEqual([
         {
           type: "finish",

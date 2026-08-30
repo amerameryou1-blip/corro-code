@@ -138,13 +138,23 @@ describe("Open Responses completed item reasoning", () => {
         expect(response.reasoning).toBe(fixture.text)
         expect(response.events.filter(LLMEvent.is.reasoningEnd)).toHaveLength(1)
         expect(response.message.content.find((part) => part.type === "reasoning")?.providerMetadata).toEqual({
-          "openai-compatible": { itemId: "rs_1", reasoningEncryptedContent: "encrypted" },
+          "openai-compatible": {
+            itemId: "rs_1",
+            reasoningEncryptedContent: "encrypted",
+            reasoningItem: {
+              type: "reasoning",
+              id: "rs_1",
+              summary: fixture.summary,
+              content: fixture.content,
+              encrypted_content: "encrypted",
+            },
+          },
         })
       }),
     )
   })
 
-  it.effect("replaces only the still-open summary without repeating earlier text", () =>
+  it.effect("replaces all streamed summary text with the completed item", () =>
     Effect.gen(function* () {
       const response = yield* generate(
         { type: "response.output_item.added", item: { type: "reasoning", id: "rs_1" } },
@@ -164,8 +174,8 @@ describe("Open Responses completed item reasoning", () => {
         },
         completed,
       )
-      expect(response.reasoning).toBe("First final")
-      expect(response.events.filter(LLMEvent.is.reasoningEnd).map((event) => event.text)).toEqual([undefined, "final"])
+      expect(response.reasoning).toBe("First \n\nfinal")
+      expect(response.events.filter(LLMEvent.is.reasoningEnd).map((event) => event.text)).toEqual(["First \n\nfinal"])
     }),
   )
 })

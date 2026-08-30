@@ -2,7 +2,8 @@ import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { LLM, LLMEvent, Message } from "../../src/index.js"
 import { OpenAI } from "../../src/providers.js"
-import { recordedTests } from "../recorded-test.js"
+import { ProviderShared } from "../../src/protocols/shared.js"
+import { matchOptionalEmptyReasoningContent, recordedTests } from "../recorded-test.js"
 
 const openai = OpenAI.configure({
   apiKey: process.env.OPENAI_API_KEY ?? "fixture",
@@ -13,6 +14,9 @@ const recorded = recordedTests({
   provider: "openai",
   protocol: "openai-responses",
   requires: ["OPENAI_API_KEY"],
+  options: {
+    match: matchOptionalEmptyReasoningContent,
+  },
 })
 
 describe("OpenAI Responses image generation recorded", () => {
@@ -37,6 +41,12 @@ describe("OpenAI Responses image generation recorded", () => {
           toolChoice: "image_generation",
         }),
       )
+
+      const reasoning = response.message.content.find((part) => part.type === "reasoning")
+      const reasoningItem = reasoning?.providerMetadata?.openai?.reasoningItem
+      expect(ProviderShared.isRecord(reasoningItem) && Array.isArray(reasoningItem.summary)).toBe(true)
+      if (!ProviderShared.isRecord(reasoningItem) || !Array.isArray(reasoningItem.summary)) return
+      expect(reasoningItem.summary).toHaveLength(2)
 
       const result = response.events.find(LLMEvent.is.toolResult)
       expect(result).toBeDefined()

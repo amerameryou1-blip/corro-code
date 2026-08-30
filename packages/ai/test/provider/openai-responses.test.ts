@@ -2500,11 +2500,11 @@ describe("OpenAI Responses route", () => {
       expect(response.text).toBe("Hello")
       expect(response.events).toMatchObject([
         { type: "step-start", index: 0 },
-        { type: "reasoning-start", id: "rs_1:0" },
-        { type: "reasoning-delta", id: "rs_1:0", text: "thinking" },
+        { type: "reasoning-start", id: "rs_1" },
+        { type: "reasoning-delta", id: "rs_1", text: "thinking" },
         { type: "text-start", id: "msg_1" },
         { type: "text-delta", id: "msg_1", text: "Hello" },
-        { type: "reasoning-end", id: "rs_1:0" },
+        { type: "reasoning-end", id: "rs_1" },
         { type: "text-end", id: "msg_1" },
         { type: "step-finish", index: 0, reason: { normalized: "stop", raw: undefined } },
         { type: "finish", reason: { normalized: "stop", raw: undefined } },
@@ -2514,7 +2514,6 @@ describe("OpenAI Responses route", () => {
         {
           type: "reasoning",
           text: "thinking",
-          providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: null } },
         },
         { type: "text", text: "Hello", providerMetadata: { openai: { itemId: "msg_1" } } },
       ])
@@ -2547,8 +2546,19 @@ describe("OpenAI Responses route", () => {
       expect(response.events).toContainEqual(
         expect.objectContaining({
           type: "reasoning-end",
-          id: "rs_1:0",
-          providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: "encrypted-state" } },
+          id: "rs_1",
+          providerMetadata: {
+            openai: {
+              itemId: "rs_1",
+              reasoningEncryptedContent: "encrypted-state",
+              reasoningItem: {
+                type: "reasoning",
+                id: "rs_1",
+                encrypted_content: "encrypted-state",
+                summary: [{ type: "summary_text", text: "thinking" }],
+              },
+            },
+          },
         }),
       )
     }),
@@ -2595,12 +2605,11 @@ describe("OpenAI Responses route", () => {
 
       expect(response.reasoning).toBe("Checked the diff.")
       expect(response.events.filter((event) => event.type === "reasoning-end")).toEqual([
-        { type: "reasoning-end", id: "rs_1:0" },
+        { type: "reasoning-end", id: "rs_1" },
       ])
       expect(response.message.content).toContainEqual({
         type: "reasoning",
         text: "Checked the diff.",
-        providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: null } },
       })
     }),
   )
@@ -2668,7 +2677,7 @@ describe("OpenAI Responses route", () => {
 
       expect(response.events.find((event) => event.type === "reasoning-end")).toEqual({
         type: "reasoning-end",
-        id: "rs_1:0",
+        id: "rs_1",
       })
       expect(response.events.filter(LLMEvent.is.toolCall)).toEqual([
         expect.objectContaining({ id: "call_1", input: { query: "weather" } }),
@@ -2680,7 +2689,7 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
-  it.effect("streams each reasoning summary part as a separate block", () =>
+  it.effect("streams reasoning summary parts in one block", () =>
     Effect.gen(function* () {
       const response = yield* LLMClient.generate(
         LLMRequest.update(request, { providerOptions: { store: false } }),
@@ -2708,96 +2717,24 @@ describe("OpenAI Responses route", () => {
         ),
       )
 
-      expect(response.reasoning).toBe("FirstSecond")
+      expect(response.reasoning).toBe("First\n\nSecond")
       expect(response.events).toMatchObject([
         { type: "step-start", index: 0 },
         {
           type: "reasoning-start",
-          id: "rs_1:0",
-          providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: null } },
+          id: "rs_1",
+          providerMetadata: undefined,
         },
-        { type: "reasoning-delta", id: "rs_1:0", text: "First" },
-        { type: "reasoning-end", id: "rs_1:0", providerMetadata: { openai: { itemId: "rs_1" } } },
-        {
-          type: "reasoning-start",
-          id: "rs_1:1",
-          providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: null } },
-        },
-        { type: "reasoning-delta", id: "rs_1:1", text: "Second" },
+        { type: "reasoning-delta", id: "rs_1", text: "First" },
+        { type: "reasoning-delta", id: "rs_1", text: "\n\nSecond" },
         {
           type: "reasoning-end",
-          id: "rs_1:1",
+          id: "rs_1",
+          text: "First\n\nSecond",
           providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: "encrypted-state" } },
         },
         { type: "step-finish", index: 0, reason: { normalized: "stop", raw: undefined } },
         { type: "finish", reason: { normalized: "stop", raw: undefined } },
-      ])
-    }),
-  )
-
-  it.effect("concludes reasoning at implicit summary boundaries", () =>
-    Effect.gen(function* () {
-      const response = yield* LLMClient.generate(
-        LLMRequest.update(request, { providerOptions: { store: false } }),
-      ).pipe(
-        Effect.provide(
-          fixedResponse(
-            sseEvents(
-              {
-                type: "response.output_item.added",
-                item: { type: "reasoning", id: "rs_1", encrypted_content: null },
-              },
-              { type: "response.reasoning_summary_part.added", item_id: "rs_1", summary_index: 0 },
-              { type: "response.reasoning_summary_text.delta", item_id: "rs_1", summary_index: 0, delta: "First" },
-              // The next part is enough to conclude the previous one even when
-              // its done event is delayed.
-              { type: "response.reasoning_summary_part.added", item_id: "rs_1", summary_index: 1 },
-              { type: "response.reasoning_summary_part.done", item_id: "rs_1", summary_index: 0 },
-              { type: "response.reasoning_summary_text.delta", item_id: "rs_1", summary_index: 1, delta: "Second" },
-              { type: "response.reasoning_summary_part.done", item_id: "rs_1", summary_index: 1 },
-              // Some compatible providers begin the next part with its first delta.
-              { type: "response.reasoning_summary_text.delta", item_id: "rs_1", summary_index: 2, delta: "Third" },
-              {
-                type: "response.output_item.done",
-                item: { type: "reasoning", id: "rs_1", encrypted_content: "encrypted-state" },
-              },
-              { type: "response.completed", response: { id: "resp_1" } },
-            ),
-          ),
-        ),
-      )
-
-      expect(response.reasoning).toBe("FirstSecondThird")
-      expect(response.events.filter((event) => event.type.startsWith("reasoning-"))).toEqual([
-        {
-          type: "reasoning-start",
-          id: "rs_1:0",
-          providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: null } },
-        },
-        { type: "reasoning-delta", id: "rs_1:0", text: "First", providerMetadata: undefined },
-        { type: "reasoning-end", id: "rs_1:0", providerMetadata: { openai: { itemId: "rs_1" } } },
-        {
-          type: "reasoning-start",
-          id: "rs_1:1",
-          providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: null } },
-        },
-        { type: "reasoning-delta", id: "rs_1:1", text: "Second", providerMetadata: undefined },
-        {
-          type: "reasoning-end",
-          id: "rs_1:1",
-          providerMetadata: { openai: { itemId: "rs_1" } },
-        },
-        {
-          type: "reasoning-start",
-          id: "rs_1:2",
-          providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: null } },
-        },
-        { type: "reasoning-delta", id: "rs_1:2", text: "Third", providerMetadata: undefined },
-        {
-          type: "reasoning-end",
-          id: "rs_1:2",
-          providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: "encrypted-state" } },
-        },
       ])
     }),
   )
@@ -2997,15 +2934,26 @@ describe("OpenAI Responses route", () => {
       expect(response.events.filter((event) => event.type.startsWith("reasoning-"))).toEqual([
         {
           type: "reasoning-start",
-          id: "rs_1:0",
-          providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: null } },
+          id: "rs_1",
+          providerMetadata: undefined,
         },
-        { type: "reasoning-delta", id: "rs_1:0", text: "Checked the diff.", providerMetadata: undefined },
+        { type: "reasoning-delta", id: "rs_1", text: "Checked the diff.", providerMetadata: undefined },
         {
           type: "reasoning-end",
-          id: "rs_1:0",
+          id: "rs_1",
           text: "Checked the diff.",
-          providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: "encrypted-state" } },
+          providerMetadata: {
+            openai: {
+              itemId: "rs_1",
+              reasoningEncryptedContent: "encrypted-state",
+              reasoningItem: {
+                type: "reasoning",
+                id: "rs_1",
+                summary: [{ type: "summary_text", text: "Checked the diff." }],
+                encrypted_content: "encrypted-state",
+              },
+            },
+          },
         },
       ])
 
@@ -3051,7 +2999,7 @@ describe("OpenAI Responses route", () => {
 
       expect(response.reasoning).toBe("Streamed")
       expect(response.events.filter((event) => event.type === "reasoning-delta")).toEqual([
-        { type: "reasoning-delta", id: "rs_1:0", text: "Streamed", providerMetadata: undefined },
+        { type: "reasoning-delta", id: "rs_1", text: "Streamed", providerMetadata: undefined },
       ])
     }),
   )
@@ -3074,7 +3022,15 @@ describe("OpenAI Responses route", () => {
               { type: "response.reasoning_summary_part.done", item_id: "rs_1", summary_index: 1 },
               {
                 type: "response.output_item.done",
-                item: { type: "reasoning", id: "rs_1", encrypted_content: "encrypted-state" },
+                item: {
+                  type: "reasoning",
+                  id: "rs_1",
+                  summary: [
+                    { type: "summary_text", text: "First" },
+                    { type: "summary_text", text: "Second" },
+                  ],
+                  encrypted_content: "encrypted-state",
+                },
               },
               { type: "response.completed", response: { id: "resp_1" } },
             ),
@@ -3083,11 +3039,25 @@ describe("OpenAI Responses route", () => {
       )
 
       expect(response.events.filter((event) => event.type === "reasoning-end")).toEqual([
-        { type: "reasoning-end", id: "rs_1:0", providerMetadata: { openai: { itemId: "rs_1" } } },
         {
           type: "reasoning-end",
-          id: "rs_1:1",
-          providerMetadata: { openai: { itemId: "rs_1", reasoningEncryptedContent: "encrypted-state" } },
+          id: "rs_1",
+          text: "First\n\nSecond",
+          providerMetadata: {
+            openai: {
+              itemId: "rs_1",
+              reasoningEncryptedContent: "encrypted-state",
+              reasoningItem: {
+                type: "reasoning",
+                id: "rs_1",
+                summary: [
+                  { type: "summary_text", text: "First" },
+                  { type: "summary_text", text: "Second" },
+                ],
+                encrypted_content: "encrypted-state",
+              },
+            },
+          },
         },
       ])
     }),

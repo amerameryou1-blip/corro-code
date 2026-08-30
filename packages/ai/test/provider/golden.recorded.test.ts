@@ -8,6 +8,7 @@ import * as OpenAICompatible from "../../src/providers/openai-compatible.js"
 import * as OpenRouter from "../../src/providers/openrouter.js"
 import * as XAI from "../../src/providers/xai.js"
 import { describeRecordedGoldenScenarios } from "../recorded-golden.js"
+import { matchOptionalEmptyReasoningContent } from "../recorded-test.js"
 
 const openAI = OpenAI.configure({
   apiKey: process.env.OPENAI_API_KEY ?? "fixture",
@@ -88,6 +89,7 @@ describeRecordedGoldenScenarios([
     model: openAIResponses,
     requires: ["OPENAI_API_KEY"],
     tags: ["flagship"],
+    options: { match: matchOptionalEmptyReasoningContent },
     scenarios: [
       { id: "text", temperature: false },
       { id: "reasoning", temperature: false },

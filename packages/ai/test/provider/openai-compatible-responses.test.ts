@@ -406,7 +406,7 @@ describe("Open Responses-compatible route", () => {
     })
 
     routings.forEach((routing) => {
-      it.effect(`preserves reasoning summary boundaries without terminal reconciliation with ${routing.name}`, () =>
+      it.effect(`keeps one reasoning block without terminal reconciliation with ${routing.name}`, () =>
         Effect.gen(function* () {
           const address = { item_id: routing.item_id, output_index: routing.output_index }
           const response = yield* LLMClient.generate(request).pipe(
@@ -437,26 +437,10 @@ describe("Open Responses-compatible route", () => {
           expect(response.message.content).toEqual([
             {
               type: "reasoning",
-              text: "First.",
-              providerMetadata: { "openai-compatible": { itemId: routing.id } },
-            },
-            {
-              type: "reasoning",
-              text: "Second.",
-              providerMetadata: {
-                "openai-compatible": { itemId: routing.id, reasoningEncryptedContent: null },
-              },
+              text: "First.\n\nSecond.",
             },
           ])
-          expect(response.events.filter(LLMEvent.is.reasoningEnd)).toEqual([
-            {
-              type: "reasoning-end",
-              id: `${routing.id}:0`,
-              text: undefined,
-              providerMetadata: { "openai-compatible": { itemId: routing.id } },
-            },
-            { type: "reasoning-end", id: `${routing.id}:1` },
-          ])
+          expect(response.events.filter(LLMEvent.is.reasoningEnd)).toEqual([{ type: "reasoning-end", id: routing.id }])
         }),
       )
     })
@@ -696,7 +680,7 @@ describe("Open Responses-compatible route", () => {
 
       expect(response.events.find((event) => event.type === "reasoning-end")).toEqual({
         type: "reasoning-end",
-        id: "rs_raw:0",
+        id: "rs_raw",
       })
     }),
   )
