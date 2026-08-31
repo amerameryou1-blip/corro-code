@@ -29,10 +29,7 @@ import { globalProjectNode } from "./lib/project"
 const it = testEffect(
   AppNodeBuilder.build(
     LayerNode.group([Database.node, Bus.node, SessionProjector.node, SessionStore.node, Session.node]),
-    [
-      [Project.node, globalProjectNode],
-      [SessionExecution.node, SessionExecution.noopLayer],
-    ],
+    [Project.node.replace(globalProjectNode), SessionExecution.node.replace(SessionExecution.noopLayer)],
   ),
 )
 const itWithActiveExecution = testEffect(
@@ -46,25 +43,26 @@ const itWithActiveExecution = testEffect(
       Session.node,
     ]),
     [
-      [Project.node, globalProjectNode],
-      [
-        LocationServiceMap.node,
+      Project.node.replace(globalProjectNode),
+      LocationServiceMap.node.replace(
         Layer.effect(
           LocationServiceMap.Service,
           LayerMap.make(
             (ref: Location.Ref) =>
               Layer.merge(
-                LayerNode.compile(Location.boundNode(ref), [[Project.node, globalProjectNode]]),
+                LayerNode.compile(Location.boundNode(ref), {
+                  replacements: [Project.node.replace(globalProjectNode)],
+                }),
                 Layer.succeed(SessionRunner.Service, { drain: () => Effect.never }),
               ) as unknown as Layer.Layer<LocationServices>,
           ),
         ),
-      ],
+      ),
     ],
   ),
 )
 const itWithExecution = testEffect(
-  AppNodeBuilder.build(LayerNode.group([Session.node, SessionExecution.node]), [[Global.node, tempGlobalLayer]]),
+  AppNodeBuilder.build(LayerNode.group([Session.node, SessionExecution.node]), [Global.node.replace(tempGlobalLayer)]),
 )
 const unavailableLocations = Layer.effect(
   LocationServiceMap.Service,
@@ -76,9 +74,9 @@ const itWithUnavailableDestination = testEffect(
   AppNodeBuilder.build(
     LayerNode.group([Database.node, Bus.node, SessionProjector.node, SessionStore.node, Session.node]),
     [
-      [Project.node, globalProjectNode],
-      [SessionExecution.node, SessionExecution.noopLayer],
-      [LocationServiceMap.node, unavailableLocations],
+      Project.node.replace(globalProjectNode),
+      SessionExecution.node.replace(SessionExecution.noopLayer),
+      LocationServiceMap.node.replace(unavailableLocations),
     ],
   ),
 )
@@ -91,15 +89,14 @@ const sourceProbe = Effect.gen(function* () {
   const entered = yield* Deferred.make<void>()
   const release = yield* Deferred.make<void>()
   const replacements: LayerNode.Replacements = [
-    [Project.node, globalProjectNode],
-    [SessionExecution.node, SessionExecution.noopLayer],
-    [Global.node, tempGlobalLayer],
+    Project.node.replace(globalProjectNode),
+    SessionExecution.node.replace(SessionExecution.noopLayer),
+    Global.node.replace(tempGlobalLayer),
   ]
   const context = yield* Layer.build(
     AppNodeBuilder.build(LayerNode.group([Session.node, Bus.node]), [
       ...replacements,
-      [
-        LocationServiceMap.node,
+      LocationServiceMap.node.replace(
         Layer.effect(
           LocationServiceMap.Service,
           LayerMap.make(
@@ -116,7 +113,7 @@ const sourceProbe = Effect.gen(function* () {
             { idleTimeToLive: Duration.infinity },
           ),
         ),
-      ],
+      ),
     ]),
   )
   return {
