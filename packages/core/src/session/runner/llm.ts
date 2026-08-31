@@ -54,8 +54,8 @@ const layer = Layer.effect(
       if (!force && !continuing) {
         const pending = yield* SessionInbox.nextPromotable(db, sessionID, "input")
         if (!pending) return DrainResult.Complete()
-        const control = pending.type === "compaction" || pending.type === "move"
-        if (promotable === "steer" && pending.delivery === "queue" && !control) return DrainResult.Complete()
+        if (promotable === "steer" && pending.delivery === "queue" && !SessionInbox.isControl(pending))
+          return DrainResult.Complete()
       }
       yield* plugins.flush
       yield* settleStaleToolCalls(sessionID)
@@ -136,7 +136,7 @@ const layer = Layer.effect(
                   if (promoted === 0) {
                     // Cancellation during preparation can expose a control instead of input.
                     const next = yield* SessionInbox.nextPromotable(db, sessionID, scope)
-                    if (next?.type === "compaction" || next?.type === "move") return undefined
+                    if (next && SessionInbox.isControl(next)) return undefined
                   }
                   if (promoted > 0 && !selected.session.parentID && SessionTitle.isUntitled(selected.session))
                     yield* FiberMap.run(titles, sessionID, title.generate(sessionID), {

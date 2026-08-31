@@ -159,8 +159,7 @@ export const layer = Layer.effect(
           // promotable here or was fully delivered and needs no resumption.
           const next = yield* SessionInbox.nextPromotable(db, sessionID, "input")
           if (next === undefined) return interrupted
-          if (next.delivery === "steer" || next.type === "compaction" || next.type === "move")
-            yield* coordinator.wake(sessionID, "steer")
+          if (next.delivery === "steer" || SessionInbox.isControl(next)) yield* coordinator.wake(sessionID, "steer")
           return interrupted
         }),
       resume: coordinator.run,

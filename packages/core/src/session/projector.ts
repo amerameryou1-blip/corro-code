@@ -594,7 +594,7 @@ const layer = Layer.effectDiscard(
           id: event.data.inboxID,
           sessionID: event.data.sessionID,
         })
-        if (input.type === "compaction" || input.type === "move") return
+        if (SessionInbox.isControl(input)) return
         yield* insertMessage(
           db,
           event,

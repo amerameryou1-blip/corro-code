@@ -47,6 +47,9 @@ export {
  */
 export type Promotable = "input" | "steer"
 
+export const isControl = (item: Pick<Item, "type">): item is Pick<Compaction | Move, "type"> =>
+  item.type === "compaction" || item.type === "move"
+
 const decodeUser = Schema.decodeUnknownSync(UserPayload)
 const encodeUser = Schema.encodeSync(UserPayload)
 const decodeSynthetic = Schema.decodeUnknownSync(SyntheticPayload)
@@ -505,7 +508,7 @@ export const promote = Effect.fn("SessionInbox.promote")(function* (
     Effect.gen(function* () {
       const steers = yield* pendingSteers(db, sessionID)
       if (steers.length > 0 || scope === "steer") {
-        const control = steers.findIndex((row) => row.type === "compaction" || row.type === "move")
+        const control = steers.findIndex(isControl)
         return yield* publish(db, bus, sessionID, control === -1 ? steers : steers.slice(0, control))
       }
 
@@ -517,10 +520,10 @@ export const promote = Effect.fn("SessionInbox.promote")(function* (
         .limit(1)
         .get()
         .pipe(Effect.orDie)
-      if (!queued || queued.type === "compaction" || queued.type === "move") return 0
+      if (!queued || isControl(queued)) return 0
       const promoted = yield* publish(db, bus, sessionID, [queued])
       const arrivedSteers = yield* pendingSteers(db, sessionID)
-      const control = arrivedSteers.findIndex((row) => row.type === "compaction" || row.type === "move")
+      const control = arrivedSteers.findIndex(isControl)
       return (
         promoted +
         (yield* publish(db, bus, sessionID, control === -1 ? arrivedSteers : arrivedSteers.slice(0, control)))
