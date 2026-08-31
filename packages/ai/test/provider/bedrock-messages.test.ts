@@ -43,7 +43,7 @@ for (const auth of [
         expect(body.model).toBeUndefined()
         expect(body.stream).toBeUndefined()
         expect(body.anthropic_version).toBe("bedrock-2023-05-31")
-        expect(body.anthropic_beta).toEqual(["existing-beta", "compact-2026-01-12"])
+        expect(body.anthropic_beta).toEqual(["compact-2026-01-12"])
         expect(body.context_management.edits).toEqual([{ type: "compact_20260112" }])
         if (body.messages.length > 1)
           expect(body.messages[1].content[0]).toEqual({ type: "compaction", content: "Summary" })
@@ -56,7 +56,6 @@ for (const auth of [
       const request = LLM.request({
         model,
         prompt: "hello",
-        http: { headers: { "anthropic-beta": "existing-beta, existing-beta, compact-2026-01-12" } },
         providerOptions: { contextManagement: { edits: [{ type: "compact_20260112" }] } },
       })
       const first = yield* LLMClient.generate(request)

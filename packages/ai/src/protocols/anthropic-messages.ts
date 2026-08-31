@@ -31,7 +31,6 @@ import * as Cache from "./utils/cache.js"
 import { Lifecycle } from "./utils/lifecycle.js"
 import { ToolSchemaProjection } from "./utils/tool-schema.js"
 import { ToolStream } from "./utils/tool-stream.js"
-import { AnthropicBetas } from "./utils/anthropic-betas.js"
 
 const ADAPTER = "anthropic-messages"
 export const DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
@@ -1640,15 +1639,25 @@ export const transport = <Body extends Pick<AnthropicMessagesBody, "messages" | 
   return {
     ...http,
     prepare: (input: Parameters<typeof http.prepare>[0]) => {
+      if (
+        !input.body.context_management?.edits.length &&
+        !input.body.messages.some((message) => message.content.some((block) => block.type === "compaction"))
+      )
+        return http.prepare(input)
       const headers = Headers.fromInput(input.request.http?.headers)
-      const betas = AnthropicBetas.resolve(input.body, headers["anthropic-beta"]).join(",")
-      if (betas === (headers["anthropic-beta"] ?? "")) return http.prepare(input)
+      const betas = new Set(
+        (headers["anthropic-beta"] ?? "")
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean),
+      )
+      betas.add("compact-2026-01-12")
       return http.prepare({
         ...input,
         request: LLMRequest.update(input.request, {
           http: new HttpOptions({
             ...input.request.http,
-            headers: { ...headers, "anthropic-beta": betas },
+            headers: { ...headers, "anthropic-beta": [...betas].join(",") },
           }),
         }),
       })
