@@ -191,16 +191,27 @@ export const ReasoningPart = Schema.Struct({
 }).annotate({ identifier: "LLM.Content.Reasoning" })
 export type ReasoningPart = Schema.Schema.Type<typeof ReasoningPart>
 
-/** Provider-owned replay state, not assistant text. Preserve its value and position verbatim. */
+/** A provider-generated context checkpoint, distinct from visible assistant text. */
 const compactionPartSchema = Schema.Struct({
   type: Schema.Literal("compaction"),
   provider: ProviderID,
-  format: Schema.Literals(["responses", "anthropic-messages"]),
-  value: Schema.declare<Schema.Schema.Type<typeof Schema.Json>>(Schema.is(Schema.Json)),
-}).annotate({ identifier: "LLM.Content.Compaction" })
+  id: Schema.optional(Schema.String),
+  encrypted: Schema.optional(Schema.String),
+  /** Null means the provider failed to produce a summary; prior history must be retained. */
+  text: Schema.optional(Schema.NullOr(Schema.String)),
+})
+  .check(
+    Schema.makeFilter(
+      (part) =>
+        (part.encrypted !== undefined) !== (part.text !== undefined) ||
+        "Compaction requires either encrypted content or a summary",
+    ),
+  )
+  .annotate({ identifier: "LLM.Content.Compaction" })
 export type CompactionPart = typeof compactionPartSchema.Type
 export const CompactionPart = Object.assign(compactionPartSchema, {
-  make: (input: Omit<CompactionPart, "type">): CompactionPart => ({ type: "compaction", ...input }),
+  make: (input: Omit<CompactionPart, "type">): CompactionPart =>
+    Schema.decodeUnknownSync(compactionPartSchema)({ type: "compaction", ...input }),
 })
 
 export const ContentPart = Schema.Union([
@@ -218,6 +229,7 @@ export class Message extends Schema.Class<Message>("LLM.Message")({
   role: MessageRole,
   content: Schema.Array(ContentPart),
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  providerMetadata: Schema.optional(ProviderMetadata),
   native: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
 }) {}
 

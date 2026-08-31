@@ -129,9 +129,7 @@ for (const model of [
           })
           const first = yield* LLMClient.generate(request)
           expect(first.finishReason.raw).toBe("compaction")
-          expect(first.message.content).toEqual([
-            { type: "compaction", provider: model.provider, format: "anthropic-messages", value: block },
-          ])
+          expect(first.message.content).toEqual([{ type: "compaction", provider: model.provider, text: summary }])
           expect(first.text).toBe("")
           expect(first.usage?.inputTokens).toBe(51010)
           expect(first.usage?.outputTokens).toBe(1005)

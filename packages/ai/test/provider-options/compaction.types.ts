@@ -1,4 +1,5 @@
-import { LLM, LLMClient } from "../../src/index.js"
+import { Effect } from "effect"
+import { CompactionPart, LLM, LLMClient, ProviderID } from "../../src/index.js"
 import { OpenAI, Anthropic, AmazonBedrock } from "../../src/providers.js"
 
 const openai = OpenAI.configure({
@@ -6,6 +7,18 @@ const openai = OpenAI.configure({
   providerOptions: { contextManagement: [{ type: "compaction", compactThreshold: 100000 }] },
 }).responses("gpt-5.3-codex")
 LLMClient.compact(LLM.request({ model: openai, prompt: "hello" }))
+
+const checkpoint = CompactionPart.make({ provider: ProviderID.make("openai"), id: "cmp_1", encrypted: "opaque" })
+checkpoint.encrypted
+// @ts-expect-error Compaction parts do not contain a generic provider payload.
+checkpoint.value
+LLMClient.compact(LLM.request({ model: openai, prompt: "hello" })).pipe(
+  Effect.map((result) => {
+    result.messages
+    // @ts-expect-error Compaction returns replacement history, not a synthetic assistant message.
+    result.message
+  }),
+)
 LLM.request({
   model: openai,
   providerOptions: {

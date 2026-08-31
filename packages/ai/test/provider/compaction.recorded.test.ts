@@ -32,7 +32,10 @@ for (const provider of [
         const compacted = yield* LLMClient.compact(request)
         const result = yield* LLMClient.generate(
           LLMRequest.update(request, {
-            messages: [compacted.message, Message.user("What is the project codename? Reply only with the codename.")],
+            messages: [
+              ...compacted.messages,
+              Message.user("What is the project codename? Reply only with the codename."),
+            ],
           }),
         )
         expect(result.text).toContain("COPPER-ORBIT-42")

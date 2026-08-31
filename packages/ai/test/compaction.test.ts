@@ -5,8 +5,8 @@ import { CompactionPart, LLMEvent, LLMResponse, Message, ProviderID } from "../s
 test("compaction survives event assembly and message serialization without becoming text", () => {
   const part = CompactionPart.make({
     provider: ProviderID.make("openai"),
-    format: "responses",
-    value: [{ type: "compaction", id: "cmp_1", encrypted_content: "opaque" }],
+    id: "cmp_1",
+    encrypted: "opaque",
   })
   const response = LLMResponse.fromEvents([
     LLMEvent.textStart({ id: "before" }),
@@ -24,4 +24,11 @@ test("compaction survives event assembly and message serialization without becom
   expect(response.events.filter(LLMEvent.is.compaction)).toEqual([part])
   const codec = Schema.fromJsonString(Message)
   expect(Schema.decodeSync(codec)(Schema.encodeSync(codec)(response.message))).toEqual(response.message)
+})
+
+test("compaction requires exactly one typed representation", () => {
+  const provider = ProviderID.make("anthropic")
+  expect(CompactionPart.make({ provider, text: null })).toEqual({ type: "compaction", provider, text: null })
+  expect(() => CompactionPart.make({ provider })).toThrow()
+  expect(() => CompactionPart.make({ provider, text: "summary", encrypted: "opaque" })).toThrow()
 })

@@ -84,8 +84,7 @@ it.effect("rejects native provider compaction rather than silently dropping repl
           Message.assistant(
             CompactionPart.make({
               provider: ProviderID.make("test-provider"),
-              format: "responses",
-              value: [{ type: "compaction", encrypted_content: "opaque" }],
+              encrypted: "opaque",
             }),
           ),
         ],

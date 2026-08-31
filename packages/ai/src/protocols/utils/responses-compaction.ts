@@ -7,6 +7,7 @@ import {
   HttpOptions,
   LLMRequest,
   Message,
+  type ContentPart,
   mergeJsonRecords,
 } from "../../schema/index.js"
 import type { CompactOperation } from "../../route/client.js"
@@ -24,7 +25,22 @@ const Body = Schema.Struct({
 })
 const Response = Schema.Struct({
   object: Schema.Literal("response.compaction"),
-  output: Schema.Array(Schema.Json),
+  output: Schema.Array(
+    Schema.Union([
+      OpenResponses.CompactionItem,
+      OpenResponses.OpenResponsesReasoningItem,
+      Schema.Struct({
+        type: Schema.Literal("message"),
+        id: Schema.optional(Schema.String),
+        role: Schema.Literals(["user", "assistant"]),
+        status: Schema.optional(Schema.String),
+        phase: Schema.optional(OpenResponses.MessagePhase),
+        content: Schema.Array(
+          Schema.Union([OpenResponses.OpenResponsesInputContent, OpenResponses.OpenResponsesOutputText]),
+        ).check(Schema.isMinLength(1)),
+      }),
+    ]),
+  ),
   usage: Schema.optional(Schema.StructWithRest(OpenResponses.OpenResponsesUsage, [JsonObject])),
 })
 
@@ -70,13 +86,63 @@ export const execute: CompactOperation = Effect.fn("ResponsesCompaction.execute"
     const result = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Response))(text).pipe(
       Effect.mapError((cause) => invalid("Invalid compaction response", cause)),
     )
-    if (!result.output.some(Schema.is(OpenResponses.CompactionItem)))
+    if (!result.output.some((item) => item.type === "compaction"))
       return yield* invalid("Compaction response did not contain a checkpoint")
+    const key = route.providerMetadataKey ?? String(request.model.provider)
+    const messages = yield* Effect.forEach(result.output, (item) =>
+      Effect.gen(function* () {
+        if (item.type === "compaction")
+          return Message.assistant(
+            CompactionPart.make({
+              provider: request.model.provider,
+              id: item.id ?? undefined,
+              encrypted: item.encrypted_content,
+            }),
+          )
+        if (item.type === "reasoning") {
+          const summary = item.summary.length ? item.summary : [{ text: "" }]
+          return Message.assistant(
+            summary.map((part) => ({
+              type: "reasoning" as const,
+              text: part.text,
+              providerMetadata: { [key]: { itemId: item.id, reasoningEncryptedContent: item.encrypted_content } },
+            })),
+          )
+        }
+        const content: ContentPart[] = []
+        for (const part of item.content) {
+          if (part.type === "input_text" || part.type === "output_text") {
+            content.push({ type: "text", text: part.text })
+            continue
+          }
+          if (item.role !== "user") return yield* invalid("Compacted assistant messages must contain text")
+          if (part.type === "input_image") {
+            content.push({
+              type: "media",
+              mediaType: /^data:([^;,]+)/.exec(part.image_url)?.[1] ?? "image/*",
+              data: part.image_url,
+            })
+            continue
+          }
+          const data = part.file_url ?? part.file_data
+          if (data === undefined) return yield* invalid("Compacted file is missing its data or URL")
+          content.push({
+            type: "media",
+            mediaType: /^data:([^;,]+)/.exec(data)?.[1] ?? "application/octet-stream",
+            data,
+            filename: part.filename,
+          })
+        }
+        return Message.make({
+          role: item.role,
+          content,
+          providerMetadata: { [key]: { itemId: item.id, type: item.type, status: item.status, phase: item.phase } },
+        })
+      }),
+    )
     return new CompactionResponse({
-      message: Message.assistant(
-        CompactionPart.make({ provider: request.model.provider, format: "responses", value: result.output }),
-      ),
-      usage: OpenResponses.mapUsage(result.usage, route.providerMetadataKey ?? String(request.model.provider)),
+      messages,
+      usage: OpenResponses.mapUsage(result.usage, key),
     })
   },
 )

@@ -897,11 +897,9 @@ const lowerMessages = Effect.fn("AnthropicMessages.lowerMessages")(function* (
       const content: AnthropicAssistantBlock[] = []
       for (const part of message.content) {
         if (part.type === "compaction") {
-          if (part.provider !== request.model.provider || part.format !== "anthropic-messages")
+          if (part.provider !== request.model.provider || part.text === undefined)
             return yield* invalid("Compaction state must be replayed to its originating provider and API")
-          content.push(
-            yield* ProviderShared.validateWith(Schema.decodeUnknownEffect(AnthropicCompactionBlock))(part.value),
-          )
+          content.push({ type: "compaction", content: part.text })
           continue
         }
         if (part.type === "text") {
@@ -1423,8 +1421,7 @@ const onContentBlockStop = Effect.fn("AnthropicMessages.onContentBlockStop")(fun
     events.push(
       LLMEvent.compaction({
         provider: state.provider,
-        format: "anthropic-messages",
-        value: { type: "compaction", content },
+        text: content,
       }),
     )
     return [{ ...state, compactions, lifecycle }, events] satisfies StepResult

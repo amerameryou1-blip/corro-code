@@ -52,15 +52,22 @@ const OpenResponsesInputVideo = Schema.Struct({
 })
 const MediaInput = Schema.Union([OpenResponsesInputImage, OpenResponsesInputFile])
 export type MediaInput = Schema.Schema.Type<typeof MediaInput>
-const OpenResponsesInputContent = Schema.Union([OpenResponsesInputText, MediaInput])
+export const OpenResponsesInputContent = Schema.Union([OpenResponsesInputText, MediaInput])
 
-const OpenResponsesOutputText = Schema.Struct({
+export const OpenResponsesOutputText = Schema.Struct({
   type: Schema.tag("output_text"),
   text: Schema.String,
 })
 
 export const MessagePhase = Schema.NullOr(Schema.Literals(["commentary", "final_answer"]))
 type MessagePhase = Schema.Schema.Type<typeof MessagePhase>
+
+export const MessageMetadata = Schema.Struct({
+  itemId: Schema.optional(Schema.String),
+  type: Schema.optional(Schema.Literal("message")),
+  status: Schema.optional(Schema.String),
+  phase: Schema.optional(MessagePhase),
+})
 
 const messagePhase = (value: unknown): MessagePhase | undefined => {
   if (value === null || value === "commentary" || value === "final_answer") return value
@@ -72,7 +79,7 @@ const OpenResponsesReasoningSummaryText = Schema.Struct({
   text: Schema.String,
 })
 
-const OpenResponsesReasoningItem = Schema.Struct({
+export const OpenResponsesReasoningItem = Schema.Struct({
   type: Schema.tag("reasoning"),
   id: Schema.optionalKey(Schema.String),
   summary: Schema.Array(OpenResponsesReasoningSummaryText),
@@ -155,17 +162,24 @@ export const CompactionItem = Schema.Struct({
   encrypted_content: Schema.String,
 })
 
-const InputItemSchema = Schema.Union([
+export const InputItem = Schema.Union([
   CompactionItem,
   Schema.Struct({ role: Schema.tag("system"), content: Schema.String }),
   Schema.Struct({ role: Schema.tag("developer"), content: Schema.String }),
-  Schema.Struct({ role: Schema.tag("user"), content: Schema.Array(OpenResponsesInputContent) }),
+  Schema.Struct({
+    role: Schema.tag("user"),
+    content: Schema.Array(OpenResponsesInputContent),
+    type: Schema.optional(Schema.Literal("message")),
+    id: Schema.optional(Schema.String),
+    status: Schema.optional(Schema.String),
+  }),
   Schema.Struct({
     type: Schema.tag("message"),
     id: Schema.optionalKey(Schema.String),
     role: Schema.tag("assistant"),
     content: Schema.Array(OpenResponsesOutputText),
     phase: Schema.optionalKey(MessagePhase),
+    status: Schema.optional(Schema.String),
   }),
   OpenResponsesReasoningItem,
   Schema.Struct({
@@ -182,8 +196,6 @@ const InputItemSchema = Schema.Union([
   }),
   HostedToolItem,
 ])
-// Compact returns a canonical window, including nested provider fields. Validate without stripping them.
-export const InputItem = Schema.declare<typeof InputItemSchema.Type>(Schema.is(InputItemSchema))
 type OpenResponsesInputItem = Schema.Schema.Type<typeof InputItem>
 export type ExtendedHostedToolItem = {
   readonly type: string
@@ -579,6 +591,9 @@ const lowerMessages = Effect.fn("OpenResponses.lowerMessages")(function* (reques
   const providerMetadataKey = request.model.route.providerMetadataKey ?? "openresponses"
 
   for (const message of request.messages) {
+    const metadata = yield* ProviderShared.validateWith(
+      Schema.decodeUnknownEffect(Schema.UndefinedOr(MessageMetadata)),
+    )(message.providerMetadata?.[providerMetadataKey])
     if (message.role === "system") {
       input.push({
         role: "developer",
@@ -589,7 +604,8 @@ const lowerMessages = Effect.fn("OpenResponses.lowerMessages")(function* (reques
 
     if (message.role === "user") {
       const content = yield* Effect.forEach(message.content, (part) => lowerUserContent(part, request, extension))
-      if (content.length > 0) input.push({ role: "user", content })
+      if (content.length > 0)
+        input.push({ role: "user", content, type: metadata?.type, id: metadata?.itemId, status: metadata?.status })
       continue
     }
 
@@ -602,9 +618,10 @@ const lowerMessages = Effect.fn("OpenResponses.lowerMessages")(function* (reques
         const groups = content.reduce<
           Array<{ id: string | undefined; phase: MessagePhase | null | undefined; parts: TextPart[] }>
         >((groups, part) => {
-          const metadata = part.providerMetadata?.[providerMetadataKey]
-          const id = itemID(part.providerMetadata, providerMetadataKey)
-          const phase = ProviderShared.isRecord(metadata) ? messagePhase(metadata.phase) : undefined
+          const partMetadata = part.providerMetadata?.[providerMetadataKey]
+          const id = itemID(part.providerMetadata, providerMetadataKey) ?? metadata?.itemId
+          const partPhase = messagePhase(partMetadata?.phase)
+          const phase = partPhase === undefined ? metadata?.phase : partPhase
           const group = groups.at(-1)
           if (group && group.id === id && group.phase === phase) group.parts.push(part)
           else groups.push({ id, phase, parts: [part] })
@@ -615,6 +632,7 @@ const lowerMessages = Effect.fn("OpenResponses.lowerMessages")(function* (reques
             type: "message" as const,
             ...(group.id === undefined ? {} : { id: group.id }),
             role: "assistant" as const,
+            status: metadata?.status,
             content: group.parts.map((part) => ({ type: "output_text" as const, text: part.text })),
             ...(group.phase === undefined ? {} : { phase: group.phase }),
           })),
@@ -624,18 +642,11 @@ const lowerMessages = Effect.fn("OpenResponses.lowerMessages")(function* (reques
       for (const part of message.content) {
         if (part.type === "compaction") {
           flushText()
-          if (part.provider !== request.model.provider || part.format !== "responses")
+          if (part.provider !== request.model.provider || part.encrypted === undefined)
             return yield* ProviderShared.invalidRequest(
               "Compaction state must be replayed to its originating provider and API",
             )
-          const items = yield* ProviderShared.validateWith(Schema.decodeUnknownEffect(Schema.Array(Schema.Unknown)))(
-            part.value,
-          )
-          for (const item of items) {
-            const replay = Schema.is(InputItem)(item) ? item : extension.lowerHostedToolItem?.(item)
-            if (!replay) return yield* ProviderShared.invalidRequest("Unsupported item in compacted context window")
-            input.push(replay)
-          }
+          input.push({ type: "compaction", id: part.id, encrypted_content: part.encrypted })
           continue
         }
         if (part.type === "text") {
@@ -1120,8 +1131,8 @@ const onOutputItemDone = Effect.fn("OpenResponses.onOutputItemDone")(function* (
     events.push(
       LLMEvent.compaction({
         provider: state.provider,
-        format: "responses",
-        value: [{ type: "compaction", id: item.id, encrypted_content: item.encrypted_content }],
+        id: item.id,
+        encrypted: item.encrypted_content,
       }),
     )
     return [
