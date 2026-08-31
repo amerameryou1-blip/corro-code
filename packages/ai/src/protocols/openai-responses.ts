@@ -20,6 +20,14 @@ const WEBSOCKET_ROTATE_AFTER_MS = 55 * 60 * 1000
 export const DEFAULT_BASE_URL = "https://api.openai.com/v1"
 export const PATH = OpenResponses.PATH
 
+export const ContextManagement = Schema.Array(
+  Schema.Struct({
+    type: Schema.Literal("compaction"),
+    compactThreshold: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
+  }),
+)
+export type ContextManagement = typeof ContextManagement.Type
+
 const OpenAIResponsesImageGenerationTool = Schema.Struct({
   type: Schema.tag("image_generation"),
   action: Schema.optional(Schema.Literals(["auto", "generate", "edit"])),
@@ -78,6 +86,14 @@ const OpenAIResponsesCoreFields = {
   input: Schema.Array(Schema.Union([OpenResponses.InputItem, OpenAIResponsesHostedToolItem])),
   tools: optionalArray(OpenAIResponsesTools),
   tool_choice: Schema.optional(OpenAIResponsesToolChoice),
+  context_management: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        type: Schema.Literal("compaction"),
+        compact_threshold: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
+      }),
+    ),
+  ),
 }
 
 const OpenAIResponsesBody = Schema.Struct({
@@ -125,6 +141,11 @@ const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>, tool
 const decodeBody = ProviderShared.validateWith(Schema.decodeUnknownEffect(OpenAIResponsesBody))
 
 const fromRequest = Effect.fn("OpenAIResponses.fromRequest")(function* (request: LLMRequest) {
+  const context = request.providerOptions?.contextManagement
+  const management =
+    context === undefined
+      ? undefined
+      : yield* ProviderShared.validateWith(Schema.decodeUnknownEffect(ContextManagement))(context)
   const body = yield* OpenResponses.fromRequestWithExtension(
     LLMRequest.update(request, { tools: [], toolChoice: undefined }),
     extension,
@@ -133,6 +154,7 @@ const fromRequest = Effect.fn("OpenAIResponses.fromRequest")(function* (request:
   const parallelToolCalls = OpenResponses.resolveParallelToolCalls(request)
   return yield* decodeBody({
     ...body,
+    context_management: management?.map((edit) => ({ type: edit.type, compact_threshold: edit.compactThreshold })),
     ...(parallelToolCalls === undefined ? {} : { parallel_tool_calls: parallelToolCalls }),
     tools:
       request.tools.length === 0

@@ -149,7 +149,14 @@ const OpenResponsesFunctionCallOutput = Schema.Union([
   Schema.Array(OpenResponsesFunctionCallOutputContent),
 ])
 
+export const CompactionItem = Schema.Struct({
+  type: Schema.Literal("compaction"),
+  id: optionalNull(Schema.String),
+  encrypted_content: Schema.String,
+})
+
 export const InputItem = Schema.Union([
+  CompactionItem,
   Schema.Struct({ role: Schema.tag("system"), content: Schema.String }),
   Schema.Struct({ role: Schema.tag("developer"), content: Schema.String }),
   Schema.Struct({ role: Schema.tag("user"), content: Schema.Array(OpenResponsesInputContent) }),
@@ -387,6 +394,8 @@ export interface Extension {
 const BASE: Extension = { id: ADAPTER, name: NAME }
 
 export interface ParserState {
+  readonly provider: LLMRequest["model"]["provider"]
+  readonly completedCompactions: ReadonlySet<string>
   readonly id: string
   readonly name: string
   readonly providerMetadataKey: string
@@ -611,6 +620,17 @@ const lowerMessages = Effect.fn("OpenResponses.lowerMessages")(function* (reques
         content.splice(0, content.length)
       }
       for (const part of message.content) {
+        if (part.type === "compaction") {
+          flushText()
+          if (part.provider !== request.model.provider || part.format !== "responses")
+            return yield* ProviderShared.invalidRequest(
+              "Compaction state must be replayed to its originating provider and API",
+            )
+          input.push(
+            ...(yield* ProviderShared.validateWith(Schema.decodeUnknownEffect(Schema.Array(InputItem)))(part.value)),
+          )
+          continue
+        }
         if (part.type === "text") {
           content.push(part)
           continue
@@ -1084,6 +1104,25 @@ const onOutputItemDone = Effect.fn("OpenResponses.onOutputItemDone")(function* (
 ) {
   if (!item) return [state, NO_EVENTS] satisfies StepResult
 
+  if (item.type === "compaction") {
+    if (!item.id || typeof item.encrypted_content !== "string")
+      return yield* ProviderShared.eventError(state.id, "Compaction output is missing its id or encrypted content")
+    if (state.completedCompactions.has(item.id)) return [state, NO_EVENTS] satisfies StepResult
+    const events: LLMEvent[] = []
+    const lifecycle = Lifecycle.stepStart(state.lifecycle, events)
+    events.push(
+      LLMEvent.compaction({
+        provider: state.provider,
+        format: "responses",
+        value: [{ type: "compaction", id: item.id, encrypted_content: item.encrypted_content }],
+      }),
+    )
+    return [
+      { ...state, lifecycle, completedCompactions: new Set([...state.completedCompactions, item.id]) },
+      events,
+    ] satisfies StepResult
+  }
+
   if (item.type === "message" && item.id !== undefined) {
     const message = state.message?.id === item.id ? state.message : undefined
     const itemPhase = messagePhase(item.phase)
@@ -1245,7 +1284,7 @@ const onResponseFinish = Effect.fn("OpenResponses.onResponseFinish")(function* (
     for (const item of event.response?.output ?? []) {
       const id = item.id ?? (item.type === "function_call" ? item.call_id : undefined)
       if (id === undefined) continue
-      if (item.type !== "function_call" || !current.tools[id]) continue
+      if (item.type !== "compaction" && (item.type !== "function_call" || !current.tools[id])) continue
       const [next, emitted] = yield* onOutputItemDone(current, item)
       current = next
       events.push(...emitted)
@@ -1409,6 +1448,8 @@ export const step = (state: ParserState, input: Event) => {
  * implementations compose this baseline with their own tools and event variants.
  */
 export const initial = (request: LLMRequest, extension: Extension = BASE): ParserState => ({
+  provider: request.model.provider,
+  completedCompactions: new Set<string>(),
   id: extension.id,
   name: extension.name,
   providerMetadataKey: request.model.route.providerMetadataKey ?? "openresponses",
