@@ -14,6 +14,8 @@ export class Repository extends Schema.Class<Repository>("Git.Repository")({
   worktree: AbsolutePath,
   gitDirectory: AbsolutePath,
   commonDirectory: AbsolutePath,
+  /** Additional read-only object databases; index and worktree remain local. */
+  objectDirectories: Schema.optional(Schema.Array(AbsolutePath)),
 }) {}
 
 // Included from $GIT_DIR/config via include.path (git >= 1.7.10); OpenCode owns
@@ -50,6 +52,7 @@ export class OperationError extends Schema.TaggedError<OperationError>()("Git.Op
     "list_files",
     "diff",
     "restore",
+    "retain",
   ]),
   message: Schema.String,
   directory: Schema.optional(AbsolutePath),
@@ -132,6 +135,12 @@ export interface Interface {
     }) => Effect.Effect<ReadonlySet<RelativePath>, OperationError>
   }
   readonly tree: {
+    readonly exists: (repository: Repository, tree: TreeID) => Effect.Effect<boolean, OperationError>
+    /** Retain a tree's borrowed objects in this repository, independent of its alternates. */
+    readonly retain: (input: {
+      repository: Repository
+      trees: readonly TreeID[]
+    }) => Effect.Effect<void, OperationError>
     readonly capture: (input: {
       repository: Repository
       scopes: readonly RelativePath[]
@@ -314,7 +323,16 @@ const layer = Layer.effect(
         .run(
           ChildProcess.make("git", repositoryArgs(repository, args), {
             cwd: repository.worktree,
-            env: options?.env,
+            env: {
+              ...(repository.objectDirectories?.length
+                ? {
+                    GIT_ALTERNATE_OBJECT_DIRECTORIES: repository.objectDirectories
+                      .map((directory) => JSON.stringify(directory))
+                      .join(path.delimiter),
+                  }
+                : {}),
+              ...options?.env,
+            },
             extendEnv: true,
           }),
           { stdin: options?.stdin },
@@ -477,6 +495,46 @@ const layer = Layer.effect(
       return TreeID.make((yield* repositoryOperation("write_tree", repository, ["write-tree"])).text.trim())
     })
 
+    const treeExists = Effect.fn("Git.tree.exists")(function* (repository: Repository, tree: TreeID) {
+      return yield* repositoryOperation("list_files", repository, ["cat-file", "-e", `${tree}^{tree}`]).pipe(
+        Effect.as(true),
+        Effect.catch(() => Effect.succeed(false)),
+      )
+    })
+
+    const retain = Effect.fn("Git.tree.retain")((input: { repository: Repository; trees: readonly TreeID[] }) =>
+      locked(
+        input.repository,
+        Effect.gen(function* () {
+          const retained = (yield* repositoryOperation("retain", input.repository, [
+            "for-each-ref",
+            "--format=%(objectname)",
+            "refs/opencode/snapshots/",
+          ])).text
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+          const missing = Array.from(new Set(input.trees)).filter((tree) => !retained.includes(tree))
+          if (!missing.length) return
+          // Only these refs certify locally retained objects. Ordinary refs or alternates do not.
+          yield* repositoryOperation(
+            "retain",
+            input.repository,
+            [
+              "pack-objects",
+              "--revs",
+              "--non-empty",
+              path.join(input.repository.gitDirectory, "objects", "pack", "pack"),
+            ],
+            { stdin: [...missing, ...retained.map((tree) => `^${tree}`)].join("\n") + "\n" },
+          )
+          yield* repositoryOperation("retain", input.repository, ["update-ref", "--stdin"], {
+            stdin: missing.map((tree) => `update refs/opencode/snapshots/${tree} ${tree}\n`).join(""),
+          })
+        }),
+      ),
+    )
+
     const captureTree = Effect.fn("Git.tree.capture")(
       (input: {
         repository: Repository
@@ -586,28 +644,57 @@ const layer = Layer.effect(
       (input: { repository: Repository; files: ReadonlyMap<RelativePath, TreeID> }) =>
         locked(
           input.repository,
-          Effect.forEach(
-            input.files,
-            ([file, tree]) =>
-              Effect.gen(function* () {
-                if (yield* hasEntry(input.repository, tree, file)) {
-                  yield* repositoryOperation("restore", input.repository, ["checkout", tree, "--", file])
-                  return
-                }
-                yield* fs.remove(path.join(input.repository.worktree, file), { recursive: true, force: true }).pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new OperationError({
-                        operation: "restore",
-                        directory: input.repository.worktree,
-                        message: `Failed to remove ${file}`,
-                        cause,
-                      }),
-                  ),
-                )
-              }),
-            { discard: true },
-          ),
+          Effect.gen(function* () {
+            const entries = yield* Effect.forEach(input.files, ([file, tree]) =>
+              hasEntry(input.repository, tree, file).pipe(
+                Effect.map((present) => ({ file, tree, present, depth: file.split("/").length })),
+              ),
+            )
+            // Remove descendants before any restoration can replace their ancestor with a symlink or file.
+            yield* Effect.forEach(
+              entries.toSorted(
+                (a, b) => Number(a.present) - Number(b.present) || (a.present ? a.depth - b.depth : b.depth - a.depth),
+              ),
+              ({ file, tree, present }) =>
+                Effect.gen(function* () {
+                  if (present) {
+                    // Re-index the restored content without foreign alternates so future local captures can read it.
+                    yield* repositoryOperation("restore", input.repository, [
+                      "--literal-pathspecs",
+                      "restore",
+                      `--source=${tree}`,
+                      "--worktree",
+                      "--",
+                      file,
+                    ])
+                    yield* repositoryOperation(
+                      "restore",
+                      new Repository({ ...input.repository, objectDirectories: undefined }),
+                      ["--literal-pathspecs", "add", "--force", "--sparse", "--", file],
+                    )
+                    return
+                  }
+                  yield* fs.remove(path.join(input.repository.worktree, file), { recursive: true, force: true }).pipe(
+                    Effect.mapError(
+                      (cause) =>
+                        new OperationError({
+                          operation: "restore",
+                          directory: input.repository.worktree,
+                          message: `Failed to remove ${file}`,
+                          cause,
+                        }),
+                    ),
+                  )
+                  yield* repositoryOperation("restore", input.repository, [
+                    "update-index",
+                    "--force-remove",
+                    "--",
+                    file,
+                  ])
+                }),
+              { discard: true },
+            )
+          }),
         ),
     )
 
@@ -690,6 +777,8 @@ const layer = Layer.effect(
       worktree: { create: worktreeCreate, remove: worktreeRemove, list: worktreeList },
       index: { refresh, ignored },
       tree: {
+        exists: treeExists,
+        retain,
         capture: captureTree,
         write: writeTree,
         files: treeFiles,

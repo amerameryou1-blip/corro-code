@@ -105,6 +105,46 @@ describe("Git worktrees", () => {
 })
 
 describe("Git trees", () => {
+  it.live("retains borrowed tree objects once for restoration without the source repository", () =>
+    Effect.gen(function* () {
+      const root = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+      )
+      const source = AbsolutePath.make(path.join(root.path, "source"))
+      const destination = AbsolutePath.make(path.join(root.path, "destination"))
+      yield* Effect.promise(async () => {
+        await fs.mkdir(source)
+        await fs.mkdir(destination)
+        await initRepo(source)
+        await Bun.write(path.join(source, "file.txt"), "Borrowed committed content.\n")
+        await $`git add .`.cwd(source).quiet()
+        await $`git commit -qm initial`.cwd(source).quiet()
+      })
+      const git = yield* Git.Service
+      const seed = yield* git.repo.discover(source)
+      if (!seed) throw new Error("Repository not found")
+      const repository = yield* git.repo.create({
+        worktree: source,
+        gitDirectory: AbsolutePath.make(path.join(root.path, "snapshot storage")),
+        seed,
+      })
+      const before = yield* git.tree.capture({ repository, scopes: [RelativePath.make(".")] })
+      yield* git.tree.retain({ repository, trees: [before, before] })
+      yield* Effect.promise(() => Bun.write(path.join(source, "file.txt"), "Snapshot-only content.\n"))
+      const after = yield* git.tree.capture({ repository, scopes: [RelativePath.make(".")] })
+      yield* git.tree.retain({ repository, trees: [before, after] })
+      const packs = yield* Effect.promise(() => fs.readdir(path.join(repository.gitDirectory, "objects/pack")))
+      yield* git.tree.retain({ repository, trees: [before, after] })
+      expect(yield* Effect.promise(() => fs.readdir(path.join(repository.gitDirectory, "objects/pack")))).toEqual(packs)
+      yield* Effect.promise(() => fs.rm(source, { recursive: true }))
+      const moved = new Git.Repository({ ...repository, worktree: destination })
+      yield* git.tree.restore({ repository: moved, files: new Map([[RelativePath.make("file.txt"), before]]) })
+      expect(yield* read(path.join(destination, "file.txt"))).toBe("Borrowed committed content.\n")
+      yield* git.tree.restore({ repository: moved, files: new Map([[RelativePath.make("file.txt"), after]]) })
+      expect(yield* read(path.join(destination, "file.txt"))).toBe("Snapshot-only content.\n")
+    }),
+  )
   ;[0, 1, 128].forEach((exitCode) => {
     it.live(`refresh handles check-ignore exit ${exitCode}`, () =>
       Effect.gen(function* () {

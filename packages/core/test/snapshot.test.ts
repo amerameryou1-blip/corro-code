@@ -14,6 +14,76 @@ import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
 describe("Snapshot", () => {
+  for (const transition of ["symlink", "file"] as const) {
+    testEffect(Layer.empty).live(`restores directory/${transition} transitions without touching external files`, () =>
+      Effect.acquireUseRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) =>
+          Effect.gen(function* () {
+            const project = path.join(tmp.path, "project")
+            const assets = path.join(project, "assets")
+            const external = path.join(tmp.path, "external")
+            const leaf = transition === "symlink" ? "assets/logo.svg" : "assets/nested/logo.svg"
+            yield* Effect.promise(async () => {
+              await fs.mkdir(project)
+              await fs.mkdir(external)
+              await Bun.write(path.join(external, "logo.svg"), "External content must survive.\n")
+              if (transition === "symlink") await fs.symlink(external, assets, "dir")
+              if (transition === "file") {
+                await fs.mkdir(path.dirname(path.join(project, leaf)), { recursive: true })
+                await Bun.write(path.join(project, leaf), "Directory content.\n")
+              }
+              await initGit(project)
+            })
+            yield* Effect.gen(function* () {
+              const snapshot = yield* Snapshot.Service
+              const before = yield* snapshot.capture()
+              if (!before) throw new Error("Initial snapshot missing")
+              yield* Effect.promise(async () => {
+                await fs.rm(assets, { recursive: true })
+                if (transition === "file") await Bun.write(assets, "File content.\n")
+                if (transition === "symlink") {
+                  await fs.mkdir(assets)
+                  await Bun.write(path.join(project, leaf), "Directory content.\n")
+                }
+              })
+              const after = yield* snapshot.capture()
+              if (!after) throw new Error("Changed snapshot missing")
+              const files = yield* snapshot.files({ from: before, to: after })
+              expect(files).toEqual([RelativePath.make("assets"), RelativePath.make(leaf)])
+              const restored = yield* snapshot
+                .restore({ files: new Map(files.map((file) => [file, before])) })
+                .pipe(Effect.exit)
+              expect(yield* Effect.promise(() => Bun.file(path.join(external, "logo.svg")).exists())).toBe(true)
+              expect(yield* read(path.join(external, "logo.svg"))).toBe("External content must survive.\n")
+              yield* restored
+              if (transition === "symlink") {
+                expect(yield* Effect.promise(() => fs.readlink(assets))).toBe(external)
+                yield* Effect.promise(async () => {
+                  await fs.rm(assets)
+                  await fs.mkdir(assets)
+                })
+                yield* snapshot.restore({
+                  files: new Map([
+                    [RelativePath.make("assets"), before],
+                    [RelativePath.make(leaf), after],
+                  ]),
+                })
+                expect(yield* read(path.join(external, "logo.svg"))).toBe("External content must survive.\n")
+                expect(yield* Effect.promise(async () => (await fs.lstat(assets)).isDirectory())).toBe(true)
+                expect(yield* read(path.join(project, leaf))).toBe("Directory content.\n")
+                return
+              }
+              expect(yield* read(path.join(project, leaf))).toBe("Directory content.\n")
+              yield* snapshot.restore({ files: new Map(files.toReversed().map((file) => [file, after])) })
+              expect(yield* read(assets)).toBe("File content.\n")
+            }).pipe(Effect.provide(snapshotLayer(tmp.path, project)))
+          }),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      ),
+    )
+  }
+
   testEffect(Layer.empty).live("keeps lazy repository discovery after the first caller is interrupted", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
@@ -119,8 +189,46 @@ describe("Snapshot", () => {
             const plan = new Map([[RelativePath.make("scope/tracked.txt"), before]])
             yield* snapshot.restore({ files: plan })
             expect(yield* read(path.join(location, "tracked.txt"))).toBe("one\n")
+            yield* Effect.promise(() => fs.symlink("loop", path.join(location, "loop")))
+            expect(
+              yield* snapshot
+                .restore({ files: new Map([[RelativePath.make("scope/loop/file.txt"), before]]) })
+                .pipe(Effect.flip),
+            ).toMatchObject({
+              operation: "restore",
+              cause: { reason: { cause: { code: "ELOOP" } } },
+            })
             expect(yield* read(path.join(location, "added.txt"))).toBe("added\n")
             expect(yield* read(path.join(project, "outside.txt"))).toBe("changed outside\n")
+            const error = yield* snapshot
+              .restore({
+                files: new Map([[RelativePath.make("../escape.txt"), before]]),
+              })
+              .pipe(Effect.flip)
+            expect(error.message).toContain("Path escapes the project")
+            expect(yield* Effect.promise(() => Bun.file(path.join(tmp.path, "escape.txt")).exists())).toBe(false)
+            expect(
+              yield* snapshot
+                .restore({
+                  files: new Map([
+                    [
+                      RelativePath.make("scope/tracked.txt"),
+                      Snapshot.ID.make(`snapshot:../${"0".repeat(40)}/${"0".repeat(40)}`),
+                    ],
+                  ]),
+                })
+                .pipe(Effect.flip),
+            ).toMatchObject({ operation: "restore", message: "Invalid snapshot reference" })
+            yield* Effect.promise(async () => {
+              await Bun.write(path.join(tmp.path, "target.txt"), "Keep the external target.\n")
+              await fs.symlink(path.join(tmp.path, "target.txt"), path.join(location, "link.txt"))
+            })
+            yield* snapshot.restore({ files: new Map([[RelativePath.make("scope/link.txt"), before]]) })
+            expect(yield* Effect.promise(() => Bun.file(path.join(location, "link.txt")).exists())).toBe(false)
+            expect(yield* read(path.join(tmp.path, "target.txt"))).toBe("Keep the external target.\n")
+            yield* Effect.promise(() => fs.rm(location, { recursive: true }))
+            yield* snapshot.restore({ files: plan })
+            expect(yield* read(path.join(location, "tracked.txt"))).toBe("one\n")
           }).pipe(Effect.provide(layer))
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
@@ -214,8 +322,20 @@ describe("Snapshot", () => {
                 const snapshot = yield* Snapshot.Service
                 return yield* snapshot.capture()
               }).pipe(Effect.provide(snapshotLayer(tmp.path, directory)))
-            expect(yield* capture(project)).toBeDefined()
+            yield* Effect.promise(() => Bun.write(path.join(project, "tracked.txt"), "Uncommitted source content.\n"))
+            const captured = yield* capture(project)
+            if (!captured) throw new Error("Snapshot missing")
             expect(yield* capture(linked)).toBeDefined()
+            yield* Effect.gen(function* () {
+              const snapshot = yield* Snapshot.Service
+              expect(
+                yield* snapshot.diff({
+                  from: captured,
+                  to: Snapshot.ID.make(captured.slice(captured.lastIndexOf("/") + 1)),
+                }),
+              ).toEqual([])
+              expect(yield* read(path.join(linked, "tracked.txt"))).toBe("main\n")
+            }).pipe(Effect.provide(snapshotLayer(tmp.path, linked)))
 
             const projectID = yield* Effect.gen(function* () {
               return (yield* Location.Service).project.id
