@@ -12,6 +12,7 @@ import { OpenAIImage } from "./utils/openai-image.js"
 import { ResponsesHostedTools } from "./utils/responses-hosted-tools.js"
 import { ToolSchemaProjection } from "./utils/tool-schema.js"
 import { OpenResponsesChannel } from "./open-responses-channel.js"
+import { ResponsesCompaction } from "./utils/responses-compaction.js"
 
 const ADAPTER = "openai-responses"
 const NAME = "OpenAI Responses"
@@ -245,6 +246,7 @@ export const transport = channelTransport({
 })
 
 export const route = Route.make({
+  compact: ResponsesCompaction.execute,
   id: ADAPTER,
   provider: "openai",
   providerMetadataKey: "openai",

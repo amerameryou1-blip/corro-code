@@ -91,6 +91,12 @@ export class Usage extends Schema.Class<Usage>("AI.Usage")({
 
 export type UsageInput = Usage | ConstructorParameters<typeof Usage>[0]
 
+/** A replacement context window. Replace prior messages with `message`; do not append it. */
+export class CompactionResponse extends Schema.Class<CompactionResponse>("LLM.CompactionResponse")({
+  message: Message,
+  usage: Schema.optional(Usage),
+}) {}
+
 export const StepStart = Schema.Struct({
   type: Schema.tag("step-start"),
   index: Schema.Number,

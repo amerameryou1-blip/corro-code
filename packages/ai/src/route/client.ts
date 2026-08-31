@@ -13,6 +13,7 @@ import * as ProviderShared from "../protocols/shared.js"
 import type { ProtocolID, ProviderOptions } from "../schema/index.js"
 import {
   AIError,
+  CompactionResponse,
   AIErrorReason,
   GenerationOptions,
   HttpOptions,
@@ -35,6 +36,7 @@ export interface RouteBody<Body> {
 }
 
 export interface Route<Body, Prepared = unknown> {
+  readonly compact?: CompactOperation
   readonly id: string
   readonly provider?: ProviderID
   /** ProviderMetadata namespace emitted and consumed by this route. */
@@ -150,6 +152,10 @@ export const httpOptions = (input: HttpOptionsInput | undefined) => {
 }
 
 export interface Interface {
+  readonly compact: (
+    request: LLMRequest,
+    options?: Pick<StreamOptions, "http">,
+  ) => Effect.Effect<CompactionResponse, AIError>
   readonly stream: StreamMethod
   readonly generate: GenerateMethod
 }
@@ -166,6 +172,12 @@ export interface StreamMethod {
 export interface GenerateMethod {
   (request: LLMRequest, options?: StreamOptions): Effect.Effect<LLMResponse, AIError>
 }
+
+export type CompactOperation = (
+  request: LLMRequest,
+  executor: RequestExecutor.Interface,
+  options?: Pick<StreamOptions, "http">,
+) => Effect.Effect<CompactionResponse, AIError>
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/LLMClient") {}
 
@@ -187,6 +199,7 @@ const resolveRequestOptions = (request: LLMRequest) => {
 }
 
 export interface MakeInput<Body, Frame, Event, State> {
+  readonly compact?: CompactOperation
   /** Route id used in diagnostics and prepared request metadata. */
   readonly id: string
   /** Provider identity for route-owned model construction. */
@@ -208,6 +221,7 @@ export interface MakeInput<Body, Frame, Event, State> {
 }
 
 export interface MakeTransportInput<Body, Prepared, Frame, Event, State> {
+  readonly compact?: CompactOperation
   /** Route id used in diagnostics and prepared request metadata. */
   readonly id: string
   /** Provider identity for route-owned model construction. */
@@ -283,6 +297,7 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
 
   const build = (routeInput: BuiltRouteInput): Route<Body, Prepared> => {
     const route: Route<Body, Prepared> = {
+      compact: routeInput.compact,
       id: routeInput.id,
       provider: routeInput.provider === undefined ? undefined : ProviderID.make(routeInput.provider),
       providerMetadataKey: routeInput.providerMetadataKey,
@@ -435,6 +450,7 @@ export function make<Body, Prepared, Frame, Event, State>(
   if ("transport" in input) return makeFromTransport(input)
   const protocol = input.protocol
   return makeFromTransport({
+    compact: input.compact,
     id: input.id,
     provider: input.provider,
     providerMetadataKey: input.providerMetadataKey,
@@ -510,6 +526,15 @@ export function generate(request: LLMRequest, options?: StreamOptions): Effect.E
   })
 }
 
+export const compact = (
+  request: LLMRequest,
+  options?: Pick<StreamOptions, "http">,
+): Effect.Effect<CompactionResponse, AIError, Service> =>
+  Effect.gen(function* () {
+    const client = yield* Service
+    return yield* client.compact(request, options)
+  })
+
 export const streamRequest = (request: LLMRequest, options?: StreamOptions) =>
   Stream.unwrap(
     Effect.gen(function* () {
@@ -520,16 +545,33 @@ export const streamRequest = (request: LLMRequest, options?: StreamOptions) =>
 export const layer: Layer.Layer<Service, never, RequestExecutor.Service> = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const stream = streamRequestWith({
-      http: yield* RequestExecutor.Service,
+    const executor = yield* RequestExecutor.Service
+    const stream = streamRequestWith({ http: executor })
+    return Service.of({
+      stream,
+      generate: generateWith(stream),
+      compact: (request, options) =>
+        Effect.suspend(() => {
+          const operation = request.model.route.compact
+          if (!operation)
+            return ProviderShared.invalidRequest(
+              `${request.model.provider}/${request.model.route.id} does not support explicit compaction`,
+            )
+          const resolved = resolveRequestOptions(request)
+          return operation(
+            LLMRequest.update(resolved, sanitizeSurrogates({ ...LLMRequest.input(resolved), model: undefined })),
+            executor,
+            options,
+          )
+        }),
     })
-    return Service.of({ stream, generate: generateWith(stream) })
   }),
 )
 
 export const Route = { make } as const
 
 export const LLMClient = {
+  compact,
   Service,
   layer,
   stream,

@@ -7,6 +7,7 @@ import * as OpenAICompatibleChat from "../protocols/openai-compatible-chat.js"
 import * as OpenAIChat from "../protocols/openai-chat.js"
 import { OpenResponsesChannel } from "../protocols/open-responses-channel.js"
 import { XAIResponses } from "../protocols/xai-responses.js"
+import { ResponsesCompaction } from "../protocols/utils/responses-compaction.js"
 import { XAIImages } from "../protocols/xai-images.js"
 import type { OpenAIOptionsInput } from "./openai-options.js"
 import type { ProviderPackage } from "../provider-package.js"
@@ -32,6 +33,7 @@ export type { XAIImageOptions } from "../protocols/xai-images.js"
 const RESPONSES_WEBSOCKET_ROTATE_AFTER_MS = 24 * 60 * 1000
 
 const responsesRoute = Route.make({
+  compact: ResponsesCompaction.execute,
   id: "openai-responses",
   provider: id,
   providerMetadataKey: "xai",

@@ -155,7 +155,7 @@ export const CompactionItem = Schema.Struct({
   encrypted_content: Schema.String,
 })
 
-export const InputItem = Schema.Union([
+const InputItemSchema = Schema.Union([
   CompactionItem,
   Schema.Struct({ role: Schema.tag("system"), content: Schema.String }),
   Schema.Struct({ role: Schema.tag("developer"), content: Schema.String }),
@@ -182,6 +182,8 @@ export const InputItem = Schema.Union([
   }),
   HostedToolItem,
 ])
+// Compact returns a canonical window, including nested provider fields. Validate without stripping them.
+export const InputItem = Schema.declare<typeof InputItemSchema.Type>(Schema.is(InputItemSchema))
 type OpenResponsesInputItem = Schema.Schema.Type<typeof InputItem>
 export type ExtendedHostedToolItem = {
   readonly type: string
@@ -274,7 +276,7 @@ const OpenResponsesBody = Schema.Struct({
 })
 export type OpenResponsesBody = Schema.Schema.Type<typeof OpenResponsesBody>
 
-const OpenResponsesUsage = Schema.Struct({
+export const OpenResponsesUsage = Schema.Struct({
   input_tokens: Schema.optional(Schema.Number),
   input_tokens_details: optionalNull(
     Schema.Struct({
@@ -626,9 +628,14 @@ const lowerMessages = Effect.fn("OpenResponses.lowerMessages")(function* (reques
             return yield* ProviderShared.invalidRequest(
               "Compaction state must be replayed to its originating provider and API",
             )
-          input.push(
-            ...(yield* ProviderShared.validateWith(Schema.decodeUnknownEffect(Schema.Array(InputItem)))(part.value)),
+          const items = yield* ProviderShared.validateWith(Schema.decodeUnknownEffect(Schema.Array(Schema.Unknown)))(
+            part.value,
           )
+          for (const item of items) {
+            const replay = Schema.is(InputItem)(item) ? item : extension.lowerHostedToolItem?.(item)
+            if (!replay) return yield* ProviderShared.invalidRequest("Unsupported item in compacted context window")
+            input.push(replay)
+          }
           continue
         }
         if (part.type === "text") {
@@ -798,7 +805,7 @@ export const fromRequest = Effect.fn("OpenResponses.fromRequest")(function* (req
 // cached-read and cache-write subsets, and `output_tokens` (inclusive total)
 // with a `reasoning_tokens` subset. Pass the totals through and derive the
 // non-cached breakdown.
-const mapUsage = (usage: OpenResponsesUsage | null | undefined, providerMetadataKey: string) => {
+export const mapUsage = (usage: OpenResponsesUsage | null | undefined, providerMetadataKey: string) => {
   if (!usage) return undefined
   const cached = usage.input_tokens_details?.cached_tokens
   const cacheWrite = usage.input_tokens_details?.cache_write_tokens
