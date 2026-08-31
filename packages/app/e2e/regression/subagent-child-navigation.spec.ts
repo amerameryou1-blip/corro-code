@@ -36,6 +36,22 @@ test("returns to the parent session with Escape", async ({ page }) => {
   await Promise.all([expect(page).toHaveURL(sessionHref(parentID)), expectSessionTitle(page, parentTitle)])
 })
 
+test("stops the viewed running subagent with Ctrl+D", async ({ page }) => {
+  await setup(page, undefined, { [childID]: { type: "running" } })
+  await openChildFromParent(page)
+  await expectSessionTitle(page, taskDescription)
+  await page.keyboard.press("Control+k")
+  await expect(page.getByText("Stop subagent", { exact: true })).toBeVisible()
+  await page.keyboard.press("Escape")
+
+  const interrupted = page.waitForRequest(
+    (request) => request.method() === "POST" && new URL(request.url()).pathname === `/api/session/${childID}/interrupt`,
+  )
+  await page.keyboard.press("Control+d")
+
+  await interrupted
+})
+
 test("shows parent lineage while the child timeline loads", async ({ page }) => {
   await setup(page)
   const requested = Promise.withResolvers<void>()
@@ -145,7 +161,7 @@ test("shows the not found fallback when the viewed session is deleted", async ({
   await expect(page.getByRole("heading", { name: taskDescription })).toHaveCount(0)
 })
 
-async function setup(page: Page, events?: () => OpenCodeEvent[]) {
+async function setup(page: Page, events?: () => OpenCodeEvent[], sessionStatus?: Record<string, unknown>) {
   await mockOpenCodeServer(page, {
     directory,
     project: {
@@ -170,6 +186,7 @@ async function setup(page: Page, events?: () => OpenCodeEvent[]) {
       default: { providerID: "opencode", modelID: "claude-opus-4-6" },
     },
     sessions: [session(parentID, parentTitle, 1700000000000), childSession()],
+    sessionStatus,
     pageMessages: (sessionID) => ({ items: sessionID === parentID ? parentMessages() : [] }),
     events,
     eventRetry: events ? 16 : undefined,
