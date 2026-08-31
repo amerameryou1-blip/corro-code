@@ -40,9 +40,7 @@ test("stops the viewed running subagent with Ctrl+D", async ({ page }) => {
   await setup(page, undefined, { [childID]: { type: "running" } })
   await openChildFromParent(page)
   await expectSessionTitle(page, taskDescription)
-  await page.keyboard.press("Control+k")
-  await expect(page.getByText("Stop subagent", { exact: true })).toBeVisible()
-  await page.keyboard.press("Escape")
+  await expect(page.getByRole("button", { name: "Stop subagent", exact: true })).toBeVisible()
 
   const interrupted = page.waitForRequest(
     (request) => request.method() === "POST" && new URL(request.url()).pathname === `/api/session/${childID}/interrupt`,
