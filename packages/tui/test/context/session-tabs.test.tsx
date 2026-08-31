@@ -950,6 +950,7 @@ test("parked synthetic context does not keep a tab busy", async () => {
           payload: {
             text: "The following shell command was executed by the user",
             metadata: { source: "shell", state: "completed" },
+            resume: false,
           },
           delivery: "steer",
         },
@@ -979,6 +980,57 @@ test("parked synthetic context does not keep a tab busy", async () => {
 
     setup.emit(admitted("shell", "msg_4"))
     await wait(() => setup.tabs.status("shell").busy)
+  } finally {
+    await setup.destroy()
+  }
+})
+
+test("resumable synthetic context keeps a tab busy until execution settles", async () => {
+  const setup = await renderSessionTabs("background")
+
+  try {
+    await wait(() => setup.tabs.current() === "background")
+    setup.emit({
+      id: "evt_completion",
+      created: Date.now(),
+      type: "session.inbox.enqueued",
+      durable: { aggregateID: "background", seq: 1, version: 1 },
+      data: {
+        sessionID: "background",
+        inboxID: "msg_completion",
+        item: {
+          type: "synthetic",
+          payload: { text: "Background subagent completed" },
+          delivery: "steer",
+        },
+      },
+    })
+    await wait(() => setup.tabs.status("background").busy)
+
+    setup.emit({
+      id: "evt_background_started",
+      created: Date.now(),
+      type: "session.execution.started",
+      durable: { aggregateID: "background", seq: 2, version: 1 },
+      data: { sessionID: "background" },
+    })
+    setup.emit({
+      id: "evt_completion_delivered",
+      created: Date.now(),
+      type: "session.inbox.delivered",
+      durable: { aggregateID: "background", seq: 3, version: 1 },
+      data: { sessionID: "background", inboxID: "msg_completion" },
+    })
+    await wait(() => setup.data.session.pending.list("background").length === 0 && setup.tabs.status("background").busy)
+
+    setup.emit({
+      id: "evt_background_succeeded",
+      created: Date.now(),
+      type: "session.execution.succeeded",
+      durable: { aggregateID: "background", seq: 4, version: 1 },
+      data: { sessionID: "background" },
+    })
+    await wait(() => !setup.tabs.status("background").busy)
   } finally {
     await setup.destroy()
   }

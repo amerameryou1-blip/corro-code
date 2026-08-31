@@ -153,7 +153,12 @@ export type SessionActive = { type: "running" }
 
 export type SessionInboxDelivery = "steer" | "queue"
 
-export type SessionInboxSyntheticPayload = { text: string; description?: string; metadata?: { [x: string]: JsonValue } }
+export type SessionInboxSyntheticPayload = {
+  text: string
+  description?: string
+  metadata?: { [x: string]: JsonValue }
+  resume?: boolean
+}
 
 export type SessionInboxCompactionPayload = {}
 
@@ -161,7 +166,12 @@ export type InstructionEntryKey = string
 
 export type SessionGenerateResponse = { data: { text: string } }
 
-export type SessionInboxSyntheticPayload1 = { text: string; description?: string; metadata?: { [x: string]: any } }
+export type SessionInboxSyntheticPayload1 = {
+  text: string
+  description?: string
+  metadata?: { [x: string]: any }
+  resume?: boolean
+}
 
 export type ShellInfo = {
   id: string
