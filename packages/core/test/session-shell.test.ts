@@ -287,6 +287,11 @@ describe("Session.shell", () => {
       expect(yield* fixture.session.messages({ sessionID: fixture.created.id })).toMatchObject([
         { type: "shell", status: "killed", metadata: { background: true, reason: "user" } },
       ])
+      expect(
+        (yield* log(fixture.session, fixture.created.id).pipe(Stream.runCollect)).find(
+          (event) => event.type === "session.shell.ended",
+        ),
+      ).toMatchObject({ data: { shell: { metadata: { reason: "user" } } } })
       expect(yield* fixture.session.inbox(fixture.created.id)).toMatchObject([
         {
           type: "synthetic",
@@ -297,6 +302,22 @@ describe("Session.shell", () => {
         },
       ])
       expect(fixture.control.wakes).toEqual([])
+    }),
+  )
+
+  it.live("retains the stop result when the caller has not started waiting", () =>
+    Effect.gen(function* () {
+      const fixture = yield* setup
+      const started = yield* fixture.shell.create({
+        command: process.platform === "win32" ? "Start-Sleep -Seconds 60" : "sleep 60",
+        timeout: 0,
+      })
+      yield* Shell.stop(started.id).pipe(Effect.provideService(Shell.Service, fixture.shell))
+      expect(yield* fixture.shell.result(started)).toMatchObject({
+        info: { id: started.id, status: "killed" },
+        reason: "user",
+        capture: undefined,
+      })
     }),
   )
 

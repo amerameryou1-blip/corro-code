@@ -71,7 +71,7 @@ export interface Interface {
   // Resolves once the command reaches a terminal status, returning its final Info. Fails with
   // NotFoundError if the command is unknown or is removed before it terminates.
   readonly wait: (id: Shell.ID) => Effect.Effect<Shell.Info, NotFoundError>
-  // A known shell's terminal state and bounded tail. Missing capture remains distinct from its exit status.
+  // A created handle's terminal outcome survives removal; its output capture may no longer be available.
   readonly result: (started: Shell.Info) => Effect.Effect<ShellResult.Result>
   // Replaces the running command's timeout from now; zero clears it.
   readonly timeout: (id: Shell.ID, duration: number) => Effect.Effect<Shell.Info, NotFoundError>
@@ -142,6 +142,7 @@ const layer = () =>
       const context = yield* Effect.context()
       const runFork = Effect.runForkWith(context)
       const commands = new Map<Shell.ID, Active>()
+      const completions = new WeakMap<Info, Deferred.Deferred<Info, NotFoundError>>()
       const exitOrder: Shell.ID[] = []
 
       const outputDir = path.join(global.data, DIRECTORY, location.project.id)
@@ -237,7 +238,8 @@ const layer = () =>
       })
 
       const result = Effect.fn("Shell.result")(function* (started: Shell.Info) {
-        const terminal = yield* wait(started.id).pipe(
+        const done = completions.get(started)
+        const terminal = yield* (done ? Deferred.await(done) : wait(started.id)).pipe(
           Effect.map((info): Pick<ShellResult.Result, "info" | "reason"> => ({ info })),
           Effect.catchTag("Shell.NotFoundError", (error) =>
             Effect.succeed({
@@ -430,6 +432,8 @@ const layer = () =>
         )
 
         const command = yield* Deferred.await(ready)
+        // The original handle retains its terminal signal even if removal precedes result().
+        completions.set(command.info, command.done)
         return command.info
       })
 

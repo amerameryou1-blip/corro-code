@@ -172,7 +172,19 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
           : members.some((id) => (data.session.form.list(id)?.length ?? 0) > 0)
             ? ("question" as const)
             : (false as const),
-        busy: members.some((id) => data.session.status(id) === "running" || data.session.pending.list(id).length > 0),
+        // Quiet user-stop notices are context, not pending execution.
+        busy: members.some(
+          (id) =>
+            data.session.status(id) === "running" ||
+            data.session.pending
+              .list(id)
+              .some(
+                (item) =>
+                  item.type !== "synthetic" ||
+                  item.payload.metadata?.state !== "cancelled" ||
+                  item.payload.metadata?.reason !== "user",
+              ),
+        ),
         renaming: data.session.title.pending(session),
       }
     }

@@ -768,7 +768,7 @@ export function createData(config: CreateDataInput) {
           match.status = event.data.shell.status
           match.exit = event.data.shell.exit
           match.output = event.data.output
-          if (event.metadata) match.metadata = { ...match.metadata, ...event.metadata }
+          if (event.data.shell.metadata.reason === "user") match.metadata = { ...match.metadata, reason: "user" }
           match.time.completed = event.created
         })
         return

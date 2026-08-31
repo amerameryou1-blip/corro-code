@@ -754,10 +754,14 @@ test("projects user shell lifecycle metadata", () => {
       created: 2,
       type: "session.shell.ended",
       durable: { aggregateID: "ses_refresh", seq: 2, version: 1 },
-      metadata: { reason: "user" },
       data: {
         sessionID: "ses_refresh",
-        shell: { ...shell, status: "killed", time: { started: 1, completed: 2 } },
+        shell: {
+          ...shell,
+          status: "killed",
+          metadata: { ...shell.metadata, reason: "user" },
+          time: { started: 1, completed: 2 },
+        },
         output: { output: "", size: 0, cursor: 0, truncated: false },
       },
     })
