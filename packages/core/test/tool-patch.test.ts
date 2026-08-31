@@ -323,56 +323,39 @@ describe("PatchTool", () => {
     }),
   )
 
-  it.live("does not format a file deleted after an update", () =>
+  it.live("rejects multiple operations on the same resolved path before writing any files", () =>
     withTempTool((directory, registry) =>
       Effect.gen(function* () {
-        const target = path.join(directory, "removed.txt")
-        const formatted: string[] = []
-        formatFile = (file) =>
-          Effect.sync(() => {
-            formatted.push(file)
-            return false
-          })
+        const target = path.join(directory, "duplicate.txt")
         yield* Effect.promise(() => fs.writeFile(target, "before\n"))
-        expect(
-          yield* executeTool(
-            registry,
-            call(
-              "*** Begin Patch\n*** Update File: removed.txt\n@@\n-before\n+after\n*** Delete File: removed.txt\n*** End Patch",
-            ),
-          ),
-        ).toMatchObject({ status: "completed" })
-        expect(yield* exists(target)).toBe(false)
-        expect(formatted).toEqual([])
-      }),
-    ),
-  )
-
-  it.live("formats only the destination of a file moved after an update", () =>
-    withTempTool((directory, registry) =>
-      Effect.gen(function* () {
-        const source = path.join(directory, "old.txt")
-        const destination = path.join(directory, "moved.txt")
-        const formatted: string[] = []
-        formatFile = (file) =>
-          Effect.promise(async () => {
-            formatted.push(file)
-            await fs.writeFile(file, (await fs.readFile(file, "utf8")).toUpperCase())
-            return true
-          })
-        yield* Effect.promise(() => fs.writeFile(source, "before\n"))
-        const settled = yield* executeTool(
-          registry,
-          call(
-            "*** Begin Patch\n*** Update File: old.txt\n@@\n-before\n+updated\n*** Update File: old.txt\n*** Move to: moved.txt\n@@\n-updated\n+after\n*** End Patch",
-          ),
-        )
-        expect(settled.status).toBe("completed")
-        if (settled.status !== "completed") return
-        expect(settled.output.files[1]?.patch).toContain("+AFTER")
-        expect(yield* exists(source)).toBe(false)
-        expect(yield* Effect.promise(() => fs.readFile(destination, "utf8"))).toBe("AFTER\n")
-        expect(formatted).toEqual([destination])
+        const operations = [
+          "*** Add File: duplicate.txt\n+after",
+          "*** Update File: duplicate.txt\n@@\n-before\n+after",
+          "*** Delete File: duplicate.txt",
+        ]
+        for (const first of operations) {
+          for (const second of operations) {
+            for (const alias of ["duplicate.txt", "./duplicate.txt", target]) {
+              expect(
+                yield* executeTool(
+                  registry,
+                  call(
+                    `*** Begin Patch\n*** Add File: earlier.txt\n+earlier\n${first}\n${second.replace("duplicate.txt", alias)}\n*** End Patch`,
+                  ),
+                ),
+              ).toEqual({
+                status: "error",
+                error: {
+                  type: "tool.execution",
+                  message: `apply_patch verification failed: invalid patch: multiple operations target ${target}`,
+                },
+              })
+              expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("before\n")
+              expect(yield* exists(path.join(directory, "earlier.txt"))).toBe(false)
+            }
+          }
+        }
+        expect(assertions).toEqual([])
       }),
     ),
   )
@@ -689,17 +672,17 @@ describe("PatchTool", () => {
     ),
   )
 
-  it.live("applies successive update operations to one file", () =>
+  it.live("applies multiple chunks within one update operation", () =>
     withTempTool((directory, registry) =>
       Effect.gen(function* () {
         const target = path.join(directory, "successive.txt")
         yield* Effect.promise(() => fs.writeFile(target, "a\nb\n"))
-        yield* executeTool(
-          registry,
-          call(
-            "*** Begin Patch\n*** Update File: successive.txt\n@@\n-a\n+A\n*** Update File: successive.txt\n@@\n-b\n+B\n*** End Patch",
+        expect(
+          yield* executeTool(
+            registry,
+            call("*** Begin Patch\n*** Update File: successive.txt\n@@\n-a\n+A\n@@\n-b\n+B\n*** End Patch"),
           ),
-        )
+        ).toMatchObject({ status: "completed" })
         expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("A\nB\n")
       }),
     ),
