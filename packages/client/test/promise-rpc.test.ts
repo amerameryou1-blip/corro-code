@@ -5,11 +5,13 @@ import { ClientApi } from "@opencode-ai/protocol/client"
 import { SessionNotFoundError } from "@opencode-ai/protocol/errors"
 import { fromEndpoint } from "@opencode-ai/protocol/rpc"
 import { Event } from "@opencode-ai/schema/event"
+import { Rpc } from "@opencode-ai/schema/rpc"
 import { Session } from "@opencode-ai/schema/session"
 import { DateTime, Effect, Schema, Stream } from "effect"
 import { RpcGroup, RpcSerialization, RpcServer } from "effect/unstable/rpc"
+import { z } from "zod"
 import { ClientError, isSessionNotFoundError, type OpenCodeClient } from "../src/promise/index.js"
-import { OpenCodeRpc } from "../src/promise/rpc.js"
+import { OpenCodeRpc } from "../src/promise/websocket.js"
 
 const wire = {
   id: "ses_test",
@@ -20,6 +22,54 @@ const wire = {
   location: { directory: "/project" },
 }
 const info = Schema.decodeUnknownSync(Schema.toCodecJson(Session.Info))(wire)
+
+const Echo = Rpc.define({
+  id: "desktop/echo",
+  methods: { echo: { input: z.string(), output: z.string() } },
+  events: { updated: { schema: z.object({ count: z.number() }) } },
+})
+
+test("Promise WebSocket composes typed plugin RPC calls and shared event subscriptions", async () => {
+  await withServer(async (baseUrl, state) => {
+    const client = OpenCodeRpc.make({ baseUrl })
+    const events = client.event.subscribe()[Symbol.asyncIterator]()
+    const plugin = client.rpc(Echo)
+    const updates = plugin.events.subscribe("updated")[Symbol.asyncIterator]()
+    try {
+      const connected = events.next()
+      const update = updates.next()
+      expect((await connected).value?.type).toBe("server.connected")
+      const output: string = await plugin.echo("hello", {
+        location: { directory: "/plugin" },
+        headers: { "x-plugin": "echo" },
+      })
+      expect(output).toBe("hello")
+      expect(await client.rpc.call({ rpcID: Echo.id, method: "echo", input: "raw" })).toEqual({ output: "raw" })
+      expect(state.requests.find((request) => request.operation === "rpc.call")).toMatchObject({
+        input: {
+          params: { rpcID: Echo.id, method: "echo" },
+          query: { location: { directory: "/plugin" } },
+          payload: { input: "hello" },
+        },
+        headers: { "x-plugin": "echo" },
+      })
+      const published = await update
+      const count: number | undefined = published.value?.data.count
+      expect(count).toBe(1)
+      expect(published.value?.type).toBe(`rpc.${Echo.id}.updated`)
+      expect((await events.next()).value).toEqual(published.value)
+      expect(state.streams).toHaveLength(1)
+      await updates.return?.()
+      expect((await client.health.get()).healthy).toBe(true)
+      await events.return?.()
+      await state.streams[0]!.promise
+    } finally {
+      await updates.return?.()
+      await events.return?.()
+      await client.dispose()
+    }
+  })
+})
 
 test("Promise RPC preserves DTOs, numeric queries, optional payloads, errors, bytes and frame headers", async () => {
   await withServer(async (baseUrl, state) => {
@@ -102,6 +152,7 @@ test("iterator return, AbortSignal and disposal cancel only their owned RPC work
     try {
       const first = client.event.subscribe()[Symbol.asyncIterator]()
       expect((await first.next()).value?.type).toBe("server.connected")
+      await first.next()
       const pending = first.next()
       await first.return!()
       expect((await pending).done).toBe(true)
@@ -111,9 +162,10 @@ test("iterator return, AbortSignal and disposal cancel only their owned RPC work
       const abort = new AbortController()
       const second = client.event.subscribe({ signal: abort.signal })[Symbol.asyncIterator]()
       await second.next()
-      const blocked = second.next().catch((error: unknown) => error)
+      await second.next()
+      const blocked = second.next()
       abort.abort()
-      expect(await blocked).toBeInstanceOf(ClientError)
+      expect((await blocked).done).toBe(true)
       await state.streams[1]!.promise
 
       const mutationAbort = new AbortController()
@@ -127,6 +179,7 @@ test("iterator return, AbortSignal and disposal cancel only their owned RPC work
       expect((await client.health.get()).healthy).toBe(true)
 
       const third = client.event.subscribe()[Symbol.asyncIterator]()
+      await third.next()
       await third.next()
       const disposed = third.next().catch((error: unknown) => error)
       await client.dispose()
@@ -190,9 +243,9 @@ test("disposing an unused facade and pre-aborted calls never open a socket", asy
   const aborted = OpenCodeRpc.make(options)
   try {
     await expect(aborted.health.get({ signal: AbortSignal.abort() })).rejects.toBeInstanceOf(ClientError)
-    await expect(
-      aborted.event.subscribe({ signal: AbortSignal.abort() })[Symbol.asyncIterator]().next(),
-    ).rejects.toBeInstanceOf(ClientError)
+    expect((await aborted.event.subscribe({ signal: AbortSignal.abort() })[Symbol.asyncIterator]().next()).done).toBe(
+      true,
+    )
     expect(sockets).toBe(0)
   } finally {
     await aborted.dispose()
@@ -227,6 +280,7 @@ async function withServer(run: (baseUrl: string, state: State) => Promise<void>)
       fromEndpoint(ClientApi.groups["server.form"].endpoints["session.form.list"]),
       fromEndpoint(ClientApi.groups["server.event"].endpoints["event.subscribe"]),
       fromEndpoint(ClientApi.groups["server.fs"].endpoints["fs.read"]),
+      fromEndpoint(ClientApi.groups["server.rpc"].endpoints["rpc.call"]),
     )
     const app = yield* RpcServer.toHttpEffectWebsocket(group).pipe(
       Effect.provide(
@@ -262,14 +316,28 @@ async function withServer(run: (baseUrl: string, state: State) => Promise<void>)
             record("fs.read", input, options.headers)
             return Effect.succeed({ content: new Uint8Array([0, 255, 128]), mime: "application/octet-stream" })
           },
+          "rpc.call": (input, options) => {
+            record("rpc.call", input, options.headers)
+            return Effect.succeed({ output: input.payload.input })
+          },
           "event.subscribe": () => {
             const stopped = Promise.withResolvers<void>()
             state.streams.push(stopped)
-            return Stream.make({
-              id: Event.ID.make("evt_connected"),
-              type: "server.connected" as const,
-              data: {},
-            }).pipe(Stream.concat(Stream.never), Stream.ensuring(Effect.sync(() => stopped.resolve())))
+            return Stream.make(
+              {
+                id: Event.ID.make("evt_connected"),
+                created: 0,
+                type: "server.connected" as const,
+                data: {},
+              },
+              {
+                id: Event.ID.make("evt_plugin"),
+                created: 1,
+                type: `rpc.${Echo.id}.updated` as const,
+                location: { directory: "/plugin" },
+                data: { count: 1 },
+              },
+            ).pipe(Stream.concat(Stream.never), Stream.ensuring(Effect.sync(() => stopped.resolve())))
           },
         }),
       ),

@@ -1,331 +1,364 @@
 import { expect } from "bun:test"
-import fs from "node:fs/promises"
+import { mkdir } from "node:fs/promises"
 import path from "node:path"
-import { NodeSocket } from "@effect/platform-node"
-import { OpenCodeRpc } from "@opencode-ai/protocol/rpc"
-import { SessionNotFoundError } from "@opencode-ai/protocol/errors"
+import { Location } from "@opencode-ai/core/location"
+import { LocationServiceMap } from "@opencode-ai/core/location-services"
+import { SdkPlugins } from "@opencode-ai/core/plugin/sdk"
+import { PluginSupervisor } from "@opencode-ai/core/plugin/supervisor"
+import { Plugin } from "@opencode-ai/plugin/effect"
+import { fromPromise } from "@opencode-ai/plugin/promise/adapter"
+import { OpenCodeEvent } from "@opencode-ai/protocol/groups/event"
+import { Rpc } from "@opencode-ai/schema/rpc"
 import { AbsolutePath } from "@opencode-ai/schema/schema"
-import { Pty } from "@opencode-ai/schema/pty"
-import { Session } from "@opencode-ai/schema/session"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Queue, Schema, Scope, Stream } from "effect"
-import { HttpServer, HttpServerRequest } from "effect/unstable/http"
-import { Rpc, RpcClient, RpcGroup, RpcSerialization } from "effect/unstable/rpc"
-import { Socket } from "effect/unstable/socket"
+import { Context, Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect"
+import { HttpEffect, HttpRouter, HttpServer } from "effect/unstable/http"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
 import { it } from "../../core/test/lib/effect"
-import { ServerProcess } from "../src/process"
+import { createRoutes } from "../src/routes"
+
+type RpcEvent = Extract<OpenCodeEvent, { type: `rpc.${string}` }>
 
 const authorization = `Basic ${btoa("opencode:secret")}`
 
-const fixture = Effect.fn(function* <R extends Rpc.Any>(
-  group: RpcGroup.RpcGroup<R>,
-  transform?: ServerProcess.Transform,
-) {
+const fixture = Effect.fn(function* (plugins: readonly Plugin.Plugin[]) {
   const tmp = yield* Effect.acquireRelease(
-    Effect.promise(() => tmpdir("opencode-rpc-")),
+    Effect.promise(() => tmpdir("opencode-rpc-server-")),
     (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
   )
-  const global = path.join(tmp.path, "config")
-  const directories = [path.join(tmp.path, "first"), path.join(tmp.path, "second")]
-  yield* Effect.promise(() => Promise.all([global, ...directories].map((dir) => fs.mkdir(dir))))
-  const server = yield* ServerProcess.start<never, never>(
-    {
-      hostname: "127.0.0.1",
-      port: 0,
+  const first = path.join(tmp.path, "first")
+  const second = path.join(tmp.path, "second")
+  const config = path.join(tmp.path, "config")
+  yield* Effect.promise(() => Promise.all([first, second, config].map((directory) => mkdir(directory))))
+  const context = yield* Layer.build(
+    createRoutes({
       password: "secret",
-      app: { version: "test-version" },
       database: { path: ":memory:" },
-      events: { persist: true },
-      config: { directory: global, project: false },
-      models: { fetch: false },
-      fs: { filewatcher: false, fff: false },
-    },
-    undefined,
-    transform,
+      config: { directory: config, project: false, content: "{}" },
+      fs: { filewatcher: false },
+    }).pipe(Layer.provide(HttpServer.layerServices)),
   )
-  const url = HttpServer.formatAddress(server.address)
-  const sockets: WebSocket[] = []
-  const protocol = yield* Layer.build(
-    RpcClient.layerProtocolSocket({ retryTransientErrors: false }).pipe(
-      Layer.provide(RpcSerialization.layerJson),
-      Layer.provide(
-        Socket.layerWebSocket(new URL("/api/rpc", url).href.replace("http:", "ws:")).pipe(
-          Layer.provide(
-            Layer.succeed(Socket.WebSocketConstructor, (url) => {
-              const socket = new NodeSocket.NodeWS.WebSocket(url, {
-                headers: { authorization, origin: "http://localhost:3000" },
-              }) as unknown as WebSocket
-              sockets.push(socket)
-              return socket
-            }),
-          ),
-        ),
-      ),
-    ),
-  )
-  const rpc = yield* RpcClient.make(group).pipe(Effect.provideContext(protocol))
-  const request = (pathname: string, init?: RequestInit) =>
-    Effect.promise(() =>
-      fetch(new URL(pathname, url), {
-        ...init,
-        headers: { authorization, "content-type": "application/json", ...init?.headers },
-      }),
-    )
+  const sdk = Context.get(context, SdkPlugins.Service)
+  yield* Effect.forEach(plugins, (plugin) => sdk.register(plugin))
+  const locations = Context.get(context, LocationServiceMap.Service)
+  const handler = Context.get(context, HttpRouter.HttpRouter).asHttpEffect().pipe(HttpEffect.toWebHandlerWith(context))
   return {
-    rpc,
-    request,
-    url,
-    sockets,
-    first: { directory: AbsolutePath.make(directories[0]!) },
-    second: { directory: AbsolutePath.make(directories[1]!) },
+    first,
+    second,
+    handler,
+    boot: (directory: string) =>
+      Effect.gen(function* () {
+        const supervisor = yield* PluginSupervisor.Service
+        yield* supervisor.flush
+      }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) })))),
+    call: (
+      route: string,
+      body: unknown = {},
+      options: { directory?: string; headers?: Record<string, string>; signal?: AbortSignal } = {},
+    ) =>
+      Effect.promise(() => {
+        const url = new URL(`/api/rpc/${route}`, "http://opencode.local")
+        if (options.directory) url.searchParams.set("location[directory]", options.directory)
+        return handler(
+          new Request(url, {
+            method: "POST",
+            headers: { authorization, "content-type": "application/json", ...options.headers },
+            body: JSON.stringify(body),
+            signal: options.signal,
+          }),
+        )
+      }),
   }
 })
 
-it.live(
-  "multiplexes concurrent RPC calls and shares session state with HTTP",
-  () =>
-    Effect.gen(function* () {
-      const { rpc, request, first, sockets } = yield* fixture(OpenCodeRpc.Group)
-      const sessions = yield* Effect.all(
-        Array.from({ length: 8 }, (_, index) =>
-          rpc["session.create"]({ payload: { title: `parallel-${index}`, location: first } }),
-        ),
-        { concurrency: "unbounded" },
-      )
-      expect(new Set(sessions.map((session) => session.data.id)).size).toBe(8)
-      expect(sessions.map((session) => session.data.title)).toEqual(
-        Array.from({ length: 8 }, (_, index) => `parallel-${index}`),
-      )
-      const sessionID = sessions[0]!.data.id
-      const http = yield* request(`/api/session/${sessionID}`)
-      expect(http.status).toBe(200)
-      expect(
-        Schema.decodeUnknownSync(Schema.Struct({ data: Session.Info }))(yield* Effect.promise(() => http.json())),
-      ).toEqual(yield* rpc["session.get"]({ params: { sessionID } }))
-
-      expect(
-        yield* rpc["session.rename"]({ params: { sessionID }, payload: { title: "renamed by RPC" } }),
-      ).toBeUndefined()
-      const renamed = yield* request(`/api/session/${sessionID}`)
-      expect(yield* Effect.promise(() => renamed.json())).toMatchObject({ data: { title: "renamed by RPC" } })
-
-      expect(
-        (yield* request(`/api/session/${sessionID}/rename`, {
-          method: "POST",
-          body: JSON.stringify({ title: "renamed by HTTP" }),
-        })).status,
-      ).toBe(204)
-      expect((yield* rpc["session.get"]({ params: { sessionID } })).data.title).toBe("renamed by HTTP")
-      expect(yield* rpc["session.remove"]({ params: { sessionID } })).toBeUndefined()
-      const missing = yield* rpc["session.get"]({ params: { sessionID } }).pipe(
-        Effect.catchTag("SessionNotFoundError", Effect.succeed),
-      )
-      expect(missing).toBeInstanceOf(SessionNotFoundError)
-      expect(missing).toMatchObject({ _tag: "SessionNotFoundError", sessionID })
-      const absent = yield* request(`/api/session/${sessionID}`)
-      expect(absent.status).toBe(404)
-      expect(yield* Effect.promise(() => absent.json())).toMatchObject({ _tag: "SessionNotFoundError", sessionID })
-      expect(sockets).toHaveLength(1)
-    }).pipe(Effect.timeout("20 seconds")),
-  30_000,
-)
-
-it.live(
-  "reads binary files and MIME types at two locations over one RPC connection",
-  () =>
-    Effect.gen(function* () {
-      const { rpc, request, first, second, sockets } = yield* fixture(OpenCodeRpc.Group)
-      const filename = "space # percent% question? plus+.png"
-      const firstBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 255, 128])
-      const secondBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 127, 1, 254])
-      yield* Effect.promise(() =>
-        Promise.all([
-          Bun.write(path.join(first.directory, filename), firstBytes),
-          Bun.write(path.join(second.directory, filename), secondBytes),
-        ]),
-      )
-      const files = yield* Effect.all(
-        [first, second].map((location) => rpc["fs.read"]({ params: { path: filename }, query: {}, location })),
-        { concurrency: "unbounded" },
-      )
-      expect(files.map((file) => file.content)).toEqual([firstBytes, secondBytes])
-      expect(files.map((file) => file.mime)).toEqual(["image/png", "image/png"])
-      const query = new URLSearchParams({ "location[directory]": first.directory })
-      const http = yield* request(`/api/fs/read/${encodeURIComponent(filename)}?${query}`)
-      expect(http.status).toBe(200)
-      expect(http.headers.get("content-type")).toBe(files[0]!.mime)
-      expect(Array.from(new Uint8Array(yield* Effect.promise(() => http.arrayBuffer())))).toEqual(
-        Array.from(files[0]!.content),
-      )
-      const lists = yield* Effect.all(
-        [first, second].map((location) => rpc["fs.list"]({ query: {}, location })),
-        { concurrency: "unbounded" },
-      )
-      expect(lists.map((list) => list.location.directory)).toEqual([first.directory, second.directory])
-      expect(sockets).toHaveLength(1)
-    }).pipe(Effect.timeout("20 seconds")),
-  30_000,
-)
-
-it.live(
-  "streams the connected event and later domain events alongside unary RPC calls",
-  () =>
-    Effect.gen(function* () {
-      const { rpc, first, sockets } = yield* fixture(OpenCodeRpc.Group)
-      yield* Effect.gen(function* () {
-        const events = yield* rpc["event.subscribe"]({}, { asQueue: true })
-        expect(yield* Queue.take(events)).toMatchObject({ type: "server.connected", data: {} })
-        const created = yield* rpc["session.create"]({ payload: { title: "observed", location: first } })
-        const received = yield* Stream.fromQueue(events).pipe(
-          Stream.filter((event) => event.type === "session.created"),
-          Stream.take(1),
-          Stream.runCollect,
-        )
-        expect(received).toMatchObject([{ type: "session.created", data: { sessionID: created.data.id } }])
-      }).pipe(Effect.scoped)
-      expect(yield* rpc["health.get"]({})).toMatchObject({ healthy: true, version: "test-version" })
-      expect(sockets).toHaveLength(1)
-    }).pipe(Effect.timeout("20 seconds")),
-  30_000,
-)
-
-it.live(
-  "cancels event subscriptions without accumulating upgrade finalizers",
-  () =>
-    Effect.gen(function* () {
-      const captured = yield* Deferred.make<Scope.Scope>()
-      const { rpc, sockets } = yield* fixture(OpenCodeRpc.Group, (app) =>
+it.live("dispatches RPC wrappers with query, header and default locations and generic failures", () =>
+  Effect.gen(function* () {
+    const Echo = Rpc.define({
+      id: "transport.echo",
+      methods: {
+        echo: { input: Schema.String, output: Schema.String },
+        json: { input: Schema.Json, output: Schema.Json },
+        empty: { input: Schema.Undefined, output: Schema.Undefined },
+        fail: {
+          input: Schema.Undefined,
+          output: Schema.String,
+          errors: { rejected: Schema.Struct({ reason: Schema.String }) },
+        },
+        defect: { input: Schema.Undefined, output: Schema.String },
+        invalid: { input: Schema.Undefined, output: { type: "string" } },
+      },
+      events: {},
+    })
+    const server = yield* fixture([
+      Plugin.define({
+        id: "transport-implementer",
+        effect: (ctx) =>
+          Effect.gen(function* () {
+            const location = (yield* ctx.agent.list()).location
+            yield* ctx.rpc.register(Echo, {
+              echo: (input) => Effect.succeed(`${location.directory}:${input}`),
+              json: (input) => Effect.succeed(input),
+              empty: () => Effect.succeed(undefined),
+              fail: (_input, context) =>
+                Effect.fail(context.error("rejected", "handler failed", { reason: "declared" })),
+              defect: () => Effect.die(new Error("handler defect")),
+              invalid: () => Effect.succeed(123),
+            })
+          }).pipe(Effect.orDie),
+      }),
+    ])
+    yield* server.boot(server.first)
+    yield* server.boot(server.second)
+    yield* server.boot(process.cwd())
+    const selected = yield* server.call(
+      "transport.echo/echo",
+      { input: "selected" },
+      {
+        directory: server.first,
+        headers: { "x-opencode-directory": encodeURIComponent(server.second) },
+      },
+    )
+    expect(selected.status).toBe(200)
+    expect(yield* Effect.promise(() => selected.json())).toEqual({ output: `${server.first}:selected` })
+    const header = yield* server.call(
+      "transport.echo/echo",
+      { input: "header" },
+      {
+        headers: { "x-opencode-directory": encodeURIComponent(server.second) },
+      },
+    )
+    expect(yield* Effect.promise(() => header.json())).toEqual({ output: `${server.second}:header` })
+    const fallback = yield* server.call("transport.echo/echo", { input: "default" })
+    expect(yield* Effect.promise(() => fallback.json())).toEqual({ output: `${process.cwd()}:default` })
+    const empty = yield* server.call("transport.echo/empty")
+    expect(empty.status).toBe(200)
+    expect(yield* Effect.promise(() => empty.json())).toEqual({})
+    yield* Effect.forEach([null, false, 42, ["array"], { location: "ordinary input" }], (input) =>
+      Effect.gen(function* () {
+        const response = yield* server.call("transport.echo/json", { input })
+        expect(response.status).toBe(200)
+        expect(yield* Effect.promise(() => response.json())).toEqual({ output: input })
+      }),
+    )
+    const denied = yield* server.call("transport.echo/empty", {}, { headers: { authorization: "" } })
+    expect(denied.status).toBe(401)
+    yield* Effect.forEach(
+      [
+        {
+          route: "missing/echo",
+          body: {},
+          error: { type: "rpc.unavailable", message: "RPC is unavailable: missing" },
+        },
+        {
+          route: "transport.echo/missing",
+          body: {},
+          error: { type: "rpc.method_not_found", message: "Unknown RPC method: transport.echo.missing" },
+        },
+        {
+          route: "transport.echo/fail",
+          body: {},
+          error: { type: "rejected", message: "handler failed", data: { reason: "declared" } },
+        },
+        { route: "transport.echo/echo", body: { input: 123 }, error: { type: "rpc.invalid_input" } },
+      ],
+      (item) =>
         Effect.gen(function* () {
-          const request = yield* HttpServerRequest.HttpServerRequest
-          if (request.url === "/api/rpc") {
-            const scope = yield* Scope.Scope
-            yield* Deferred.succeed(captured, scope)
-          }
-          return yield* app
+          const response = yield* server.call(item.route, item.body)
+          expect(response.status).toBe(400)
+          expect(yield* Effect.promise(() => response.json())).toMatchObject({
+            _tag: "RpcError",
+            message: expect.any(String),
+            ...item.error,
+          })
         }),
-      )
-      yield* rpc["health.get"]({})
-      const scope = yield* Deferred.await(captured)
-      const finalizerCount = () => {
-        const state = scope.state
-        if (state._tag !== "Open") throw new Error("WebSocket upgrade scope must remain open")
-        return state.finalizers.size
-      }
-      const baseline = finalizerCount()
-      for (let index = 0; index < 5; index++) {
-        yield* Effect.gen(function* () {
-          const events = yield* rpc["event.subscribe"]({}, { asQueue: true })
-          expect(yield* Queue.take(events)).toMatchObject({ type: "server.connected" })
-          // The subscription belongs to its RPC scope even while it is active.
-          expect(finalizerCount()).toBe(baseline)
-        }).pipe(Effect.scoped)
-        expect(yield* rpc["health.get"]({})).toMatchObject({ healthy: true, version: "test-version" })
-        expect(finalizerCount()).toBe(baseline)
-      }
-      expect(sockets).toHaveLength(1)
-    }).pipe(Effect.timeout("20 seconds")),
-  30_000,
+    )
+    const defect = yield* server.call("transport.echo/defect")
+    expect(defect.status).toBe(500)
+    expect(yield* Effect.promise(() => defect.json())).toEqual({
+      _tag: "RpcInternalError",
+      type: "rpc.internal",
+      message: "handler defect",
+    })
+    const invalid = yield* server.call("transport.echo/invalid")
+    expect(invalid.status).toBe(500)
+    expect(yield* Effect.promise(() => invalid.json())).toMatchObject({
+      _tag: "RpcInternalError",
+      type: "rpc.invalid_output",
+      message: expect.any(String),
+    })
+    const malformed = yield* server.call("transport.echo/echo", "not a wrapper")
+    expect(malformed.status).toBe(400)
+    expect(yield* Effect.promise(() => malformed.json())).toMatchObject({
+      _tag: "InvalidRequestError",
+      message: expect.any(String),
+    })
+  }),
 )
 
-it.live(
-  "replays session logs and cancels a live stream without closing the RPC connection",
-  () =>
-    Effect.gen(function* () {
-      const { rpc, first, sockets } = yield* fixture(OpenCodeRpc.Group)
-      const session = yield* rpc["session.create"]({ payload: { title: "before replay", location: first } })
-      const params = { sessionID: session.data.id }
-      yield* rpc["session.rename"]({ params, payload: { title: "in replay" } })
-      const replay = yield* rpc["session.log"]({ params, query: { follow: false } }).pipe(Stream.runCollect)
-      expect(replay.map((event) => event.type)).toEqual(["session.created", "session.renamed", "log.synced"])
-      expect(replay[1]).toMatchObject({ data: { sessionID: params.sessionID, title: "in replay" } })
-      const watermark = replay.find((event) => event.type === "log.synced")!
-      expect(watermark).toMatchObject({ type: "log.synced", aggregateID: params.sessionID })
-
-      const synced = yield* Deferred.make<void>()
-      const renamed = yield* Deferred.make<void>()
-      const follow = yield* rpc["session.log"]({ params, query: { after: watermark.seq, follow: true } }).pipe(
-        Stream.runForEach((event) =>
-          event.type === "log.synced"
-            ? Deferred.succeed(synced, undefined)
-            : event.type === "session.renamed" && event.data.title === "after replay"
-              ? Deferred.succeed(renamed, undefined)
-              : Effect.void,
-        ),
-        Effect.forkScoped,
+it.live("request cancellation interrupts Effect RPC handlers and signals Promise RPC handlers", () =>
+  Effect.gen(function* () {
+    const started = yield* Deferred.make<void>()
+    const stopped = yield* Deferred.make<void>()
+    const promiseStarted = Promise.withResolvers<void>()
+    const promiseStopped = Promise.withResolvers<void>()
+    const Blocking = Rpc.define({
+      id: "blocking",
+      methods: { wait: { input: Schema.Undefined, output: Schema.Undefined } },
+      events: {},
+    })
+    const PromiseBlocking = Rpc.define({
+      id: "promise-blocking",
+      methods: { wait: { input: { type: "null" }, output: { type: "null" } } },
+      events: {},
+    })
+    const server = yield* fixture([
+      Plugin.define({
+        id: "effect-blocking",
+        effect: (ctx) =>
+          ctx.rpc
+            .register(Blocking, {
+              wait: () =>
+                Deferred.succeed(started, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.ensuring(Deferred.succeed(stopped, undefined)),
+                ),
+            })
+            .pipe(Effect.asVoid, Effect.orDie),
+      }),
+      fromPromise({
+        id: "promise-blocking",
+        async setup(ctx) {
+          await ctx.rpc.register(PromiseBlocking, {
+            wait: (_input, call) =>
+              new Promise<null>((resolve) => {
+                promiseStarted.resolve()
+                call.signal.addEventListener(
+                  "abort",
+                  () => {
+                    promiseStopped.resolve()
+                    resolve(null)
+                  },
+                  { once: true },
+                )
+              }),
+          })
+        },
+      }),
+    ])
+    yield* server.boot(server.first)
+    const controller = new AbortController()
+    const pending = yield* server
+      .call(
+        "blocking/wait",
+        {},
+        {
+          directory: server.first,
+          signal: controller.signal,
+        },
       )
-      yield* Deferred.await(synced)
-      yield* rpc["session.rename"]({ params, payload: { title: "after replay" } })
-      yield* Deferred.await(renamed)
-      yield* Fiber.interrupt(follow)
-      expect((yield* rpc["session.get"]({ params })).data.title).toBe("after replay")
-      expect(yield* rpc["health.get"]({})).toMatchObject({ healthy: true })
-      expect(sockets).toHaveLength(1)
-    }).pipe(Effect.timeout("20 seconds")),
-  30_000,
+      .pipe(Effect.forkScoped)
+    yield* Deferred.await(started)
+    controller.abort()
+    yield* Deferred.await(stopped)
+    expect((yield* Fiber.join(pending)).status).not.toBe(400)
+    const promiseController = new AbortController()
+    const promisePending = yield* server
+      .call(
+        "promise-blocking/wait",
+        { input: null },
+        {
+          directory: server.first,
+          signal: promiseController.signal,
+        },
+      )
+      .pipe(Effect.forkScoped)
+    yield* Effect.promise(() => promiseStarted.promise)
+    promiseController.abort()
+    yield* Effect.promise(() => promiseStopped.promise)
+    expect((yield* Fiber.join(promisePending)).status).not.toBe(400)
+  }),
 )
 
-it.live(
-  "validates malformed RPC payloads on the server without poisoning the connection",
-  () =>
-    Effect.gen(function* () {
-      // The permissive client codec sends invalid data instead of rejecting it before transport.
-      const { rpc, request, first, sockets } = yield* fixture(
-        RpcGroup.make(
-          Rpc.make("session.create", { payload: Schema.Unknown, success: Schema.Unknown, error: Schema.Unknown }),
-          Rpc.make("health.get", { payload: Schema.Unknown, success: Schema.Unknown, error: Schema.Unknown }),
-        ),
+it.live("public SSE and generic native plugin subscriptions receive RPC events across locations", () =>
+  Effect.gen(function* () {
+    const Updates = Rpc.define({
+      id: "updates",
+      methods: { emit: { input: Schema.String, output: Schema.Undefined } },
+      events: { updated: { schema: Schema.Struct({ text: Schema.String }) } },
+    })
+    const received: RpcEvent[] = []
+    const observed = yield* Deferred.make<void>()
+    const server = yield* fixture([
+      Plugin.define({
+        id: "updates-implementer",
+        effect: (ctx) =>
+          Effect.gen(function* () {
+            const registration = yield* ctx.rpc.register(Updates, {
+              emit: (input): Effect.Effect<undefined> =>
+                registration.events.emit("updated", { text: input }).pipe(Effect.as(undefined), Effect.orDie),
+            })
+          }).pipe(Effect.orDie),
+      }),
+      Plugin.define({
+        id: "native-observer",
+        effect: (ctx) =>
+          Effect.gen(function* () {
+            const directory = (yield* ctx.agent.list()).location.directory
+            // One observer instance should see both locations, just like the public native stream.
+            if (path.basename(directory) !== "first") return
+            yield* ctx.event.subscribe().pipe(
+              Stream.filter((event): event is RpcEvent => event.type === "rpc.updates.updated"),
+              Stream.take(2),
+              Stream.runForEach((event) => Effect.sync(() => received.push(event))),
+              Effect.andThen(Deferred.succeed(observed, undefined)),
+              Effect.forkScoped({ startImmediately: true }),
+            )
+          }).pipe(Effect.orDie),
+      }),
+    ])
+    yield* server.boot(server.first)
+    yield* server.boot(server.second)
+    const response = yield* Effect.promise(() =>
+      server.handler(
+        new Request("http://opencode.local/api/event", {
+          headers: { authorization, "x-opencode-directory": encodeURIComponent(server.first) },
+        }),
+      ),
+    )
+    expect(response.status).toBe(200)
+    if (!response.body) throw new Error("Expected an SSE body")
+    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
+    yield* Effect.addFinalizer(() => Effect.promise(() => reader.cancel()))
+    expect((yield* Effect.promise(() => reader.read())).value).toContain('"type":"server.connected"')
+    const first = yield* server.call("updates/emit", { input: "first" }, { directory: server.first })
+    const second = yield* server.call("updates/emit", { input: "second" }, { directory: server.second })
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(200)
+    const events: RpcEvent[] = []
+    while (events.length < 2) {
+      const chunk = yield* Effect.promise(() => reader.read())
+      if (chunk.done) throw new Error("Event stream closed before RPC events arrived")
+      events.push(
+        ...chunk.value
+          .split("\n\n")
+          .filter((frame) => frame.startsWith("data: "))
+          .map((frame) => Schema.decodeUnknownSync(Schema.fromJsonString(OpenCodeEvent))(frame.slice(6)))
+          .filter((event): event is RpcEvent => event.type === "rpc.updates.updated"),
       )
-      const invalid = yield* rpc["session.create"]({ payload: { title: 42, location: first } }).pipe(Effect.exit)
-      expect(Exit.isFailure(invalid)).toBe(true)
-      if (Exit.isFailure(invalid)) expect(Cause.pretty(invalid.cause)).toContain("title")
-      const http = yield* request("/api/session", {
-        method: "POST",
-        body: JSON.stringify({ title: 42, location: first }),
-      })
-      expect(http.status).toBe(400)
-      const list = yield* request("/api/session")
-      expect(yield* Effect.promise(() => list.json())).toMatchObject({ data: [] })
-      expect(yield* rpc["health.get"]({})).toMatchObject({ healthy: true })
-      expect(sockets).toHaveLength(1)
-    }).pipe(Effect.timeout("20 seconds")),
-  30_000,
-)
-
-it.live(
-  "rejects missing credentials and untrusted browser origins before upgrading RPC",
-  () =>
-    Effect.gen(function* () {
-      const { rpc, url } = yield* fixture(OpenCodeRpc.Group)
-      const denied = yield* Effect.all(
-        [
-          new Headers(),
-          new Headers({ authorization: `Basic ${btoa("opencode:wrong")}` }),
-          new Headers({ authorization, origin: "https://untrusted.example" }),
-          new Headers({ authorization, origin: "null" }),
-        ].map((headers) => Effect.promise(() => fetch(new URL("/api/rpc", url), { headers }))),
-        { concurrency: "unbounded" },
-      )
-      expect(denied.map((response) => response.status)).toEqual([401, 401, 403, 403])
-      expect(denied.every((response) => !response.headers.has("sec-websocket-accept"))).toBe(true)
-      expect(yield* rpc["health.get"]({})).toMatchObject({ healthy: true })
-    }).pipe(Effect.timeout("20 seconds")),
-  30_000,
-)
-
-it.live(
-  "forwards declared PTY ticket headers to the shared business handler",
-  () =>
-    Effect.gen(function* () {
-      const { rpc, first } = yield* fixture(OpenCodeRpc.Group)
-      const input = { params: { ptyID: Pty.ID.make("pty_missing") }, query: {}, location: first }
-      const denied = yield* rpc["pty.connectToken"]({ ...input, headers: {} }).pipe(
-        Effect.catchTag("ForbiddenError", Effect.succeed),
-      )
-      expect(denied).toMatchObject({ _tag: "ForbiddenError" })
-      const missing = yield* rpc["pty.connectToken"]({ ...input, headers: { "x-opencode-ticket": "1" } }).pipe(
-        Effect.catchTag("PtyNotFoundError", Effect.succeed),
-      )
-      expect(missing).toMatchObject({ _tag: "PtyNotFoundError", ptyID: input.params.ptyID })
-    }).pipe(Effect.timeout("20 seconds")),
-  30_000,
+    }
+    yield* Deferred.await(observed)
+    expect(events).toMatchObject([
+      {
+        type: "rpc.updates.updated",
+        location: { directory: server.first },
+        data: { text: "first" },
+      },
+      {
+        type: "rpc.updates.updated",
+        location: { directory: server.second },
+        data: { text: "second" },
+      },
+    ])
+    expect(received).toEqual(events)
+  }),
+  15_000,
 )

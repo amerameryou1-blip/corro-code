@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { base64Encode } from "@opencode-ai/util/encode"
 import { currentSession } from "../utils/mock-server"
+import pkg from "../../package.json" with { type: "json" }
 
 const server = `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"}`
 const sessionA = session("ses_tab_a", "Tab A session")
@@ -68,7 +69,7 @@ test("keyboard navigation follows the visible tab order", async ({ page }) => {
   await expect(page).toHaveURL(new RegExp(`${hrefC.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`))
 })
 
-test("cramped tabs only show the close button for the active tab", async ({ page }) => {
+test("mobile drawer exposes close controls and navigates between tabs", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 720 })
   await mockServer(page)
   await page.addInitScript(
@@ -88,19 +89,32 @@ test("cramped tabs only show the close button for the active tab", async ({ page
   const hrefA = `/server/${base64Encode(server)}/session/${sessionA.id}`
   const hrefB = `/server/${base64Encode(server)}/session/${sessionB.id}`
   await page.goto(hrefA)
+  await page.getByRole("button", { name: "Tabs", exact: true }).click()
 
   const tabA = page.locator(`[data-titlebar-tab-slot]:has(a[href="${hrefA}"])`)
   const tabB = page.locator(`[data-titlebar-tab-slot]:has(a[href="${hrefB}"])`)
   await expect(tabA).toHaveAttribute("data-active", "true")
   await expect(tabB).toBeVisible()
   await expect(tabA.locator('[data-slot="tab-close"]')).toBeVisible()
-  await expect(tabB.locator('[data-slot="tab-close"]')).toBeHidden()
+  await expect(tabB.locator('[data-slot="tab-close"]')).toBeVisible()
 
   await tabB.locator(`a[href="${hrefB}"]`).click()
 
   await expect(page).toHaveURL(new RegExp(`${hrefB.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`))
-  await expect(tabA.locator('[data-slot="tab-close"]')).toBeHidden()
+  await expect(page.getByRole("dialog", { name: "Tabs", exact: true })).toBeHidden()
+  await page.getByRole("button", { name: "Tabs", exact: true }).click()
+  await expect(tabA.locator('[data-slot="tab-close"]')).toBeVisible()
   await expect(tabB.locator('[data-slot="tab-close"]')).toBeVisible()
+
+  for (const direction of ["ltr", "rtl"]) {
+    await page.evaluate((direction) => document.documentElement.setAttribute("dir", direction), direction)
+    await page.setViewportSize({ width: 450, height: 720 })
+    await expect(tabA).toBeVisible()
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await expect(tabA.locator("[data-titlebar-tab]")).toHaveAttribute("data-title-overflow", "false")
+    await page.setViewportSize({ width: 450, height: 720 })
+    await page.getByRole("button", { name: "Tabs", exact: true }).click()
+  }
 })
 
 test("vertical tabs show project details, resize, and navigate", async ({ page }) => {
@@ -175,6 +189,9 @@ test("appearance experimental setting switches tab orientation", async ({ page }
 
   const settings = page.getByTestId("settings-screen")
   await expect(settings).toBeVisible()
+  const version = settings.getByRole("tablist").getByText(`v${pkg.version}`, { exact: true })
+  await expect(settings.getByRole("tablist").getByText("OpenCode Desktop", { exact: true })).toBeInViewport()
+  await expect(version).toBeInViewport()
   await settings.getByRole("tab", { name: "Appearance" }).click()
   await expect(settings.getByRole("heading", { name: "Experimental" })).toBeVisible()
 
@@ -190,13 +207,47 @@ test("appearance experimental setting switches tab orientation", async ({ page }
 
   await page.setViewportSize({ width: 920, height: 720 })
   await expect(page.locator('[data-slot="vertical-tabs-sidebar"]')).toHaveCSS("width", "260px")
-  await expect(settings.getByRole("tablist")).toHaveCSS("width", "160px")
+  await expect(settings.getByRole("tablist")).toBeHidden()
+  await expect(settings.getByRole("button", { name: "Appearance", exact: true })).toBeVisible()
 
   await page.setViewportSize({ width: 800, height: 720 })
-  await expect(settings.getByRole("tablist")).toHaveCSS("width", "160px")
+  await expect(settings.getByRole("tablist")).toBeHidden()
+  await expect(settings.getByRole("button", { name: "Appearance", exact: true })).toBeVisible()
+
+  await page.setViewportSize({ width: 390, height: 720 })
+  await expect(settings.getByRole("button", { name: "Appearance", exact: true })).toBeVisible()
+  await settings.evaluate((element) => element.setAttribute("dir", "rtl"))
+  await expect(settings.getByRole("button", { name: "Appearance", exact: true })).toBeInViewport()
+
+  await page.setViewportSize({ width: 390, height: 360 })
+  await expect(settings.getByRole("button", { name: "Appearance", exact: true })).toBeInViewport()
+
+  // Reload the UI-selected preference without seeding settings storage.
+  await page.reload()
+  const href = `/server/${base64Encode(server)}/session/${sessionA.id}`
+  await page.getByRole("button", { name: "Tabs", exact: true }).click()
+  await expect(
+    page
+      .locator('[data-slot="mobile-tabs-drawer"]')
+      .locator(`[data-titlebar-tab-link][href="${href}"]`)
+      .getByText(sessionA.title, { exact: true }),
+  ).toBeVisible()
+  await expect(page.locator('[data-slot="vertical-tabs-sidebar"]')).toHaveCount(0)
+
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await expect(
+    page
+      .locator('[data-slot="vertical-tabs-sidebar"]')
+      .locator(`[data-titlebar-tab-link][href="${href}"]`)
+      .getByText(sessionA.title, { exact: true }),
+  ).toBeVisible()
+  await expect(page.locator('[data-slot="titlebar-tabs"]')).toHaveCount(0)
+  await page.keyboard.press("Control+,")
+  await settings.getByRole("tab", { name: "Appearance" }).click()
+  await expect(layout).toContainText("Vertical")
 })
 
-test("vertical tab preference falls back to horizontal on mobile", async ({ page }) => {
+test("vertical tab preference uses the drawer on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 720 })
   await mockServer(page)
   await page.addInitScript(
@@ -213,7 +264,8 @@ test("vertical tab preference falls back to horizontal on mobile", async ({ page
   const href = `/server/${base64Encode(server)}/session/${sessionA.id}`
   await page.goto(href)
 
-  const tabs = page.locator('[data-slot="titlebar-tabs"]')
+  await page.getByRole("button", { name: "Tabs", exact: true }).click()
+  const tabs = page.locator('[data-slot="mobile-tabs-drawer"]')
   await expect(tabs.locator(`[data-titlebar-tab-link][href="${href}"]`)).toContainText(sessionA.title)
   await expect(page.locator('[data-slot="vertical-tabs-sidebar"]')).toHaveCount(0)
 
@@ -250,11 +302,12 @@ async function mockServer(page: Page) {
     if (currentSessionInfo) return json(route, { data: currentSession(currentSessionInfo) })
     if (sessions.some((item) => url.pathname === `/api/session/${item.id}/message`))
       return json(route, { data: [], cursor: {} })
+    if (sessions.some((item) => url.pathname === `/api/session/${item.id}/inbox`)) return json(route, { data: [] })
     if (["/api/agent", "/api/provider", "/api/model", "/api/command", "/api/reference"].includes(url.pathname))
       return json(route, { location: { directory: sessionA.directory }, data: [] })
     if (url.pathname === "/api/model/default")
       return json(route, { location: { directory: sessionA.directory }, data: null })
-    if (url.pathname === "/api/permission/request" || url.pathname === "/api/question/request")
+    if (url.pathname === "/api/permission/request" || url.pathname === "/api/form/request")
       return json(route, { location: { directory: sessionA.directory }, data: [] })
     if (url.pathname === "/api/mcp") return json(route, { location: { directory: sessionA.directory }, data: [] })
     if (url.pathname === "/api/mcp/resource")

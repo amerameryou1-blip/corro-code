@@ -5,9 +5,9 @@ Private generation target for clients derived directly from OpenCode's authorita
 ## Entrypoints
 
 - `@opencode-ai/client`: zero-Effect Promise client using `fetch`.
-- `@opencode-ai/client/promise/rpc`: the same Promise DTO surface over a lazy, shared WebSocket (imports Effect).
+- `@opencode-ai/client/promise/websocket`: the same Promise DTO surface over a lazy, shared WebSocket (imports Effect).
 - `@opencode-ai/client/effect`: rich Effect network client using an environment-provided `HttpClient`.
-- `@opencode-ai/client/effect/rpc`: native Effect RPC over a single scoped WebSocket.
+- `@opencode-ai/client/effect/websocket`: native Effect RPC over a single scoped WebSocket.
 
 The generated surface includes every standard HTTP group from Server's concrete API. The build compiler reads `@opencode-ai/server/api`; the generated Effect runtime imports a client-local projection built from Protocol, with a generation-equivalence test preventing transport drift. Custom transports such as the PTY WebSocket connection remain outside the generic HTTP client. Run `bun run generate` after changing the contract and `bun run check:generated` to detect committed-output drift.
 
@@ -33,7 +33,7 @@ yield * client.sessions.prompt({ sessionID, prompt: Prompt.make({ text: "Hello" 
 Promise consumers can keep their existing method calls and wire DTOs:
 
 ```ts
-import { OpenCodeRpc } from "@opencode-ai/client/promise/rpc"
+import { OpenCodeRpc } from "@opencode-ai/client/promise/websocket"
 
 const client = OpenCodeRpc.make({
   baseUrl: "https://opencode.example",
@@ -50,12 +50,14 @@ try {
 
 `make` returns synchronously without opening a socket. The first call or stream iteration opens one shared connection. Basic authorization is used only for the upgrade's `auth_token`; other default and per-call headers travel as RPC frame metadata. Per-call headers override endpoint headers, which override facade defaults. Binary `file.read` results remain `Uint8Array`, and declared errors remain plain wire objects accepted by the Promise error guards.
 
-Breaking or returning from an async iterator cancels its subscription. `RequestOptions.signal` cancels one call or stream without closing unrelated work. `dispose()` is idempotent, closes the connection, and rejects subsequent calls. A failed connection is never retried and in-flight requests are never replayed: dispose the failed facade and create a new one to reconnect. The Promise root stays zero-Effect; only the explicit `/promise/rpc` entrypoint imports the native RPC runtime.
+The facade composes the same Promise client wrapper as HTTP, including callable plugin `client.rpc(definition)` methods and shared `client.event` subscriptions. Plugin events and ordinary event subscribers share one upstream stream; aborting or returning from an event iterator completes only that subscriber, and the last subscriber cancels the upstream stream.
+
+`RequestOptions.signal` cancels one call or stream without closing unrelated work. `dispose()` is idempotent, closes the connection, and rejects subsequent calls. A failed connection is never retried and in-flight requests are never replayed: dispose the failed facade and create a new one to reconnect. The Promise root stays zero-Effect; only the explicit `/promise/websocket` entrypoint imports the native RPC runtime.
 
 The additive `/api/rpc` transport derives its operation contracts from Protocol's HTTP schemas; existing HTTP clients are unchanged. Use operation identifiers directly, with decoded `params`, `query`, and `payload` fields where declared. Numeric queries are numbers, not HTTP strings. Optional `location: { directory, workspace? }` selects per-call location context; session-specific operations retain their existing session location rules.
 
 ```ts
-import { OpenCodeRpc } from "@opencode-ai/client/effect/rpc"
+import { OpenCodeRpc } from "@opencode-ai/client/effect/websocket"
 import { Effect, Redacted, Stream } from "effect"
 
 declare const token: string // Base64 of "opencode:<server password>", not the raw password.

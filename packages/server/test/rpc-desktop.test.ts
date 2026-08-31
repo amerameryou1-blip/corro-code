@@ -1,7 +1,7 @@
 import { expect } from "bun:test"
 import { Effect } from "effect"
 import { HttpServer } from "effect/unstable/http"
-import { OpenCodeRpc } from "../../client/src/promise/rpc"
+import { OpenCodeRpc } from "../../client/src/promise/websocket"
 import { it } from "../../core/test/lib/effect"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
 import { ServerProcess } from "../src/process"

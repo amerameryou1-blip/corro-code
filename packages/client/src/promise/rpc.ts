@@ -1,194 +1,147 @@
-export * as OpenCodeRpc from "./rpc.js"
+import type { Rpc } from "@opencode-ai/schema/rpc"
+import type { make, RequestOptions } from "./generated/client.js"
+import { isRpcError, isRpcInternalError } from "./generated/types.js"
+import type { EventSubscribeOutput, LocationGetInput, RpcCallInput } from "./generated/types.js"
 
-import { ClientApi } from "@opencode-ai/protocol/client"
-import { Group } from "@opencode-ai/protocol/rpc"
-import { Effect, Exit, Redacted, Schema, Scope, Stream } from "effect"
-import type { HttpApi } from "effect/unstable/httpapi"
-import { RpcClientError, RpcSchema } from "effect/unstable/rpc"
-import { OpenCodeRpc } from "../effect/rpc.js"
-import { ClientError } from "./generated/client-error.js"
-import { OpenCode } from "./generated/index.js"
-import type { ClientOptions, RequestDescriptor, RequestOptions } from "./generated/client.js"
-import type { OpenCodeClient } from "./index.js"
+type RpcEvent = Extract<EventSubscribeOutput, { type: `rpc.${string}` }>
 
-export interface Options extends Pick<ClientOptions, "baseUrl" | "headers"> {
-  readonly webSocketConstructor?: OpenCodeRpc.Options["webSocketConstructor"]
+export interface RpcCallOptions extends RequestOptions {
+  readonly location?: LocationGetInput["location"]
 }
 
-export type Client = OpenCodeClient & { readonly dispose: () => Promise<void> }
+export type RpcArguments<Input, Options> = unknown extends Input
+  ? [input: Input, options?: Options]
+  : undefined extends Input
+    ? [input?: Input, options?: Options]
+    : [input: Input, options?: Options]
 
-const endpoints = new Map(
-  Object.values((ClientApi as unknown as HttpApi.Top).groups).flatMap((group) =>
-    Object.values(group.endpoints).map((endpoint) => [endpoint.identifier, endpoint] as const),
-  ),
-)
-
-const codecs = new Map<
-  string,
-  {
-    readonly input: Schema.Codec<unknown, unknown>
-    readonly output: Schema.Codec<unknown, unknown>
-    readonly error: Schema.Codec<unknown, unknown>
+export type RpcClient<D extends Rpc.PortableDefinition, Options = RpcCallOptions> = {
+  readonly [Name in keyof D["methods"]]: (
+    ...args: RpcArguments<Rpc.Input<D["methods"][Name]["input"]>, Options>
+  ) => Promise<Rpc.Output<D["methods"][Name]["output"]>>
+} & {
+  readonly events: {
+    readonly subscribe: <Name extends keyof D["events"] & string>(
+      name: Name,
+      options?: Pick<RequestOptions, "signal">,
+    ) => AsyncIterable<RpcEventPayload<D, Name>>
+    readonly on: <Name extends keyof D["events"] & string>(
+      name: Name,
+      handler: (event: RpcEventPayload<D, Name>) => Promise<void> | void,
+      options?: Pick<RequestOptions, "signal">,
+    ) => () => void
   }
->()
-
-function operation(name: string) {
-  const cached = codecs.get(name)
-  if (cached) return cached
-  const endpoint = endpoints.get(name)
-  const rpc = Group.requests.get(name)
-  if (!endpoint || !rpc) throw new ClientError("Transport", { cause: new Error(`Unknown RPC operation: ${name}`) })
-  const payloads = Array.from(endpoint.payload.values()).flatMap((entry) => entry.schemas)
-  const output = RpcSchema.isStreamSchema(rpc.successSchema) ? rpc.successSchema.success : rpc.successSchema
-  // Promise query inputs are decoded values; payloads and path/header inputs are HTTP wire values.
-  const input = Schema.Struct({
-    ...(endpoint.params && name !== "fs.read" ? { params: Schema.toCodecJson(endpoint.params) } : {}),
-    ...(name === "fs.read" ? { params: Schema.Struct({ path: Schema.String }) } : {}),
-    ...(endpoint.query ? { query: Schema.toCodecJson(Schema.toType(endpoint.query)) } : {}),
-    ...(endpoint.headers ? { headers: Schema.toCodecJson(endpoint.headers) } : {}),
-    ...(payloads.length ? { payload: Schema.toCodecJson(Schema.Union(payloads)) } : {}),
-  })
-  const error = RpcSchema.isStreamSchema(rpc.successSchema)
-    ? Schema.Union([rpc.errorSchema, rpc.successSchema.error])
-    : rpc.errorSchema
-  const value = { input: Schema.fromJsonString(input), output, error } as unknown as {
-    input: Schema.Codec<unknown, unknown>
-    output: Schema.Codec<unknown, unknown>
-    error: Schema.Codec<unknown, unknown>
-  }
-  codecs.set(name, value)
-  return value
 }
 
-/** A lazy, single-connection Promise facade. Replace it after a disconnect; calls are never replayed. */
-export function make(options: Options): Client {
-  const scope = Scope.makeUnsafe()
-  let client: Promise<OpenCodeRpc.Client> | undefined
-  let disposal: Promise<void> | undefined
-  const connect = Effect.suspend(() => {
-    if (disposal) return Effect.fail(new ClientError("Transport", { cause: new Error("RPC client disposed") }))
-    return Effect.promise(
-      () =>
-        (client ??= Effect.runPromise(
-          Effect.gen(function* () {
-            const url = new URL("/api/rpc", options.baseUrl)
-            url.protocol = url.protocol === "https:" || url.protocol === "wss:" ? "wss:" : "ws:"
-            const authorization = new Headers(options.headers).get("authorization")
-            const token = /^Basic\s+(.+)$/i.exec(authorization ?? "")?.[1]
-            return yield* OpenCodeRpc.make({
-              url,
-              authToken: token ? Redacted.make(token) : undefined,
-              webSocketConstructor: options.webSocketConstructor,
-            })
-          }).pipe(Effect.provideService(Scope.Scope, scope)),
-        )),
-    )
-  })
+type RpcEventPayloadFor<
+  D extends Rpc.PortableDefinition,
+  Name extends keyof D["events"] & string,
+> = Omit<RpcEvent, "type" | "data"> & {
+  type: `rpc.${D["id"]}.${Name}`
+  data: Rpc.EventData<D["events"][Name]["schema"]>
+}
 
-  const invoke = Effect.fnUntraced(function* (descriptor: RequestDescriptor, requestOptions: RequestOptions) {
-    if (requestOptions.signal?.aborted)
-      return yield* Effect.fail(new ClientError("Transport", { cause: requestOptions.signal.reason }))
-    const codec = operation(descriptor.operation)
-    const headers = new Headers(requestOptions.headers)
-    // Authentication belongs only to the upgrade, not to user-controlled RPC frames.
-    headers.delete("authorization")
-    // Match the Promise wire boundary: omit undefined optional fields before decoding JSON codecs.
-    const input = yield* Schema.decodeUnknownEffect(codec.input)(
-      JSON.stringify({
-        params: descriptor.params,
-        query: descriptor.query ?? {},
-        payload: descriptor.body === undefined ? {} : descriptor.body,
-        headers: Object.fromEntries(headers),
-      }),
-    ).pipe(Effect.mapError((cause) => new ClientError("Transport", { cause })))
-    const api = yield* connect
-    // The generated operation/descriptor and protocol codec jointly establish this dynamic boundary.
-    const call = (
-      api as unknown as Record<
-        string,
-        (
-          input: unknown,
-          options: { headers: Record<string, string> },
-        ) => Effect.Effect<unknown, unknown> | Stream.Stream<unknown, unknown>
-      >
-    )[descriptor.operation]!
-    return call(input, { headers: Object.fromEntries(headers) })
-  })
+export type RpcEventPayload<
+  D extends Rpc.PortableDefinition,
+  Name extends keyof D["events"] & string = keyof D["events"] & string,
+> = { [K in Name]: RpcEventPayloadFor<D, K> }[Name]
 
-  return Object.assign(
-    OpenCode.make({
-      ...options,
-      transport: {
-        request(descriptor, requestOptions) {
-          const codec = operation(descriptor.operation)
-          return Effect.runPromise(
-            Effect.gen(function* () {
-              const result = yield* invoke(descriptor, requestOptions)
-              if (Stream.isStream(result)) return yield* Effect.fail(new ClientError("MalformedResponse"))
-              const value = yield* result
-              if (descriptor.empty) return undefined
-              if (descriptor.binary) return (value as { content: Uint8Array }).content
-              return yield* Schema.encodeUnknownEffect(codec.output)(value).pipe(
-                Effect.mapError((cause) => new ClientError("MalformedResponse", { cause })),
-              )
-            }),
-            { signal: requestOptions.signal },
-          ).catch((error) => {
-            throw wireError(error, codec.error)
-          })
-        },
-        stream(descriptor, requestOptions) {
-          const codec = operation(descriptor.operation)
-          const stream = Stream.unwrap(
-            invoke(descriptor, requestOptions).pipe(
-              Effect.map((result) =>
-                Stream.isStream(result) ? result : Stream.fail(new ClientError("MalformedResponse")),
-              ),
-            ),
-          ).pipe(
-            Stream.mapEffect((value) =>
-              Schema.encodeUnknownEffect(codec.output)(value).pipe(
-                Effect.mapError((cause) => new ClientError("MalformedResponse", { cause })),
-              ),
-            ),
-          )
-          const signal = requestOptions.signal
-          const abort = Effect.callback<never, ClientError>((resume) => {
-            if (!signal) return
-            const fail = () => resume(Effect.fail(new ClientError("Transport", { cause: signal.reason })))
-            if (signal.aborted) return fail()
-            signal.addEventListener("abort", fail, { once: true })
-            return Effect.sync(() => signal.removeEventListener("abort", fail))
-          })
-          return {
-            [Symbol.asyncIterator]() {
-              const iterator = Stream.toAsyncIterable(stream.pipe(Stream.interruptWhen(abort)))[Symbol.asyncIterator]()
-              return {
-                next: () =>
-                  iterator.next().catch((error) => {
-                    throw wireError(error, codec.error)
-                  }),
-                return: () => iterator.return!(),
-                throw: (error?: unknown) => iterator.throw!(error),
+export interface RpcApi<Options = RpcCallOptions> {
+  <D extends Rpc.PortableDefinition>(definition: D): RpcClient<D, Options>
+}
+
+export function makeRpc(
+  raw: ReturnType<typeof make>,
+  events: { subscribe(options?: Pick<RequestOptions, "signal">): AsyncIterable<EventSubscribeOutput> },
+): RpcApi {
+  return (definition) => {
+    const subscribe = (
+      name: string,
+      options?: Pick<RequestOptions, "signal">,
+    ): AsyncIterable<RpcEventPayload<Rpc.PortableDefinition>> => {
+      if (!Object.hasOwn(definition.events, name)) throw new Error(`Unknown RPC event: ${definition.id}.${name}`)
+      const type = eventType(definition, name)
+      return {
+        [Symbol.asyncIterator]() {
+          const controller = new AbortController()
+          const signal = options?.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal
+          const iterator = (async function* () {
+            try {
+              for await (const published of events.subscribe({ signal })) {
+                if (signal.aborted) return
+                if (published.type !== type) continue
+                // SAFETY: The exact RPC type was selected above; Promise contracts require no client-side transform.
+                // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
+                yield published as RpcEventPayload<Rpc.PortableDefinition>
               }
+            } catch (error) {
+              if (!signal.aborted) throw error
+            } finally {
+              controller.abort()
+            }
+          })()
+          return {
+            next: () => iterator.next(),
+            return: () => {
+              // Interrupt a pending source read before closing the generator.
+              controller.abort()
+              return iterator.return()
             },
           }
         },
+      }
+    }
+    // SAFETY: Every runtime key comes from this definition's method and event maps, which define RpcClient's mapped keys.
+    // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
+    return Object.assign(
+      Object.fromEntries(
+        Object.keys(definition.methods).map((name) => [
+          name,
+          async (input: unknown, options?: RpcCallOptions) => {
+            try {
+              const result = await raw.rpc.call(
+                {
+                  rpcID: definition.id,
+                  method: name,
+                  // SAFETY: The method schema defines the accepted input; this assertion bridges it to the generic JSON transport.
+                  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
+                  input: input as RpcCallInput["input"],
+                  location: options?.location,
+                },
+                { signal: options?.signal, headers: options?.headers },
+              )
+              return result.output
+            } catch (error) {
+              if (!isRpcError(error) && !isRpcInternalError(error)) throw error
+              throw error.data === undefined
+                ? { type: error.type, message: error.message }
+                : { type: error.type, message: error.message, data: error.data }
+            }
+          },
+        ]),
+      ),
+      {
+        events: {
+          subscribe,
+          on: (
+            name: string,
+            handler: (event: RpcEventPayload<Rpc.PortableDefinition>) => Promise<void> | void,
+            options?: Pick<RequestOptions, "signal">,
+          ) => {
+            const controller = new AbortController()
+            const signal = options?.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal
+            const source = subscribe(name, { signal })
+            void (async () => {
+              for await (const event of source) await handler(event)
+            })().catch((error: unknown) => console.error(error))
+            return () => controller.abort()
+          },
+        },
       },
-    }),
-    {
-      dispose: () =>
-        (disposal ??= (async () => {
-          await client?.catch(() => {})
-          await Effect.runPromise(Scope.close(scope, Exit.void))
-        })()),
-    },
-  )
+    ) as RpcClient<typeof definition>
+  }
 }
 
-function wireError(error: unknown, schema: Schema.Codec<unknown, unknown>) {
-  if (error instanceof ClientError) return error
-  if (error instanceof RpcClientError.RpcClientError) return new ClientError("Transport", { cause: error })
-  const encoded = Schema.encodeUnknownExit(schema)(error)
-  return Exit.isSuccess(encoded) ? encoded.value : new ClientError("Transport", { cause: error })
+function eventType(definition: Rpc.PortableDefinition, name: string) {
+  return `rpc.${definition.id}.${name}` as const
 }

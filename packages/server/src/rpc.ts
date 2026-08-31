@@ -56,6 +56,7 @@ export const rpcRoutes = HttpRouter.use((router) =>
   Effect.gen(function* () {
     const services = yield* Effect.context<Services>()
     const config = yield* ServerAuth.Config
+    const cors = yield* CorsConfig
     const feed = yield* EventFeed.Service
     const group = OpenCodeRpc.makeGroup(Api)
     // HttpApiBuilder stores its decoded handlers beside the built routes. Keep this
@@ -77,7 +78,6 @@ export const rpcRoutes = HttpRouter.use((router) =>
             status: 401,
             headers: { "www-authenticate": 'Basic realm="Secure Area"' },
           })
-        const cors = yield* CorsConfig
         if (!isAllowedRequestOrigin(request.headers.origin, request.headers.host, cors))
           return HttpServerResponse.empty({ status: 403 })
 

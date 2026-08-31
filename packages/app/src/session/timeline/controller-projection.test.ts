@@ -49,7 +49,7 @@ describe("visibleTimelineMessages", () => {
     time: { created: 5, completed: 6 },
   } satisfies SessionMessageInfo
 
-  test("keeps work and thinking above an undelivered steer", () => {
+  test("keeps work above an undelivered steer without adding a thinking row", () => {
     const source = [...messages.slice(0, 3), work]
     const visible = visibleTimelineMessages(source, [steer])
     expect(visible.map((message) => message.id)).toEqual(["msg_1", "msg_2", "msg_5", "msg_3"])
@@ -60,7 +60,7 @@ describe("visibleTimelineMessages", () => {
       const projection = createTimelineProjection({
         sessionMessages: () => visible,
         status: () => ({ type: "busy" }),
-        showReasoningSummaries: () => false,
+        reasoningMode: () => "compact",
         shellToolDefaultOpen: () => false,
         editToolDefaultOpen: () => false,
         pendingUserMessageIDs: () => new Set([steer.id]),
@@ -69,7 +69,6 @@ describe("visibleTimelineMessages", () => {
       expect(projection.rows().map((row) => [row._tag, row.userMessageID])).toEqual([
         ["UserMessage", "msg_1"],
         ["AssistantPart", "msg_1"],
-        ["Thinking", "msg_1"],
         ["TurnGap", "msg_3"],
         ["UserMessage", "msg_3"],
       ])
@@ -80,6 +79,17 @@ describe("visibleTimelineMessages", () => {
           ?.map((message) => message.id),
       ).toEqual(["msg_2", "msg_5"])
       expect(projection.assistantMessagesByParent().has(steer.id)).toBe(false)
+      expect([...projection.messageRowIndex()]).toEqual([
+        ["msg_1", 0],
+        ["msg_3", 2],
+      ])
+      expect([...projection.messageLastRowIndex()]).toEqual([
+        ["msg_1", 1],
+        ["msg_3", 3],
+      ])
+      expect([...projection.lastAssistantGroupKey()]).toEqual([["msg_1", "context:msg_5:tool_read"]])
+      expect(projection.rowByKey().get("user-message:msg_1")).toBe(projection.rows()[0])
+      expect(projection.rowByKey().size).toBe(projection.rows().length)
       dispose()
     })
   })

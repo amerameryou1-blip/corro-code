@@ -19,12 +19,12 @@
     ".": "./src/promise/index.ts",
     "./promise": "./src/promise/index.ts",
     "./promise/api": "./src/promise/api.ts",
-    "./promise/rpc": "./src/promise/rpc.ts",
+    "./promise/websocket": "./src/promise/websocket.ts",
     "./service": "./src/promise/service.ts",
     "./solid": "./src/solid/index.ts",
     "./effect": "./src/effect/index.ts",
     "./effect/api": "./src/effect/api.ts",
-    "./effect/rpc": "./src/effect/rpc.ts",
+    "./effect/websocket": "./src/effect/websocket.ts",
     "./effect/service": "./src/effect/service.ts"
   },
   "scripts": {
@@ -39,7 +39,7 @@
     "@opencode-ai/protocol": "workspace:*"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.111",
+    "effect": "4.0.0-rc.112",
     "solid-js": ">=1.9.0"
   },
   "peerDependenciesMeta": {
@@ -57,6 +57,7 @@
     "@types/bun": "catalog:",
     "@typescript/native-preview": "catalog:",
     "effect": "catalog:",
-    "solid-js": "catalog:"
+    "solid-js": "catalog:",
+    "zod": "catalog:"
   }
 }

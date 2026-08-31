@@ -273,10 +273,22 @@
   line-height: var(--line-height-normal);
 
   [data-component="markdown"] {
-    margin-top: 16px;
+    margin-top: 0;
     font-style: normal;
     font-size: 13px;
+    line-height: var(--line-height-base);
     color: var(--v2-text-text-muted);
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+      font-size: inherit;
+      font-weight: inherit;
+      color: inherit;
+    }
 
     strong,
     b {
@@ -688,12 +700,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  [data-component="tag"] {
-    flex-shrink: 0;
-    border: 0;
-    background: var(--v2-background-bg-layer-03);
   }
 
   [data-slot="collapsible-arrow"] {
@@ -1515,4 +1521,9 @@
 
 :root[data-color-scheme="light"] body [data-component="user-message"] [data-slot="user-message-text"] {
   background: var(--v2-background-bg-layer-02);
+}
+
+:root body [data-workspace-session] [data-component="user-message"] [data-slot="user-message-text"] {
+  background: var(--v2-background-bg-accent);
+  color: var(--v2-text-text-contrast);
 }
