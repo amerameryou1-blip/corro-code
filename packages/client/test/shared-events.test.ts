@@ -97,7 +97,11 @@ test("multiple consumers share one source and receive live native and RPC events
   const first = shared.subscribe()[Symbol.asyncIterator]()
   const second = shared.subscribe()[Symbol.asyncIterator]()
 
-  for (const event of [{ type: "server.connected" }, { type: "session.updated" }, { type: "rpc.example.updated", value: 1 }]) {
+  for (const event of [
+    { type: "server.connected" },
+    { type: "session.updated" },
+    { type: "rpc.example.updated", value: 1 },
+  ]) {
     const reads = [first.next(), second.next()]
     events.connections[0].push(event)
     expect(await Promise.all(reads)).toEqual([
@@ -112,6 +116,28 @@ test("multiple consumers share one source and receive live native and RPC events
   events.connections[0].push({ type: "rpc.example.updated", value: 2 })
   expect((await next).value).toEqual({ type: "rpc.example.updated", value: 2 })
   await second.return!()
+  await events.connections[0].closed
+})
+
+test("a slow consumer does not stall other subscribers", async () => {
+  const events = source()
+  const shared = SharedEvents.make(events.connect)
+  const slow = shared.subscribe()[Symbol.asyncIterator]()
+  const fast = shared.subscribe()[Symbol.asyncIterator]()
+
+  const connected = [slow.next(), fast.next()]
+  events.connections[0].push({ type: "server.connected" })
+  await Promise.all(connected)
+
+  events.connections[0].push({ type: "permission.asked", value: 1 })
+  expect(await fast.next()).toEqual({ done: false, value: { type: "permission.asked", value: 1 } })
+  events.connections[0].push({ type: "session.updated", value: 2 })
+  expect(await fast.next()).toEqual({ done: false, value: { type: "session.updated", value: 2 } })
+
+  expect(await slow.next()).toEqual({ done: false, value: { type: "permission.asked", value: 1 } })
+  expect(await slow.next()).toEqual({ done: false, value: { type: "session.updated", value: 2 } })
+  await slow.return!()
+  await fast.return!()
   await events.connections[0].closed
 })
 

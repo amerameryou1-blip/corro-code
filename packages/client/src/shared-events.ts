@@ -54,14 +54,14 @@ export function make<A extends { readonly type: string }>(connect: (signal: Abor
           let started = false
           let completion: Completion | undefined
           let connection: Connection | undefined
-          let offered: { readonly value: A; readonly accepted: ReturnType<typeof Promise.withResolvers<void>> } | undefined
+          const queued: A[] = []
 
-          function finish(result: Completion) {
+          function finish(result: Completion, discard = false) {
             completion = result
-            offered?.accepted.resolve()
-            offered = undefined
+            if (discard) queued.length = 0
             options?.signal?.removeEventListener("abort", abort)
             if (connection?.subscribers.delete(subscriber) && !connection.subscribers.size) stop(connection)
+            if (queued.length) return
             pending.splice(0).forEach((request) => {
               if ("error" in result) request.reject(result.error)
               else request.resolve({ done: true, value: undefined })
@@ -69,7 +69,7 @@ export function make<A extends { readonly type: string }>(connect: (signal: Abor
           }
 
           function abort() {
-            finish({})
+            finish({}, true)
           }
 
           const subscriber: Subscriber = {
@@ -81,9 +81,8 @@ export function make<A extends { readonly type: string }>(connect: (signal: Abor
                 request.resolve({ done: false, value })
                 return delivered
               }
-              const accepted = Promise.withResolvers<void>()
-              offered = { value, accepted }
-              return accepted.promise
+              queued.push(value)
+              return delivered
             },
           }
 
@@ -102,12 +101,8 @@ export function make<A extends { readonly type: string }>(connect: (signal: Abor
 
           return {
             next(): Promise<IteratorResult<A>> {
-              if (offered) {
-                const current = offered
-                offered = undefined
-                current.accepted.resolve()
-                return Promise.resolve({ done: false, value: current.value })
-              }
+              const value = queued.shift()
+              if (value) return Promise.resolve({ done: false, value })
               if (completion) {
                 if ("error" in completion) return Promise.reject(completion.error)
                 return Promise.resolve({ done: true, value: undefined })
@@ -126,7 +121,7 @@ export function make<A extends { readonly type: string }>(connect: (signal: Abor
               return request.promise
             },
             return(): Promise<IteratorResult<A>> {
-              finish({})
+              finish({}, true)
               return Promise.resolve({ done: true, value: undefined })
             },
           }
