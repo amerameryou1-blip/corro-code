@@ -98,9 +98,11 @@ export const make = <Key, E, Reason = never>(options: {
       // The leading yield lets `owner` be assigned before the drain can settle, and keeps
       // failing self-waking executions from growing the stack across successor starts.
       // Drains start one tick after wake; callers observe progress through events or run.
+      // Mask the yield with startup so shutdown cannot skip the write-ahead started hook.
       execution.owner = fork(
         Effect.yieldNow.pipe(
-          Effect.andThen(Effect.uninterruptible(options.started?.(key) ?? Effect.void)),
+          Effect.andThen(options.started?.(key) ?? Effect.void),
+          Effect.uninterruptible,
           Effect.andThen(loop(key, execution, force)),
           Effect.onExit((exit) =>
             Effect.sync(() => {

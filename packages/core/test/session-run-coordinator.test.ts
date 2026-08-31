@@ -279,11 +279,7 @@ describe("SessionRunCoordinator", () => {
           },
         }
         const coordinator = yield* SessionRunCoordinator.make({
-          started: () => {
-            // Count scheduling even if shutdown interrupts the successor before its first drain.
-            lifecycle.push("scheduled")
-            return Effect.void
-          },
+          started: () => Effect.sync(() => void lifecycle.push("started")),
           drain: () =>
             Deferred.succeed(running, undefined).pipe(
               Effect.andThen(Effect.never),
