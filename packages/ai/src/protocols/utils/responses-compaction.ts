@@ -23,6 +23,18 @@ const Body = Schema.Struct({
   instructions: Schema.optional(Schema.String),
   previous_response_id: Schema.optional(Schema.String),
 })
+
+const Text = Schema.Union([OpenResponses.OpenResponsesInputText, OpenResponses.OpenResponsesOutputText])
+const File = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("input_file"), filename: Schema.String, file_url: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("input_file"), filename: Schema.String, file_data: Schema.String }),
+])
+const MessageFields = {
+  type: Schema.Literal("message"),
+  id: Schema.optional(Schema.String),
+  status: Schema.optional(Schema.String),
+  phase: Schema.optional(OpenResponses.MessagePhase),
+}
 const Response = Schema.Struct({
   object: Schema.Literal("response.compaction"),
   output: Schema.Array(
@@ -30,14 +42,16 @@ const Response = Schema.Struct({
       OpenResponses.CompactionItem,
       OpenResponses.OpenResponsesReasoningItem,
       Schema.Struct({
-        type: Schema.Literal("message"),
-        id: Schema.optional(Schema.String),
-        role: Schema.Literals(["user", "assistant"]),
-        status: Schema.optional(Schema.String),
-        phase: Schema.optional(OpenResponses.MessagePhase),
-        content: Schema.Array(
-          Schema.Union([OpenResponses.OpenResponsesInputContent, OpenResponses.OpenResponsesOutputText]),
-        ).check(Schema.isMinLength(1)),
+        ...MessageFields,
+        role: Schema.Literal("user"),
+        content: Schema.Array(Schema.Union([Text, OpenResponses.OpenResponsesInputImage, File])).check(
+          Schema.isMinLength(1),
+        ),
+      }),
+      Schema.Struct({
+        ...MessageFields,
+        role: Schema.Literal("assistant"),
+        content: Schema.Array(Text).check(Schema.isMinLength(1)),
       }),
     ]),
   ),
@@ -88,63 +102,51 @@ export const execute: CompactOperation = Effect.fn("ResponsesCompaction.execute"
     )
     if (!result.output.some((item) => item.type === "compaction"))
       return yield* invalid("Compaction response did not contain a checkpoint")
-    const key = route.providerMetadataKey ?? String(request.model.provider)
-    const messages = yield* Effect.forEach(result.output, (item) =>
-      Effect.gen(function* () {
-        if (item.type === "compaction")
-          return Message.assistant(
-            CompactionPart.make({
-              provider: request.model.provider,
-              id: item.id ?? undefined,
-              encrypted: item.encrypted_content,
-            }),
-          )
-        if (item.type === "reasoning") {
-          const summary = item.summary.length ? item.summary : [{ text: "" }]
-          return Message.assistant(
-            summary.map((part) => ({
-              type: "reasoning" as const,
-              text: part.text,
-              providerMetadata: { [key]: { itemId: item.id, reasoningEncryptedContent: item.encrypted_content } },
-            })),
-          )
-        }
-        const content: ContentPart[] = []
-        for (const part of item.content) {
-          if (part.type === "input_text" || part.type === "output_text") {
-            content.push({ type: "text", text: part.text })
-            continue
-          }
-          if (item.role !== "user") return yield* invalid("Compacted assistant messages must contain text")
-          if (part.type === "input_image") {
-            content.push({
-              type: "media",
-              mediaType: /^data:([^;,]+)/.exec(part.image_url)?.[1] ?? "image/*",
-              data: part.image_url,
-            })
-            continue
-          }
-          const data = part.file_url ?? part.file_data
-          if (data === undefined) return yield* invalid("Compacted file is missing its data or URL")
-          content.push({
-            type: "media",
-            mediaType: /^data:([^;,]+)/.exec(data)?.[1] ?? "application/octet-stream",
-            data,
-            filename: part.filename,
-          })
-        }
-        return Message.make({
-          role: item.role,
-          content,
-          providerMetadata: { [key]: { itemId: item.id, type: item.type, status: item.status, phase: item.phase } },
-        })
-      }),
-    )
     return new CompactionResponse({
-      messages,
-      usage: OpenResponses.mapUsage(result.usage, key),
+      messages: result.output.map((item) => toMessage(item, request.model)),
+      usage: OpenResponses.mapUsage(result.usage, route.providerMetadataKey ?? String(request.model.provider)),
     })
   },
 )
+
+function toMessage(item: (typeof Response.Type.output)[number], model: LLMRequest["model"]): Message {
+  if (item.type === "compaction")
+    return Message.assistant(
+      CompactionPart.make({ provider: model.provider, id: item.id ?? undefined, encrypted: item.encrypted_content }),
+    )
+
+  const key = model.route.providerMetadataKey ?? String(model.provider)
+  if (item.type === "reasoning") {
+    const summary = item.summary.length ? item.summary : [{ text: "" }]
+    return Message.assistant(
+      summary.map((part) => ({
+        type: "reasoning" as const,
+        text: part.text,
+        providerMetadata: { [key]: { itemId: item.id, reasoningEncryptedContent: item.encrypted_content } },
+      })),
+    )
+  }
+
+  return Message.make({
+    role: item.role,
+    providerMetadata: { [key]: { itemId: item.id, type: item.type, status: item.status, phase: item.phase } },
+    content: item.content.map((part): ContentPart => {
+      if (part.type === "input_text" || part.type === "output_text") return { type: "text", text: part.text }
+      if (part.type === "input_image")
+        return {
+          type: "media",
+          data: part.image_url,
+          mediaType: /^data:([^;,]+)/.exec(part.image_url)?.[1] ?? "image/*",
+        }
+      const data = "file_url" in part ? part.file_url : part.file_data
+      return {
+        type: "media",
+        data,
+        filename: part.filename,
+        mediaType: /^data:([^;,]+)/.exec(data)?.[1] ?? "application/octet-stream",
+      }
+    }),
+  })
+}
 
 export * as ResponsesCompaction from "./responses-compaction.js"

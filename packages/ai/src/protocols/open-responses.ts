@@ -32,11 +32,11 @@ export const PATH = "/responses"
 // =============================================================================
 // Request Body Schema
 // =============================================================================
-const OpenResponsesInputText = Schema.Struct({
+export const OpenResponsesInputText = Schema.Struct({
   type: Schema.tag("input_text"),
   text: Schema.String,
 })
-const OpenResponsesInputImage = Schema.Struct({
+export const OpenResponsesInputImage = Schema.Struct({
   type: Schema.tag("input_image"),
   image_url: Schema.String,
 })
@@ -52,7 +52,7 @@ const OpenResponsesInputVideo = Schema.Struct({
 })
 const MediaInput = Schema.Union([OpenResponsesInputImage, OpenResponsesInputFile])
 export type MediaInput = Schema.Schema.Type<typeof MediaInput>
-export const OpenResponsesInputContent = Schema.Union([OpenResponsesInputText, MediaInput])
+const OpenResponsesInputContent = Schema.Union([OpenResponsesInputText, MediaInput])
 
 export const OpenResponsesOutputText = Schema.Struct({
   type: Schema.tag("output_text"),
