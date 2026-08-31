@@ -58,7 +58,7 @@ describe("Snapshot", () => {
           if (transition === "symlink") {
             expect(yield* Effect.promise(() => fs.readlink(assets))).toBe(external)
             yield* Effect.promise(async () => {
-              await fs.rm(assets)
+              await fs.unlink(assets)
               await fs.mkdir(assets)
             })
             yield* snapshot.restore({

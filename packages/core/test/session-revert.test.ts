@@ -7,6 +7,7 @@ import { Agent } from "@opencode-ai/core/agent"
 import { Bus } from "@opencode-ai/core/bus"
 import { Database } from "@opencode-ai/core/database/database"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
+import { Watcher } from "@opencode-ai/core/filesystem/watcher"
 import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
 import { Model } from "@opencode-ai/core/model"
 import { PluginSupervisor } from "@opencode-ai/core/plugin/supervisor"
@@ -41,6 +42,8 @@ const it = testEffect(
     [
       [Bus.node, Bus.configured({ persist: true })],
       [Global.node, tempGlobalLayer],
+      // These tests move directories explicitly; native watchers can hold them open on Windows.
+      [Watcher.node, Watcher.configured({ enabled: false })],
     ],
   ),
 )
