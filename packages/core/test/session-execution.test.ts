@@ -4,6 +4,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/util/effect/layer-node"
 import { Bus } from "@opencode-ai/core/bus"
+import { Instance } from "@opencode-ai/core/instance/service"
 import { Job } from "@opencode-ai/core/job"
 import { KV } from "@opencode-ai/core/kv"
 import { Location } from "@opencode-ai/core/location"
@@ -201,29 +202,28 @@ describe("SessionExecution lifecycle", () => {
         const sessions = Context.get(
           yield* Layer.buildWithScope(
             AppNodeBuilder.build(Session.node, [
-              [Database.node, Layer.succeed(Database.Service, database)],
-              [Bus.node, Layer.succeed(Bus.Service, bus)],
-              [SessionStore.node, Layer.succeed(SessionStore.Service, store)],
-              [SessionInbox.node, Layer.succeed(SessionInbox.Service, admission)],
-              [Job.node, Layer.succeed(Job.Service, jobs)],
+              Database.node.replace(Layer.succeed(Database.Service, database)),
+              Bus.node.replace(Layer.succeed(Bus.Service, bus)),
+              SessionStore.node.replace(Layer.succeed(SessionStore.Service, store)),
+              SessionInbox.node.replace(Layer.succeed(SessionInbox.Service, admission)),
+              Job.node.replace(Layer.succeed(Job.Service, jobs)),
               // The shared Bus already has the production Session projectors.
-              [SessionProjector.node, Layer.empty],
-              [Project.node, globalProjectNode],
-              [SessionExecution.node, Layer.succeed(SessionExecution.Service, execution)],
-              [
-                LocationServiceMap.node,
+              SessionProjector.node.replace(Layer.empty),
+              Project.node.replace(globalProjectNode),
+              SessionExecution.node.replace(Layer.succeed(SessionExecution.Service, execution)),
+              LocationServiceMap.node.replace(
                 Layer.effect(
                   LocationServiceMap.Service,
                   LayerMap.make(
                     (ref: Location.Ref) =>
                       // Move validation only needs Location from the destination graph.
                       // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
-                      LayerNode.compile(Location.boundNode(ref), [
-                        [Project.node, globalProjectNode],
-                      ]) as unknown as Layer.Layer<LocationServices>,
+                      LayerNode.compile(Location.boundNode(ref), {
+                        replacements: [Project.node.replace(globalProjectNode)],
+                      }) as unknown as Layer.Layer<LocationServices>,
                   ),
                 ),
-              ],
+              ),
             ]).pipe(Layer.fresh),
             scope,
           ),
@@ -1499,7 +1499,12 @@ function buildExecution(
         Layer.provide(Layer.succeed(Bus.Service, bus)),
         Layer.provide(Layer.succeed(SessionStore.Service, store)),
         Layer.provide(Layer.succeed(Job.Service, jobs)),
-        Layer.provide(locations),
+        // Do not reuse the outer harness's selector with its already-captured Location map.
+        Layer.provide(
+          LayerNode.compile(Instance.byLocationNode, {
+            replacements: [LocationServiceMap.node.replace(locations)],
+          }).pipe(Layer.fresh),
+        ),
       ),
       scope,
     )
