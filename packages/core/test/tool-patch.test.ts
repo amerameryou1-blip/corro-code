@@ -323,6 +323,60 @@ describe("PatchTool", () => {
     }),
   )
 
+  it.live("does not format a file deleted after an update", () =>
+    withTempTool((directory, registry) =>
+      Effect.gen(function* () {
+        const target = path.join(directory, "removed.txt")
+        const formatted: string[] = []
+        formatFile = (file) =>
+          Effect.sync(() => {
+            formatted.push(file)
+            return false
+          })
+        yield* Effect.promise(() => fs.writeFile(target, "before\n"))
+        expect(
+          yield* executeTool(
+            registry,
+            call(
+              "*** Begin Patch\n*** Update File: removed.txt\n@@\n-before\n+after\n*** Delete File: removed.txt\n*** End Patch",
+            ),
+          ),
+        ).toMatchObject({ status: "completed" })
+        expect(yield* exists(target)).toBe(false)
+        expect(formatted).toEqual([])
+      }),
+    ),
+  )
+
+  it.live("formats only the destination of a file moved after an update", () =>
+    withTempTool((directory, registry) =>
+      Effect.gen(function* () {
+        const source = path.join(directory, "old.txt")
+        const destination = path.join(directory, "moved.txt")
+        const formatted: string[] = []
+        formatFile = (file) =>
+          Effect.promise(async () => {
+            formatted.push(file)
+            await fs.writeFile(file, (await fs.readFile(file, "utf8")).toUpperCase())
+            return true
+          })
+        yield* Effect.promise(() => fs.writeFile(source, "before\n"))
+        const settled = yield* executeTool(
+          registry,
+          call(
+            "*** Begin Patch\n*** Update File: old.txt\n@@\n-before\n+updated\n*** Update File: old.txt\n*** Move to: moved.txt\n@@\n-updated\n+after\n*** End Patch",
+          ),
+        )
+        expect(settled.status).toBe("completed")
+        if (settled.status !== "completed") return
+        expect(settled.output.files[1]?.patch).toContain("+AFTER")
+        expect(yield* exists(source)).toBe(false)
+        expect(yield* Effect.promise(() => fs.readFile(destination, "utf8"))).toBe("AFTER\n")
+        expect(formatted).toEqual([destination])
+      }),
+    ),
+  )
+
   it.live("moves and updates a file", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),

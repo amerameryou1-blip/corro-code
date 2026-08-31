@@ -257,9 +257,20 @@ export const Plugin = {
                   }),
                 { discard: true },
               )
+              const formatTargets = prepared.reduce((result, change) => {
+                if (change.type !== "delete") {
+                  result.add(
+                    (change.type === "update" ? change.moveTarget : undefined)?.absolute ?? change.target.absolute,
+                  )
+                }
+                if (change.type === "delete" || (change.type === "update" && change.moveTarget)) {
+                  result.delete(change.target.absolute)
+                }
+                return result
+              }, new Set<string>())
               const formatted = new Map<string, string>()
               yield* Effect.forEach(
-                [...new Set(applied.filter((item) => item.type !== "delete").map((item) => item.target))],
+                formatTargets,
                 (target) =>
                   Effect.gen(function* () {
                     const current = yield* FileMutation.readText(environment.files, target).pipe(
