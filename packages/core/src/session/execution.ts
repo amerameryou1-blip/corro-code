@@ -109,6 +109,10 @@ export const layer = Layer.effect(
           bus.publish(SessionEvent.Execution.Started, { sessionID }, claimOnCommit(sessionID)),
         ),
       drain: (sessionID, force, promotable) => drain(sessionID, force, undefined, promotable),
+      // Claim after the old terminal: user cancellation must release its claim and retry budget
+      // before a deferred successor becomes fresh recovery intent, without reporting a start.
+      // This retains ID-only recovery: restart does not preserve the drain's promotable scope.
+      suspended: (sessionID) => reportLifecycle(sessionID, store.claim(sessionID)),
       // One terminal observation per busy period, covering every coalesced drain.
       settled: (sessionID, exit, reason) =>
         reportLifecycle(

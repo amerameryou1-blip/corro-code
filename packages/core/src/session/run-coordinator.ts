@@ -9,9 +9,9 @@ export interface Coordinator<Key, E, Reason = never> {
   readonly active: Effect.Effect<ReadonlySet<Key>>
   /** Checks ownership for one key, including cleanup and terminal settlement. */
   readonly isActive: (key: Key) => Effect.Effect<boolean>
-  /** Starts an execution while idle, or joins the active execution and returns its exit. */
+  /** Starts while idle or joins the active execution. Interrupts new runs once shutdown begins. */
   readonly run: (key: Key) => Effect.Effect<void, E>
-  /** Rings the doorbell: an idle key starts an execution; an active one drains again before settling. */
+  /** Rings the doorbell: starts while idle or drains again before settling. No-op once shutdown begins. */
   readonly wake: (key: Key, scope?: Promotable) => Effect.Effect<void>
   /**
    * Stops the active execution and clears its doorbell. No-op when idle. Resolves once the
@@ -61,10 +61,19 @@ export const make = <Key, E, Reason = never>(options: {
    * drain and before the execution settles (waiters resolve after it completes).
    */
   readonly settled?: (key: Key, exit: Exit.Exit<void, E>, reason?: Reason) => Effect.Effect<void>
+  /** Preserves a pending successor when shutdown prevents starting it, after the terminal hook completes. */
+  readonly suspended?: (key: Key) => Effect.Effect<void>
 }): Effect.Effect<Coordinator<Key, E, Reason>, never, Scope.Scope> =>
   Effect.gen(function* () {
     const executions = new Map<Key, Execution<E, Reason>>()
     const fork = yield* FiberSet.makeRuntime<never, void, never>()
+    let closing = false
+    // Finalizers run in reverse order: stop scheduling before FiberSet closes and interrupts its owners.
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        closing = true
+      }),
+    )
 
     const loop = (key: Key, execution: Execution<E, Reason>, force: boolean): Effect.Effect<void, E> =>
       Effect.suspend(() => options.drain(key, force, execution.scope)).pipe(
@@ -98,7 +107,16 @@ export const make = <Key, E, Reason = never>(options: {
               execution.owner = undefined
             }).pipe(Effect.andThen(options.settled?.(key, exit, execution.interruptionReason) ?? Effect.void)),
           ),
-          Effect.onExit((exit) => Effect.sync(() => settle(key, execution, exit))),
+          Effect.onExit((exit) =>
+            Effect.suspend(() => {
+              if (closing && execution.pendingWake)
+                return (options.suspended?.(key) ?? Effect.void).pipe(
+                  Effect.ensuring(Effect.sync(() => settle(key, execution, exit))),
+                )
+              settle(key, execution, exit)
+              return Effect.void
+            }),
+          ),
           Effect.exit,
           Effect.asVoid,
         ),
@@ -107,9 +125,9 @@ export const make = <Key, E, Reason = never>(options: {
     }
 
     // A doorbell that survives the execution loop (rung after the loop decided to end, or
-    // during failure or interruption cleanup) starts a fresh execution for the remaining work.
+    // during failure or interruption cleanup) starts fresh work, unless shutdown suspends it.
     const settle = (key: Key, execution: Execution<E, Reason>, exit: Exit.Exit<void, E>) => {
-      if (execution.pendingWake) start(key, false, execution.pendingWake)
+      if (execution.pendingWake && !closing) start(key, false, execution.pendingWake)
       else executions.delete(key)
       Deferred.doneUnsafe(execution.done, exit)
     }
@@ -118,6 +136,7 @@ export const make = <Key, E, Reason = never>(options: {
 
     const run = (key: Key): Effect.Effect<void, E> =>
       Effect.suspend(() => {
+        if (closing) return Effect.interrupt
         const execution = executions.get(key)
         if (execution !== undefined) {
           // A stopping execution refuses joiners: wait out its cleanup, then run fresh.
@@ -130,6 +149,7 @@ export const make = <Key, E, Reason = never>(options: {
 
     const wake = (key: Key, scope: Promotable = "input") =>
       Effect.sync(() => {
+        if (closing) return
         const execution = executions.get(key)
         if (execution !== undefined) {
           // Coalesced wakes keep the widest scope: "input" subsumes "steer".
@@ -141,6 +161,7 @@ export const make = <Key, E, Reason = never>(options: {
 
     const interrupt = (key: Key, reason?: Reason): Effect.Effect<boolean> =>
       Effect.sync(() => {
+        if (closing) return false
         const execution = executions.get(key)
         if (execution === undefined || execution.stopping) return false
         if (execution.owner === undefined) {

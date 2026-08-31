@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect"
 import { SessionInbox } from "@opencode-ai/core/session/inbox"
 import { SessionRunCoordinator } from "@opencode-ai/core/session/run-coordinator"
 import { testEffect } from "./lib/effect"
@@ -155,6 +155,92 @@ describe("SessionRunCoordinator", () => {
       )
 
       expect(Array.from(yield* coordinator.active)).toEqual([])
+    }),
+  )
+
+  for (const strategy of ["sequential", "parallel"] as const) {
+    for (const pending of [false, true]) {
+      it.effect(
+        `${strategy} shutdown ${pending ? "suspends a cleanup-era wake" : "leaves cancelled work stopped"}`,
+        () =>
+          Effect.gen(function* () {
+            const started = yield* Deferred.make<void>()
+            const cleanup = yield* Deferred.make<void>()
+            const release = yield* Deferred.make<void>()
+            const scope = yield* Scope.make(strategy)
+            yield* Effect.addFinalizer(() =>
+              Deferred.succeed(release, undefined).pipe(Effect.andThen(Scope.close(scope, Exit.void))),
+            )
+            const lifecycle: Array<string | undefined> = []
+            const coordinator = yield* SessionRunCoordinator.make<string, never, string>({
+              drain: () =>
+                Deferred.succeed(started, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.onInterrupt(() =>
+                    Deferred.succeed(cleanup, undefined).pipe(Effect.andThen(Deferred.await(release))),
+                  ),
+                ),
+              started: () => Effect.sync(() => void lifecycle.push("started")),
+              settled: (_key, _exit, reason) => Effect.sync(() => void lifecycle.push(reason)),
+              suspended: () => Effect.sync(() => void lifecycle.push("suspended")),
+            }).pipe(Scope.provide(scope))
+
+            yield* coordinator.wake("session")
+            yield* Deferred.await(started)
+            yield* coordinator.interrupt("session", "user")
+            yield* Deferred.await(cleanup)
+            if (pending) yield* coordinator.wake("session")
+            const idle = yield* coordinator.awaitIdle("session").pipe(Effect.forkChild)
+            const closing = yield* Scope.close(scope, Exit.void).pipe(Effect.forkChild({ startImmediately: true }))
+            yield* Effect.yieldNow
+            yield* Deferred.succeed(release, undefined)
+            yield* Fiber.join(closing)
+
+            expect(yield* coordinator.active).toEqual(new Set())
+            yield* Fiber.join(idle)
+            expect(lifecycle).toEqual(pending ? ["started", "user", "suspended"] : ["started", "user"])
+
+            // A retained reference to the closed coordinator must not create ghost ownership.
+            yield* coordinator.wake("session")
+            expect(yield* coordinator.interrupt("session", "user")).toBe(false)
+            const exit = yield* coordinator.run("session").pipe(Effect.exit)
+            expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+            expect(yield* coordinator.active).toEqual(new Set())
+          }),
+      )
+    }
+  }
+
+  it.effect("suspends a settlement-window wake after its terminal hook completes", () =>
+    Effect.gen(function* () {
+      const settling = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const scope = yield* Scope.make()
+      yield* Effect.addFinalizer(() =>
+        Deferred.succeed(release, undefined).pipe(Effect.andThen(Scope.close(scope, Exit.void))),
+      )
+      const lifecycle: string[] = []
+      const coordinator = yield* SessionRunCoordinator.make({
+        drain: () => Effect.sync(() => void lifecycle.push("drained")),
+        settled: () =>
+          Deferred.succeed(settling, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.andThen(Effect.sync(() => void lifecycle.push("settled"))),
+          ),
+        suspended: () => Effect.sync(() => void lifecycle.push("suspended")),
+      }).pipe(Scope.provide(scope))
+
+      yield* coordinator.wake("session")
+      yield* Deferred.await(settling)
+      yield* coordinator.wake("session")
+      const closing = yield* Scope.close(scope, Exit.void).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Effect.yieldNow
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(closing)
+
+      expect(lifecycle).toEqual(["drained", "settled", "suspended"])
+      expect(yield* coordinator.active).toEqual(new Set())
+      yield* coordinator.awaitIdle("session")
     }),
   )
 

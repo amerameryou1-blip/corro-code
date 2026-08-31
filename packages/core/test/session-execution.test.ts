@@ -6,6 +6,7 @@ import { LayerNode } from "@opencode-ai/util/effect/layer-node"
 import { Bus } from "@opencode-ai/core/bus"
 import { Job } from "@opencode-ai/core/job"
 import { KV } from "@opencode-ai/core/kv"
+import { Location } from "@opencode-ai/core/location"
 import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
 import type { LocationServices } from "@opencode-ai/core/location-services"
 import { Project } from "@opencode-ai/core/project"
@@ -18,12 +19,15 @@ import { UserInterruptedError } from "@opencode-ai/core/session/error"
 import { SessionEvent } from "@opencode-ai/core/session/event"
 import { SessionInbox } from "@opencode-ai/core/session/inbox"
 import { SessionMessage } from "@opencode-ai/core/session/message"
+import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { SessionRunner } from "@opencode-ai/core/session/runner/index"
 import { SessionInboxTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionStore } from "@opencode-ai/core/session/store"
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, LayerMap, Scope } from "effect"
 import { eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
+import { globalProjectNode } from "./lib/project"
+import { tmpdirScoped } from "./fixture/tmpdir"
 
 const it = testEffect(
   AppNodeBuilder.build(
@@ -156,6 +160,112 @@ describe("SessionExecution lifecycle", () => {
       expect(yield* execution.interrupt(sessionID)).toBeFalse()
       expect(yield* execution.active).not.toContain(sessionID)
       expect(yield* execution.isActive(sessionID)).toBe(false)
+    }),
+  )
+
+  it.live("recovers a move admitted during user-interruption cleanup when shutdown prevents its successor", () =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const bus = yield* Bus.Service
+      const store = yield* SessionStore.Service
+      const admission = yield* SessionInbox.Service
+      const jobs = yield* Job.Service
+      const destination = AbsolutePath.make((yield* tmpdirScoped()).path)
+      const sessionID = Session.ID.make("ses_shutdown_successor")
+      yield* seedSessions(database, [sessionID], { resume_attempts: 2 })
+      const lifecycle: string[] = []
+      yield* bus.project(SessionEvent.Execution.Started, () => Effect.sync(() => void lifecycle.push("started")))
+      yield* bus.project(SessionEvent.Execution.Interrupted, (event) =>
+        Effect.sync(() => void lifecycle.push(event.data.reason)),
+      )
+
+      const draining = yield* Deferred.make<void>()
+      const cleanup = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const scope = yield* Scope.make()
+      yield* Effect.addFinalizer(() =>
+        Deferred.succeed(release, undefined).pipe(Effect.andThen(Scope.close(scope, Exit.void))),
+      )
+      const drains: string[] = []
+      const context = yield* buildExecution(scope, () =>
+        Effect.sync(() => void drains.push("original")).pipe(
+          Effect.andThen(Deferred.succeed(draining, undefined)),
+          Effect.andThen(Effect.never),
+          Effect.onInterrupt(() => Deferred.succeed(cleanup, undefined).pipe(Effect.andThen(Deferred.await(release)))),
+        ),
+      )
+      const execution = Context.get(context, SessionExecution.Service)
+      const sessions = Context.get(
+        yield* Layer.buildWithScope(
+          AppNodeBuilder.build(Session.node, [
+            [Database.node, Layer.succeed(Database.Service, database)],
+            [Bus.node, Layer.succeed(Bus.Service, bus)],
+            [SessionStore.node, Layer.succeed(SessionStore.Service, store)],
+            [SessionInbox.node, Layer.succeed(SessionInbox.Service, admission)],
+            [Job.node, Layer.succeed(Job.Service, jobs)],
+            // The shared Bus already has the production Session projectors.
+            [SessionProjector.node, Layer.empty],
+            [Project.node, globalProjectNode],
+            [SessionExecution.node, Layer.succeed(SessionExecution.Service, execution)],
+            [
+              LocationServiceMap.node,
+              Layer.effect(
+                LocationServiceMap.Service,
+                LayerMap.make(
+                  (ref: Location.Ref) =>
+                    // Move validation only needs Location from the destination graph.
+                    // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
+                    LayerNode.compile(Location.boundNode(ref), [
+                      [Project.node, globalProjectNode],
+                    ]) as unknown as Layer.Layer<LocationServices>,
+                ),
+              ),
+            ],
+          ]).pipe(Layer.fresh),
+          scope,
+        ),
+        Session.Service,
+      )
+
+      yield* execution.wake(sessionID)
+      yield* Deferred.await(draining)
+      yield* sessions.interrupt(sessionID)
+      yield* Deferred.await(cleanup)
+      yield* sessions.move({ sessionID, directory: destination })
+      expect(yield* sessions.inbox(sessionID)).toMatchObject([{ type: "move" }])
+
+      const closing = yield* Scope.close(scope, Exit.void).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Effect.yieldNow
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(closing)
+
+      expect({ active: yield* execution.isActive(sessionID), claimed: (yield* claims(database))[sessionID] }).toEqual({
+        active: false,
+        claimed: true,
+      })
+      yield* execution.awaitIdle(sessionID)
+      expect(drains).toEqual(["original"])
+      expect(lifecycle).toEqual(["started", "user"])
+      // The interrupted intent releases its old recovery budget; the pending move is new work.
+      expect(yield* attempts(database, sessionID)).toBe(0)
+
+      const restartedScope = yield* Scope.make()
+      yield* Effect.addFinalizer(() => Scope.close(restartedScope, Exit.void))
+      const resumed = yield* Deferred.make<void>()
+      const pending: SessionInbox.Item["type"][] = []
+      const restarted = yield* buildExecution(restartedScope, () =>
+        Effect.gen(function* () {
+          drains.push("restarted")
+          pending.push(...(yield* SessionInbox.list(database.db, sessionID)).map((item) => item.type))
+          yield* Deferred.succeed(resumed, undefined)
+        }),
+      )
+      yield* Context.get(restarted, SessionRestart.Service).resumeSuspendedSessions
+      yield* Deferred.await(resumed)
+      yield* Context.get(restarted, SessionExecution.Service).awaitIdle(sessionID)
+      expect(drains).toEqual(["original", "restarted"])
+      expect(pending).toEqual(["move"])
+      expect((yield* claims(database))[sessionID]).toBe(false)
     }),
   )
 
