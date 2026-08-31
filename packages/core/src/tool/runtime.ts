@@ -272,7 +272,14 @@ const stringify = (value: unknown) => {
 
 export const normalizedName = (tool: Tool.Info) => tool.name.replace(/[^a-zA-Z0-9_-]/g, "_")
 
-export const effectiveName = (tool: Tool.Info) =>
-  tool.options?.namespace === undefined
-    ? normalizedName(tool)
-    : `${tool.options.namespace.replaceAll(".", "_")}_${normalizedName(tool)}`
+export const namespace = (tool: Tool.Info) => {
+  const value = tool.options?.namespace
+  if (value === undefined) return
+  return typeof value === "string" ? { name: value } : value
+}
+
+export const effectiveName = (tool: Tool.Info) => {
+  const group = namespace(tool)
+  if (group === undefined) return normalizedName(tool)
+  return `${group.name.replaceAll(".", "_")}_${normalizedName(tool)}`
+}

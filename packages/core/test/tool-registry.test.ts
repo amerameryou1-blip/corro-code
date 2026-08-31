@@ -536,12 +536,47 @@ describe("Tool", () => {
       yield* service.transform((draft) => {
         draft.add({ ...make(), name: "first", options: { codemode: false } })
         draft.add({ ...make(), name: "second", options: { namespace: "invalid..namespace", codemode: false } })
+        draft.add({ ...make(), name: "third", options: { namespace: { name: "also..invalid" } } })
         draft.add({ ...make(), name: "second", options: { namespace: "invalid__namespace" } })
       })
 
       const snapshot = yield* service.snapshot()
       expect(snapshot.definitions.map((tool) => tool.name)).toEqual(["first", "execute"])
       expect(snapshot.codeModeCatalog?.map((tool) => tool.path)).toEqual(["invalid__namespace.second"])
+    }),
+  )
+
+  it.effect("supports described namespaces without changing string namespace behavior", () =>
+    Effect.gen(function* () {
+      const service = yield* Tool.Service
+      yield* service.transform((draft) => {
+        draft.add({ ...make(), name: "plain", options: { namespace: "legacy" } })
+        draft.add({
+          ...make(),
+          name: "direct",
+          options: { namespace: { name: "registry", description: "Package tools" }, codemode: false },
+        })
+        draft.add({
+          ...make(),
+          name: "search",
+          description: "Search packages",
+          options: { namespace: { name: "registry", description: "Package publishing and discovery" } },
+        })
+      })
+
+      const snapshot = yield* service.snapshot()
+      expect(snapshot.definitions.map((tool) => tool.name)).toEqual(["registry_direct", "execute"])
+      expect(snapshot.codeModeCatalog?.map((tool) => tool.path)).toEqual(["legacy.plain", "registry.search"])
+      const result = yield* snapshot.execute({
+        ...call("execute"),
+        call: {
+          type: "tool-call",
+          id: "namespace-search",
+          name: "execute",
+          input: { code: 'return search({ query: "publishing discovery" })' },
+        },
+      })
+      expect(result.output).toMatchObject({ output: expect.stringContaining("tools.registry.search") })
     }),
   )
 

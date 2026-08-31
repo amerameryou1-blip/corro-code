@@ -20,8 +20,13 @@ export interface Context {
 }
 
 interface BaseOptions {
-  readonly namespace?: string
+  readonly namespace?: string | Namespace
   readonly permission?: string
+}
+
+export interface Namespace {
+  readonly name: string
+  readonly description?: string
 }
 
 export type Options = BaseOptions &

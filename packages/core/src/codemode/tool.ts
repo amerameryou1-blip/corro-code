@@ -1,9 +1,9 @@
 export * as CodeModeTool from "./tool.js"
 
-import { CodeMode, Tool, toolError } from "@opencode-ai/codemode"
+import { CodeMode, Namespace, Tool, toolError } from "@opencode-ai/codemode"
 import type { Content, Context, Error, Info, Metadata, Result } from "@opencode-ai/schema/tool"
 import { Effect, Ref, Schema, Semaphore } from "effect"
-import { definition, normalizedName } from "../tool/runtime.js"
+import { definition, namespace, normalizedName } from "../tool/runtime.js"
 
 const ExecuteFile = Schema.Struct({
   data: Schema.String,
@@ -148,7 +148,8 @@ function runtime(
   executeTool: (name: string, tool: Info, input: unknown) => Effect.Effect<unknown, unknown>,
   hooks?: CodeMode.ToolCallHooks,
 ) {
-  const tools: Record<string, Tool.Tool<never>> = {}
+  const tools: Record<string, Tool.Tool<never> | Namespace.Namespace<never>> = {}
+  const namespaces = new Map<string, string>()
   for (const [name, registration] of registrations) {
     const child = definition(registration)
     const path = qualifiedName(registration)
@@ -158,14 +159,19 @@ function runtime(
       output: child.outputSchema ?? Schema.NullOr(Schema.String),
       execute: (input) => executeTool(name, registration, input),
     })
+    const group = namespace(registration)
+    if (group?.description !== undefined) namespaces.set(group.name, group.description)
   }
+  for (const [name, description] of namespaces)
+    if (!Object.hasOwn(tools, name)) tools[name] = Namespace.make({ description, tools: {} })
   return CodeMode.make<typeof tools>({ tools, ...hooks })
 }
 
 function qualifiedName(registration: Info) {
   const normalized = normalizedName(registration)
-  if (registration.options?.namespace === undefined) return normalized
-  return `${registration.options.namespace}.${normalized}`
+  const group = namespace(registration)
+  if (group === undefined) return normalized
+  return `${group.name}.${normalized}`
 }
 
 // Tool inputs arrive as parsed JSON, so the JSON value cast is a boundary fact.

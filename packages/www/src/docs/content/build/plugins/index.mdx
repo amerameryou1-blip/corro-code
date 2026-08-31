@@ -808,7 +808,10 @@ const registration = await ctx.tool.transform((draft) => {
       required: ["name"],
       additionalProperties: false,
     },
-    options: { namespace: "acme", codemode: true },
+    options: {
+      namespace: { name: "acme", description: "Customer account tools" },
+      codemode: true,
+    },
     execute: async (input, tool) => {
       await tool.progress({ status: "greeting" })
       return { content: `Hello ${(input as { name: string }).name}!` }
@@ -823,6 +826,9 @@ changing their order; it does not rerun plugin setup.
 ```ts
 await ctx.tool.reload()
 ```
+
+Use a namespace object to add model-visible search context for its CodeMode tools. A string such as
+`namespace: "acme"` remains supported when no namespace description is needed.
 
 Use `list()` and `get()` to inspect tools currently in the draft. Tools have an `id` containing their effective name,
 and `get()` returns `undefined` when that ID is not present. Use `update` and `remove` with the effective tool name,

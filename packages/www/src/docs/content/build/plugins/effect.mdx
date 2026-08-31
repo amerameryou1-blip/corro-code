@@ -843,7 +843,10 @@ effect: (ctx) =>
         description: "Create a greeting",
         input: Schema.Struct({ name: Schema.String }),
         output: Schema.Struct({ greeting: Schema.String }),
-        options: { namespace: "acme", codemode: true },
+        options: {
+          namespace: { name: "acme", description: "Customer account tools" },
+          codemode: true,
+        },
         execute: ({ name }, context) =>
           Effect.gen(function* () {
             yield* context.progress({ status: "greeting" })
@@ -853,6 +856,9 @@ effect: (ctx) =>
     })
   }),
 ```
+
+Use a namespace object to add model-visible search context for its CodeMode tools. A string such as
+`namespace: "acme"` remains supported when no namespace description is needed.
 
 Call `yield* ctx.tool.reload()` after changing source data captured by the callback. Reload replays active transforms
 without changing their order; it does not rerun the plugin effect.

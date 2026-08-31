@@ -15,7 +15,7 @@ import { PluginHooks } from "./plugin/hooks.js"
 import { SessionMessage } from "./session/message.js"
 import { SessionSchema } from "./session/schema.js"
 import { State } from "./state.js"
-import { definition, effectiveName, execute, normalizedName, normalizeContent } from "./tool/runtime.js"
+import { definition, effectiveName, execute, namespace, normalizedName, normalizeContent } from "./tool/runtime.js"
 import { Wildcard } from "./util/wildcard.js"
 
 export class RegistrationError extends Schema.TaggedError<RegistrationError>()("Tool.RegistrationError", {
@@ -191,7 +191,7 @@ const layer = Layer.effect(
           ({ tool, error }) =>
             Effect.logError("Skipping invalid tool registration", {
               name: tool.name,
-              namespace: tool.options?.namespace,
+              namespace: namespace(tool)?.name,
               error: error.message,
             }),
           { discard: true },
@@ -268,9 +268,12 @@ function schemaMakeError(error: unknown) {
 }
 
 function registrationError(tool: Tool.Info) {
-  const namespace = tool.options?.namespace
-  if (namespace !== undefined && !namespace.split(".").every((segment) => /^[A-Za-z0-9_-]{1,64}$/.test(segment)))
-    return new RegistrationError({ name: namespace, message: `Invalid tool namespace: ${JSON.stringify(namespace)}` })
+  const group = namespace(tool)
+  if (group !== undefined && !group.name.split(".").every((segment) => /^[A-Za-z0-9_-]{1,64}$/.test(segment)))
+    return new RegistrationError({
+      name: group.name,
+      message: `Invalid tool namespace: ${JSON.stringify(group.name)}`,
+    })
   const name = normalizedName(tool)
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) return new RegistrationError({ name, message: `Invalid tool name: ${name}` })
   const id = effectiveName(tool)
