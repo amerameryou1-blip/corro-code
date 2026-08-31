@@ -1,11 +1,13 @@
 import { describe, expect } from "bun:test"
 import path from "path"
 import { mkdir, rm } from "fs/promises"
-import { Effect, Layer, LayerMap } from "effect"
+import { Cause, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, LayerMap } from "effect"
 import { Worktree } from "@opencode-ai/schema/worktree"
+import { Workspace } from "@opencode-ai/schema/workspace"
 import { Bus } from "@opencode-ai/core/bus"
 import { Database } from "@opencode-ai/core/database/database"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
+import { Instance } from "@opencode-ai/core/instance"
 import { Location } from "@opencode-ai/core/location"
 import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
 import type { LocationServices } from "@opencode-ai/core/location-services"
@@ -18,6 +20,8 @@ import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { SessionRunner } from "@opencode-ai/core/session/runner/index"
 import { SessionStore } from "@opencode-ai/core/session/store"
 import { LayerNode } from "@opencode-ai/util/effect/layer-node"
+import { Global } from "@opencode-ai/util/global"
+import { tempGlobalLayer } from "./fixture/global"
 import { tmpdirScoped } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 import { globalProjectNode } from "./lib/project"
@@ -59,6 +63,9 @@ const itWithActiveExecution = testEffect(
     ],
   ),
 )
+const itWithExecution = testEffect(
+  AppNodeBuilder.build(LayerNode.group([Session.node, SessionExecution.node]), [[Global.node, tempGlobalLayer]]),
+)
 const unavailableLocations = Layer.effect(
   LocationServiceMap.Service,
   LayerMap.make(
@@ -75,8 +82,142 @@ const itWithUnavailableDestination = testEffect(
     ],
   ),
 )
+const itWithSourceProbe = testEffect(Layer.empty)
+const sourceProbe = Effect.gen(function* () {
+  const tmp = yield* tmpdirScoped()
+  const source = AbsolutePath.make(path.join(tmp.path, "source"))
+  const destination = AbsolutePath.make(tmp.path)
+  yield* Effect.promise(() => mkdir(source))
+  const entered = yield* Deferred.make<void>()
+  const release = yield* Deferred.make<void>()
+  const replacements: LayerNode.Replacements = [
+    [Project.node, globalProjectNode],
+    [SessionExecution.node, SessionExecution.noopLayer],
+    [Global.node, tempGlobalLayer],
+  ]
+  const context = yield* Layer.build(
+    AppNodeBuilder.build(LayerNode.group([Session.node, Bus.node]), [
+      ...replacements,
+      [
+        LocationServiceMap.node,
+        Layer.effect(
+          LocationServiceMap.Service,
+          LayerMap.make(
+            (ref: Location.Ref) =>
+              Layer.unwrap(
+                Effect.gen(function* () {
+                  if (ref.directory === source) {
+                    yield* Deferred.succeed(entered, undefined)
+                    yield* Deferred.await(release)
+                  }
+                  return Instance.layer(ref, { replacements })
+                }),
+              ),
+            { idleTimeToLive: Duration.infinity },
+          ),
+        ),
+      ],
+    ]),
+  )
+  return {
+    source,
+    destination,
+    entered,
+    release,
+    session: Context.get(context, Session.Service),
+    bus: Context.get(context, Bus.Service),
+  }
+})
 
 describe("Session.move", () => {
+  itWithExecution.live(
+    "recovers an idle session whose source configuration cannot load",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped()
+        const source = AbsolutePath.make(path.join(tmp.path, "source"))
+        const destination = AbsolutePath.make(path.join(tmp.path, "destination"))
+        yield* Effect.promise(() => Promise.all([mkdir(source), mkdir(destination)]))
+        yield* Effect.promise(() =>
+          Bun.write(path.join(source, "opencode.json"), JSON.stringify({ instructions: ["{file:./missing.txt}"] })),
+        )
+        const session = yield* Session.Service
+        const execution = yield* SessionExecution.Service
+        const created = yield* session.create({ location: Location.Ref.make({ directory: source }) })
+
+        yield* session.move({ sessionID: created.id, directory: destination })
+        yield* execution.awaitIdle(created.id)
+
+        expect((yield* session.get(created.id)).location.directory).toBe(destination)
+        expect(yield* session.inbox(created.id)).toEqual([])
+      }),
+    { timeout: 15_000 },
+  )
+
+  itWithSourceProbe.live("does not recover or enqueue a move when source initialization is interrupted", () =>
+    Effect.gen(function* () {
+      const fixture = yield* sourceProbe
+      const created = yield* fixture.session.create({ location: Location.Ref.make({ directory: fixture.source }) })
+      const pending = yield* fixture.session.synthetic({ sessionID: created.id, text: "Keep pending", resume: false })
+      const moving = yield* fixture.session
+        .move({ sessionID: created.id, directory: fixture.destination })
+        .pipe(Effect.exit, Effect.forkScoped)
+      yield* Deferred.await(fixture.entered)
+
+      yield* Deferred.interrupt(fixture.release)
+      const exit = yield* Fiber.join(moving)
+
+      expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+      expect((yield* fixture.session.get(created.id)).location.directory).toBe(fixture.source)
+      expect(yield* fixture.session.inbox(created.id)).toEqual([pending])
+    }).pipe(Effect.timeout("5 seconds")),
+  )
+
+  for (const changed of ["directory", "workspace"] as const) {
+    itWithSourceProbe.live(
+      `allows inbox cancellation during a source probe and rejects stale ${changed} recovery`,
+      () =>
+        Effect.gen(function* () {
+          const fixture = yield* sourceProbe
+          const created = yield* fixture.session.create({ location: Location.Ref.make({ directory: fixture.source }) })
+          const pending = yield* fixture.session.synthetic({
+            sessionID: created.id,
+            text: "Cancel pending",
+            resume: false,
+          })
+          const moving = yield* fixture.session
+            .move({ sessionID: created.id, directory: fixture.destination })
+            .pipe(Effect.exit, Effect.forkScoped)
+          yield* Deferred.await(fixture.entered)
+
+          yield* fixture.session.cancelInbox({ sessionID: created.id, inboxID: pending.id }).pipe(
+            Effect.timeout("2 seconds"),
+            Effect.onError(() => Deferred.interrupt(fixture.release)),
+          )
+          expect(yield* fixture.session.inbox(created.id)).toEqual([])
+          expect(moving.pollUnsafe()).toBeUndefined()
+
+          const location = Location.Ref.make({
+            directory: changed === "directory" ? fixture.destination : fixture.source,
+            workspaceID: changed === "workspace" ? Workspace.ID.create() : undefined,
+          })
+          // Apply a concurrent placement change while the original source probe is suspended.
+          yield* fixture.bus.publish(SessionEvent.Moved, {
+            sessionID: created.id,
+            location,
+            projectID: Project.ID.global,
+          })
+          yield* Deferred.die(fixture.release, new Error("source unavailable"))
+          expect(Exit.isSuccess(yield* Fiber.join(moving))).toBe(true)
+
+          expect((yield* fixture.session.get(created.id)).location).toEqual(location)
+          expect(yield* fixture.session.inbox(created.id)).toMatchObject([
+            { type: "move", payload: { location: { directory: fixture.destination } } },
+          ])
+        }).pipe(Effect.timeout("5 seconds")),
+    )
+  }
+
   itWithUnavailableDestination.effect("rejects an unavailable destination before admitting the move", () =>
     tmpdirScoped().pipe(
       Effect.flatMap((tmp) =>

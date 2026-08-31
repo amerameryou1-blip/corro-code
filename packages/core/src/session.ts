@@ -458,6 +458,18 @@ const layer = Layer.effect(
             )
           }),
         )
+        const source = yield* fs.stat(current.location.directory).pipe(Effect.orElseSucceed(() => undefined))
+        const unavailable =
+          !(yield* execution.isActive(input.sessionID)) &&
+          (!source ||
+            source.type !== "Directory" ||
+            !(yield* locations.contextEffect(current.location).pipe(
+              Effect.scoped,
+              Effect.as(true),
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.succeed(false),
+              ),
+            )))
         const item = SessionInbox.Item.make({
           type: "move",
           payload,
@@ -467,9 +479,13 @@ const layer = Layer.effect(
           input.sessionID,
           Effect.gen(function* () {
             const latest = yield* result.get(input.sessionID)
-            const source = yield* fs.stat(latest.location.directory).pipe(Effect.orElseSucceed(() => undefined))
             // Active runners must hand off at a step boundary to retain their continuation.
-            if ((!source || source.type !== "Directory") && !(yield* execution.isActive(input.sessionID))) {
+            if (
+              unavailable &&
+              latest.location.directory === current.location.directory &&
+              latest.location.workspaceID === current.location.workspaceID &&
+              !(yield* execution.isActive(input.sessionID))
+            ) {
               const cancellations = (yield* SessionInbox.moveIDs(db, input.sessionID)).map(
                 (item) => [SessionEvent.InboxCancelled, { sessionID: input.sessionID, inboxID: item.id }] as const,
               )
