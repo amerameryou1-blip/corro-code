@@ -190,6 +190,10 @@ ultimate source of truth.
 - [x] Dotted tool names are canonicalized into namespace paths; a path can be both callable and a namespace, and the
       last tool supplied for a canonical path wins.
 - [x] Tool path segments may be named `constructor`, `prototype`, or `__proto__` because paths use inert Map keys.
+- [x] Explicit namespace descriptions supplied to `CodeMode.make` or `CodeMode.execute` contribute to search matching
+      for descendant tools, including nested ancestors. Search results keep the original tool descriptions and
+      signatures. Metadata does not create executable tools or change namespace enumeration. Host-side
+      `runtime.namespaces()` lists only explicitly described namespaces with descendant tools, sorted by path.
 - [x] Outbound tool arguments follow JSON serialization semantics, like `JSON.stringify`: object properties with
       `undefined` values are dropped, `undefined` array elements and non-finite numbers become `null`, and sparse
       arrays densify. Tools never receive `undefined` inside their input object, though a bare `tools.t(undefined)`

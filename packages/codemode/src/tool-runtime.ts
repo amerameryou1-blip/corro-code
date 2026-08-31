@@ -67,6 +67,14 @@ export type ToolDescription = {
   readonly signature: string
 }
 
+export type Namespace = {
+  readonly description: string
+}
+
+export type NamespaceDescription = Namespace & {
+  readonly path: string
+}
+
 export type SafeObject = Record<string, unknown>
 
 const defaultSearchLimit = 10
@@ -328,6 +336,7 @@ const visibleTools = <R>(tools: Tools<R>) =>
 
 export type DiscoveryPlan = {
   readonly catalog: ReadonlyArray<ToolDescription>
+  readonly namespaces: ReadonlyArray<NamespaceDescription>
   readonly searchIndex: ReadonlyArray<SearchEntry>
 }
 
@@ -420,11 +429,19 @@ export const searchSignature = (() => {
   return `search(input: ${inputTypeScript(tool, true)}): ${outputTypeScript(tool, true)}`
 })()
 
-const toSearchEntry = <R>(path: string, tool: Tool<R>, description: ToolDescription): SearchEntry => ({
+const toSearchEntry = <R>(
+  path: string,
+  tool: Tool<R>,
+  description: ToolDescription,
+  namespaces: ReadonlyArray<NamespaceDescription>,
+): SearchEntry => ({
   description,
   searchText: [
     path,
     tool.description,
+    ...namespaces
+      .filter((namespace) => path.startsWith(`${namespace.path}.`))
+      .map((namespace) => namespace.description),
     ...inputProperties(tool).flatMap(({ name, description: property }) =>
       property === undefined ? [name] : [name, property],
     ),
@@ -433,14 +450,26 @@ const toSearchEntry = <R>(path: string, tool: Tool<R>, description: ToolDescript
     .toLowerCase(),
 })
 
-export const searchIndex = <R>(tools: Tools<R>): ReadonlyArray<SearchEntry> =>
-  visibleTools(tools).map(({ path, tool, description }) => toSearchEntry(path, tool, description))
+export const searchIndex = <R>(
+  tools: Tools<R>,
+  namespaces?: Readonly<Record<string, Namespace>>,
+): ReadonlyArray<SearchEntry> => prepare(tools, namespaces).searchIndex
 
-export const prepare = <R>(tools: Tools<R>): DiscoveryPlan => {
+export const prepare = <R>(tools: Tools<R>, namespaces: Readonly<Record<string, Namespace>> = {}): DiscoveryPlan => {
   const visible = visibleTools(tools)
+  const descriptions = Object.entries(namespaces)
+    .map(([path, namespace]) => {
+      if (path.split(".").some((segment) => segment === "")) {
+        throw new TypeError(`Namespace path '${path}' contains an empty segment.`)
+      }
+      return { path, description: namespace.description }
+    })
+    .filter((namespace) => visible.some((tool) => tool.path.startsWith(`${namespace.path}.`)))
+    .sort((left, right) => compareText(left.path, right.path))
   return {
     catalog: visible.map(({ description }) => description),
-    searchIndex: visible.map(({ path, tool, description }) => toSearchEntry(path, tool, description)),
+    namespaces: descriptions,
+    searchIndex: visible.map(({ path, tool, description }) => toSearchEntry(path, tool, description, descriptions)),
   }
 }
 

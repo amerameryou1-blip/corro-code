@@ -177,11 +177,108 @@ describe("blocked member names on tool paths", () => {
   })
 })
 
+describe("namespace descriptions", () => {
+  const tools = {
+    api: {
+      admin: echo("Admin tool", "admin"),
+      "admin.users.list": echo("List users", "users"),
+      "admin.invite": echo("Invite user", "invite"),
+      "administrator.list": echo("List administrators", "administrators"),
+      read: echo("Read data", "read"),
+      empty: {},
+    },
+    "other.read": echo("Read other", "other"),
+  }
+  const namespaces = {
+    "api.admin.users": { description: "Directory" },
+    missing: { description: "Absent" },
+    "api.read": { description: "Leafonly" },
+    "api.empty": { description: "Emptygroup" },
+    "api.admin": { description: "Personnel" },
+    api: { description: "Workspace" },
+  } satisfies Readonly<Record<string, CodeMode.Namespace>>
+  const runtime = CodeMode.make({ tools, namespaces })
+
+  test("only explicit namespaces with descendant tools are returned in canonical path order", () => {
+    const descriptions: ReadonlyArray<CodeMode.NamespaceDescription> = runtime.namespaces()
+    expect(descriptions).toEqual([
+      { path: "api", description: "Workspace" },
+      { path: "api.admin", description: "Personnel" },
+      { path: "api.admin.users", description: "Directory" },
+    ])
+    expect(CodeMode.make({ tools }).namespaces()).toEqual([])
+    expect(CodeMode.make({ namespaces }).namespaces()).toEqual([])
+  })
+
+  test.each(["make", "execute"] as const)(
+    "%s searches ancestor descriptions without changing result descriptors",
+    async (mode) => {
+      for (const [query, scope, paths] of [
+        [
+          "Workspace",
+          undefined,
+          ["api.admin", "api.admin.invite", "api.admin.users.list", "api.administrator.list", "api.read"],
+        ],
+        ["Personnel", undefined, ["api.admin.invite", "api.admin.users.list"]],
+        ["Directory", undefined, ["api.admin.users.list"]],
+        ["Workspace", "api.admin.users", ["api.admin.users.list"]],
+        ["Personnel", "api.administrator", []],
+        ["Absent Leafonly Emptygroup", undefined, []],
+      ] as const) {
+        const code = `return search(${JSON.stringify({ query, namespace: scope })})`
+        const result = await Effect.runPromise(
+          mode === "make" ? runtime.execute(code) : CodeMode.execute({ tools, namespaces, code }),
+        )
+        expect(result).toEqual({
+          ok: true,
+          value: {
+            items: paths.map((path) => ({
+              ...runtime.catalog().find((tool) => tool.path === path),
+              path: `tools.${path}`,
+            })),
+            remaining: 0,
+            next: null,
+          },
+          toolCalls: [{ name: "search" }],
+        })
+      }
+    },
+  )
+
+  test("metadata preserves tool descriptions, enumeration, and callability", async () => {
+    expect(runtime.catalog()).toEqual(CodeMode.make({ tools }).catalog())
+    expect(await value(runtime, `return Object.keys(tools)`)).toEqual(["api", "other"])
+    expect(await value(runtime, `return Object.keys(tools.api.admin)`)).toEqual(["users", "invite"])
+    expect(await value(runtime, `return await tools.api.admin({})`)).toBe("admin")
+    expect(await value(runtime, `return await tools.api.admin.users.list({})`)).toBe("users")
+    expect((await failure(runtime, `return await tools.api.admin.users({})`)).message).toContain("is not callable")
+    expect((await failure(runtime, `return await tools.missing({})`)).message).toContain("Unknown tool 'missing'")
+  })
+
+  test.each(["with-hyphen", "with space", "constructor", "prototype", "__proto__"])(
+    "namespace segments allow %s just like tool keys",
+    async (path) => {
+      const runtime = CodeMode.make({
+        tools: { [path]: { read: echo("Read", "read") } },
+        namespaces: { [path]: { description: "Collection" } },
+      })
+      expect(runtime.namespaces()).toEqual([{ path, description: "Collection" }])
+      expect(await value(runtime, `return await tools[${JSON.stringify(path)}].read({})`)).toBe("read")
+    },
+  )
+})
+
 describe("empty segments", () => {
   test("tool names with empty segments are rejected at make", () => {
     for (const name of ["", "a..b", "trail.", ".lead"]) {
       expect(() => CodeMode.make({ tools: { [name]: echo("Bad", "bad") } })).toThrow("empty segment")
     }
+  })
+
+  test.each(["", "a..b", "trail.", ".lead"])("namespace path '%s' is rejected by make and execute", (path) => {
+    const namespaces = { [path]: { description: "Invalid" } }
+    expect(() => CodeMode.make({ namespaces })).toThrow("empty segment")
+    expect(() => CodeMode.execute({ namespaces, code: "return 1" })).toThrow("empty segment")
   })
 })
 

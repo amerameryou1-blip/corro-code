@@ -1,10 +1,18 @@
 import { Effect, Schema } from "effect"
 import { executeWithLimits } from "./interpreter/execute.js"
-import { type Services, type ToolDescription, ToolRuntime } from "./tool-runtime.js"
+import {
+  type Namespace,
+  type NamespaceDescription,
+  type Services,
+  type ToolDescription,
+  ToolRuntime,
+} from "./tool-runtime.js"
 import type { Tools } from "./tools.js"
 
 /** A tool call admitted during an execution. */
 export type { ToolCall, ToolCallEnded, ToolCallHooks, ToolCallStarted, ToolDescription } from "./tool-runtime.js"
+/** Host-provided namespace metadata, separate from executable tools. */
+export type { Namespace, NamespaceDescription } from "./tool-runtime.js"
 /** Signature-construction helpers for host-owned catalog instructions. */
 export { searchSignature, toolExpression } from "./tool-runtime.js"
 
@@ -36,6 +44,8 @@ export type ExecuteOptions<Provided extends Record<string, unknown> = {}> = {
   code: string
   /** Explicit tools exposed to the program as `tools`. */
   tools?: Provided & Tools<Services<Provided>>
+  /** Descriptions keyed by canonical dotted namespace path. */
+  namespaces?: Readonly<Record<string, Namespace>>
   /** Per-execution overrides for the default resource limits. */
   limits?: ExecutionLimits
   /** Observes decoded tool input immediately before tool execution. */
@@ -109,6 +119,7 @@ export type Result = typeof Result.Type
 /** Reusable confined runtime over explicit tools. */
 export type Runtime<R = never> = {
   readonly catalog: () => ReadonlyArray<ToolDescription>
+  readonly namespaces: () => ReadonlyArray<NamespaceDescription>
   readonly execute: (code: string) => Effect.Effect<Result, never, R>
 }
 
@@ -130,7 +141,11 @@ export const execute = <const Provided extends Record<string, unknown>>(
   options: ExecuteOptions<Provided>,
 ): Effect.Effect<Result, never, Services<Provided>> => {
   const tools = (options.tools ?? {}) as Tools<Services<Provided>>
-  return executeWithLimits(options, resolveExecutionLimits(options.limits), ToolRuntime.searchIndex(tools))
+  return executeWithLimits(
+    options,
+    resolveExecutionLimits(options.limits),
+    ToolRuntime.searchIndex(tools, options.namespaces),
+  )
 }
 
 /** Creates an Effect-native runtime over explicit, schema-described tools. */
@@ -139,10 +154,11 @@ export const make = <const Provided extends Record<string, unknown> = {}>(
 ): Runtime<Services<Provided>> => {
   const tools = (options.tools ?? {}) as Tools<Services<Provided>>
   const limits = resolveExecutionLimits(options.limits)
-  const prepared = ToolRuntime.prepare(tools)
+  const prepared = ToolRuntime.prepare(tools, options.namespaces)
 
   return {
     catalog: () => prepared.catalog,
+    namespaces: () => prepared.namespaces,
     execute: (code) => executeWithLimits<Provided>({ ...options, code }, limits, prepared.searchIndex),
   }
 }

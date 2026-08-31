@@ -72,6 +72,7 @@ Dots in tool names create namespaces: `{ "issues.list": tool }` and `{ issues: {
 const runtime = CodeMode.make({ tools, limits: { timeoutMs: 30_000 } })
 
 runtime.catalog() // structured tool descriptions
+runtime.namespaces() // explicit descriptions for namespaces with descendant tools
 runtime.execute(source) // Effect<CodeMode.Result, never, ToolServices>
 ```
 
@@ -148,9 +149,28 @@ copying error. Interruption propagates without becoming an error diagnostic.
 every visible tool. Hosts render their own model-facing instructions from these descriptors; `CodeMode.searchSignature`
 and `CodeMode.toolExpression(path)` supply the exact callable forms.
 
+Both `CodeMode.make` and `CodeMode.execute` accept an optional `namespaces` map, separate from `tools`:
+
+```ts
+const runtime = CodeMode.make({
+  tools: { orders: { lookup: lookupOrder } },
+  namespaces: { orders: { description: "Purchases, fulfillment, and shipment tracking" } },
+})
+```
+
+Map keys are canonical dotted namespace paths, including nested paths such as `orders.shipping`. Values use
+`CodeMode.Namespace`, defined as `{ readonly description: string }`. Empty path segments throw `TypeError`, just
+like tool keys; other characters are allowed. `runtime.namespaces()` returns a `ReadonlyArray<CodeMode.NamespaceDescription>`
+(`Namespace & { readonly path: string }`), sorted by path. It includes only explicitly described namespaces with at
+least one descendant tool whose path starts with the namespace path plus `.`. Descriptions for absent namespaces,
+empty groups, and leaf tools are ignored. Metadata never creates namespaces or callable tools, and does not change
+the `runtime.catalog()` array or individual tool descriptions.
+
 The synchronous `search(...)` built-in is always available. It supports exact-path lookup, namespace-scoped search,
 empty-query browsing, and pagination, and returns callable paths with full signatures. Search counts toward
-`maxToolCalls`.
+`maxToolCalls`. Query matching includes all applicable ancestor namespace descriptions alongside tool paths,
+descriptions, and input properties. Searching a collection description returns its descendant tools, with their
+original descriptions and signatures; namespace descriptions are not separate search results.
 
 ## Execution Limits
 
