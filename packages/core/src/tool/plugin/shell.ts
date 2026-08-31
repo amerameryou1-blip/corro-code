@@ -67,7 +67,8 @@ const StructuredOutput = Schema.Struct({
 const Output = Schema.Struct({
   ...StructuredOutput.fields,
   output: Schema.String,
-  status: Schema.optionalKey(Schema.Literals(["completed", "running"])),
+  status: Schema.optionalKey(Schema.Literals(["completed", "running", "cancelled"])),
+  reason: Schema.optionalKey(Schema.Literal("user")),
 })
 
 type Output = typeof Output.Type
@@ -83,6 +84,7 @@ const toolResult = (output: Output) => {
     content: resultMessages(output).map((text) => ({ type: "text" as const, text })),
     metadata: {
       status: output.status,
+      ...(output.reason ? { reason: output.reason } : {}),
       ...ShellResult.metadata(output),
       ...(output.shellID !== undefined ? { shellID: output.shellID } : {}),
     },
@@ -170,20 +172,25 @@ export const Plugin = {
         const info = (yield* runtime.job.wait({ id })).info
         if (!info || info.status === "running") return
         const output = info.status === "completed" ? yield* Deferred.await(settled) : undefined
-        const text = output
-          ? resultMessages(output).join("\n\n")
-          : info.status === "error"
-            ? (info.error ?? "Command failed")
-            : "Command cancelled"
+        const text =
+          info.reason === "user"
+            ? ShellResult.stopped
+            : output
+              ? resultMessages(output).join("\n\n")
+              : info.status === "error"
+                ? (info.error ?? "Command failed")
+                : "Command cancelled"
         yield* runtime.session.synthetic({
           ...(info.notificationID ? { id: info.notificationID } : {}),
           sessionID,
+          ...(info.reason === "user" ? { resume: false } : {}),
           description: command,
           ...ShellResult.notification({
             jobID: id,
             shellID,
             command,
             state: info.status,
+            reason: info.reason,
             text,
             output,
           }),
@@ -218,8 +225,6 @@ export const Plugin = {
                     finalTimeout = yield* prepare(invocation, context)
                   }),
               )
-              yield* context.progress({ shellID: info.id })
-
               const settled = yield* Deferred.make<Output>()
               const run = Effect.gen(function* () {
                 const result = yield* shell.result(info)
@@ -251,6 +256,9 @@ export const Plugin = {
                 },
                 run,
               })
+              yield* context
+                .progress({ shellID: info.id })
+                .pipe(Effect.onInterrupt(() => runtime.job.cancel(job.id).pipe(Effect.ignore)))
 
               if (input.background === true) {
                 yield* runtime.job.background(job.id)
@@ -268,6 +276,13 @@ export const Plugin = {
               }
               if (result?.info.status === "error")
                 return yield* Effect.fail(new Error(result.info.error ?? "Command failed"))
+              if (result?.info.reason === "user")
+                return {
+                  output: ShellResult.stopped,
+                  status: "cancelled" as const,
+                  reason: "user" as const,
+                  truncated: false,
+                }
               if (result?.info.status === "cancelled") return yield* Effect.fail(new Error("Command cancelled"))
 
               return yield* Deferred.await(settled)

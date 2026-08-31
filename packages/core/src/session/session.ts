@@ -229,11 +229,11 @@ export const make = Effect.fn("Session.make")(function* () {
       const preview = yield* shell
         .output(started.id, { limit: SHELL_MAX_CAPTURE_BYTES })
         .pipe(Effect.catchTag("Shell.NotFoundError", () => Effect.succeed(ShellResult.unavailable)))
-      yield* bus.publish(SessionEvent.Shell.Ended, {
-        sessionID,
-        shell: terminal.info,
-        output: preview,
-      })
+      yield* bus.publish(
+        SessionEvent.Shell.Ended,
+        { sessionID, shell: terminal.info, output: preview },
+        terminal.reason ? { metadata: { reason: terminal.reason } } : undefined,
+      )
       yield* synthetic(sessionID, {
         ...ShellResult.userNotification(terminal),
         resume: false,

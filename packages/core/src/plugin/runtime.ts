@@ -88,7 +88,7 @@ export const layerWithCell = (cell: Cell): Layer.Layer<Service> =>
         wait: (input) => require(cell, (runtime) => runtime.job.wait(input)),
         block: (input) => require(cell, (runtime) => runtime.job.block(input)),
         background: (id) => require(cell, (runtime) => runtime.job.background(id)),
-        cancel: (id) => require(cell, (runtime) => runtime.job.cancel(id)),
+        cancel: (id, options) => require(cell, (runtime) => runtime.job.cancel(id, options)),
         completeBackground: (notificationID) =>
           require(cell, (runtime) => runtime.job.completeBackground(notificationID)),
       },

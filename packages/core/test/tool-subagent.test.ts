@@ -34,7 +34,7 @@ import { PluginSupervisor } from "@opencode-ai/core/plugin/supervisor"
 import { Permission } from "@opencode-ai/core/permission"
 import { SubagentTool } from "@opencode-ai/core/tool/plugin/subagent"
 import { Tool } from "@opencode-ai/core/tool"
-import { tmpdir } from "./fixture/tmpdir"
+import { tmpdir, tmpdirScoped } from "./fixture/tmpdir"
 import { tempGlobalLayer } from "./fixture/global"
 import { testEffect } from "./lib/effect"
 import { executeTool, registerToolPlugin, toolIdentity } from "./lib/tool"
@@ -129,11 +129,12 @@ const productionIt = testEffect(AppNodeBuilder.build(nodes, replacements))
 const it = testEffect(
   AppNodeBuilder.build(nodes, [...replacements, PluginSupervisor.node.replace(subagentPluginSupervisor)]),
 )
+const completionLLM = TestLLM.testLayer({ fallback: TestLLM.text(childText, "completion") })
 const completionIt = testEffect(
-  AppNodeBuilder.build(LayerNode.group([nodes, SessionRestart.node, KV.node]), [
+  AppNodeBuilder.build(LayerNode.group([nodes, SessionRestart.node, SessionStore.node, KV.node]), [
     Global.node.replace(tempGlobalLayer),
     PluginSupervisor.node.replace(subagentPluginSupervisor),
-    LayerNodePlatform.llmClient.replace(TestLLM.testLayer({ fallback: TestLLM.text(childText, "completion") })),
+    LayerNodePlatform.llmClient.replace(completionLLM),
     SessionRunnerModel.node.replace(
       Layer.succeed(SessionRunnerModel.Service, {
         resolve: () =>
@@ -149,7 +150,7 @@ const completionIt = testEffect(
           ),
       }),
     ),
-  ]),
+  ]).pipe(Layer.provideMerge(completionLLM)),
 )
 
 const withSubagent = (location: Location.Ref) =>
@@ -178,6 +179,207 @@ const withSubagent = (location: Location.Ref) =>
   })
 
 describe("SubagentTool", () => {
+  completionIt.live("returns a successful cancelled result when the user stops a foreground child", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const sessions = yield* Session.Service
+      const parent = yield* sessions.create({
+        location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+        model: parentModel,
+        title: "Foreground parent",
+      })
+      yield* withSubagent(parent.location)
+      const locations = yield* LocationServiceMap.Service
+      const registry = yield* Tool.Service.pipe(Effect.provide(locations.get(parent.location)))
+      const llm = yield* TestLLM.Test
+      yield* llm.push(TestLLM.hangAfter())
+      const running = yield* Deferred.make<Session.ID>()
+      const call = yield* executeTool(registry, {
+        sessionID: parent.id,
+        ...toolIdentity,
+        progress: (update) => Deferred.succeed(running, outputSessionID(update)).pipe(Effect.asVoid),
+        call: {
+          type: "tool-call",
+          id: "call-user-stopped-subagent",
+          name: SubagentTool.name,
+          input: { agent: "reviewer", description: "foreground review", prompt: "review" },
+        },
+      }).pipe(Effect.forkScoped)
+      const childID = yield* Deferred.await(running)
+      yield* llm.wait(1)
+      const jobs = yield* Job.Service
+      yield* jobs.get(childID).pipe(Effect.repeat({ until: (info) => info?.status === "running" }))
+
+      expect(yield* sessions.interrupt(childID)).toBeTrue()
+      yield* sessions.wait(childID)
+      expect(yield* Fiber.join(call)).toEqual({
+        status: "completed",
+        output: {
+          sessionID: childID,
+          status: "cancelled",
+          output: "Subagent stopped by user. Do not restart it unless the user asks.",
+        },
+        content: [
+          {
+            type: "text",
+            text: `<subagent sessionID="${childID}" state="cancelled">\nSubagent stopped by user. Do not restart it unless the user asks.\n</subagent>`,
+          },
+        ],
+        metadata: { sessionID: childID, status: "cancelled", reason: "user" },
+      })
+      expect(yield* jobs.get(childID)).toMatchObject({ status: "cancelled", reason: "user" })
+      expect(yield* llm.requests()).toHaveLength(1)
+
+      const resumed = yield* executeTool(registry, {
+        sessionID: parent.id,
+        ...toolIdentity,
+        call: {
+          type: "tool-call",
+          id: "call-explicitly-resumed-subagent",
+          name: SubagentTool.name,
+          input: { agent: "reviewer", description: "continued review", prompt: "continue", sessionID: childID },
+        },
+      })
+      expect(resumed).toMatchObject({
+        status: "completed",
+        content: [{ type: "text", text: completedOutput(childID) }],
+        metadata: { sessionID: childID, status: "completed" },
+      })
+      expect((yield* jobs.get(childID))?.reason).toBeUndefined()
+      expect(yield* llm.requests()).toHaveLength(2)
+    }),
+  )
+
+  completionIt.live("keeps a non-user foreground cancellation as a tool error", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const sessions = yield* Session.Service
+      const parent = yield* sessions.create({
+        location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+        model: parentModel,
+        title: "Cancelled foreground parent",
+      })
+      yield* withSubagent(parent.location)
+      const locations = yield* LocationServiceMap.Service
+      const registry = yield* Tool.Service.pipe(Effect.provide(locations.get(parent.location)))
+      const llm = yield* TestLLM.Test
+      yield* llm.push(TestLLM.hangAfter())
+      const running = yield* Deferred.make<Session.ID>()
+      const call = yield* executeTool(registry, {
+        sessionID: parent.id,
+        ...toolIdentity,
+        progress: (update) => Deferred.succeed(running, outputSessionID(update)).pipe(Effect.asVoid),
+        call: {
+          type: "tool-call",
+          id: "call-cancelled-subagent",
+          name: SubagentTool.name,
+          input: { agent: "reviewer", description: "cancelled review", prompt: "review" },
+        },
+      }).pipe(Effect.forkScoped)
+      const childID = yield* Deferred.await(running)
+      yield* llm.wait(1)
+      const jobs = yield* Job.Service
+      yield* jobs.get(childID).pipe(Effect.repeat({ until: (info) => info?.status === "running" }))
+
+      yield* jobs.cancel(childID)
+      expect(yield* Fiber.join(call)).toEqual({
+        status: "error",
+        error: { type: "tool.execution", message: `Subagent cancelled (sessionID: ${childID})` },
+      })
+      expect((yield* jobs.get(childID))?.reason).toBeUndefined()
+      yield* sessions.interrupt(childID)
+      yield* sessions.wait(childID)
+    }),
+  )
+
+  completionIt.live("admits user-stopped background work without waking an idle parent, including restart replay", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const sessions = yield* Session.Service
+      const parent = yield* sessions.create({
+        location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+        model: parentModel,
+        title: "Idle notification recipient",
+      })
+      yield* withSubagent(parent.location)
+      const locations = yield* LocationServiceMap.Service
+      const registry = yield* Tool.Service.pipe(Effect.provide(locations.get(parent.location)))
+      const llm = yield* TestLLM.Test
+      yield* llm.push(TestLLM.hangAfter())
+      const jobs = yield* Job.Service
+      const bus = yield* Bus.Service
+      const admitted = yield* Deferred.make<Job.Background>()
+      const notifications: SessionMessage.ID[] = []
+      yield* bus.project(SessionEvent.InboxEnqueued, (event) =>
+        Effect.gen(function* () {
+          if (event.data.sessionID !== parent.id || event.data.item.type !== "synthetic") return
+          notifications.push(event.data.inboxID)
+          const marker = (yield* jobs.pendingBackground).find((job) => job.notificationID === event.data.inboxID)
+          expect(marker).toMatchObject({ status: "cancelled", reason: "user" })
+          if (marker) yield* Deferred.succeed(admitted, marker)
+        }),
+      )
+
+      const result = yield* executeTool(registry, {
+        sessionID: parent.id,
+        ...toolIdentity,
+        call: {
+          type: "tool-call",
+          id: "call-user-stopped-background",
+          name: SubagentTool.name,
+          input: { agent: "reviewer", description: "background review", prompt: "review", background: true },
+        },
+      })
+      const childID = outputSessionID(result.metadata)
+      yield* llm.wait(1)
+      expect(yield* sessions.interrupt(childID)).toBeTrue()
+      yield* sessions.wait(childID)
+      const marker = yield* Deferred.await(admitted)
+      yield* jobs.pendingBackground.pipe(Effect.repeat({ until: (pending) => pending.length === 0 }))
+      yield* sessions.wait(parent.id)
+      const inbox = yield* sessions.inbox(parent.id)
+      expect(inbox).toEqual([
+        expect.objectContaining({
+          id: marker.notificationID,
+          type: "synthetic",
+          payload: {
+            description: "background review",
+            text: `<subagent sessionID="${childID}" state="cancelled" description="background review">\nSubagent stopped by user. Do not restart it unless the user asks.\n</subagent>`,
+            metadata: { source: "subagent", childID, agent: "reviewer", state: "cancelled", reason: "user" },
+          },
+        }),
+      ])
+      expect(yield* llm.requests()).toHaveLength(1)
+      const execution = yield* SessionExecution.Service
+      expect(yield* execution.isActive(parent.id)).toBeFalse()
+      expect(yield* execution.isActive(childID)).toBeFalse()
+      const store = yield* SessionStore.Service
+      expect(yield* store.listSuspended()).toEqual([])
+
+      // Replay the persisted terminal marker after a crash between admission and acknowledgment.
+      const kv = yield* KV.Service
+      yield* kv.set(`job.background/${marker.notificationID}`, marker)
+      const restart = yield* SessionRestart.Service
+      yield* restart.resumeSuspendedSessions
+      yield* sessions.wait(parent.id)
+      expect(yield* llm.requests()).toHaveLength(1)
+      expect(yield* sessions.inbox(parent.id)).toEqual(inbox)
+      expect(notifications).toEqual([marker.notificationID])
+      expect(yield* jobs.pendingBackground).toEqual([])
+
+      yield* sessions.prompt({ sessionID: parent.id, text: "Continue with other work" })
+      yield* sessions.wait(parent.id)
+      expect(yield* sessions.inbox(parent.id)).toEqual([])
+      expect((yield* sessions.context(parent.id)).filter((message) => message.type === "synthetic")).toEqual([
+        expect.objectContaining({
+          id: marker.notificationID,
+          metadata: { source: "subagent", childID, agent: "reviewer", state: "cancelled", reason: "user" },
+        }),
+      ])
+      expect(yield* llm.requests()).toHaveLength(2)
+    }),
+  )
+
   completionIt.live("admits one durable completion across live delivery and restart replay", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),

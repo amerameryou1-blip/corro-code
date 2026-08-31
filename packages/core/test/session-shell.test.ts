@@ -3,6 +3,7 @@ import fs from "fs/promises"
 import path from "path"
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Schedule, Stream } from "effect"
 import { Bus } from "@opencode-ai/core/bus"
+import { Job } from "@opencode-ai/core/job"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { Location } from "@opencode-ai/core/location"
 import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
@@ -53,10 +54,13 @@ const executionLayer = Layer.effect(
 )
 
 const it = testEffect(
-  AppNodeBuilder.build(LayerNode.group([Bus.node, Session.node, SessionExecution.node, LocationServiceMap.node]), [
-    Bus.node.replace(Bus.configured({ persist: true })),
-    SessionExecution.node.replace(executionLayer.pipe(Layer.provide(controlLayer))),
-  ]).pipe(Layer.provideMerge(controlLayer)),
+  AppNodeBuilder.build(
+    LayerNode.group([Bus.node, Job.node, Session.node, SessionExecution.node, LocationServiceMap.node]),
+    [
+      Bus.node.replace(Bus.configured({ persist: true })),
+      SessionExecution.node.replace(executionLayer.pipe(Layer.provide(controlLayer))),
+    ],
+  ).pipe(Layer.provideMerge(controlLayer)),
 )
 
 const setup = Effect.gen(function* () {
@@ -271,6 +275,30 @@ describe("Session.shell", () => {
       }),
     )
   }
+
+  it.live("preserves user intent when stopping a user-entered shell without a tool job", () =>
+    Effect.gen(function* () {
+      const fixture = yield* setup
+      const command = yield* launch(fixture, "user-stop")
+      const jobs = yield* Job.Service
+      expect(yield* jobs.get(command.shellID)).toBeUndefined()
+      yield* Shell.stop(command.shellID).pipe(Effect.provideService(Shell.Service, fixture.shell))
+      yield* Fiber.join(command.caller).pipe(Effect.timeout("5 seconds"))
+      expect(yield* fixture.session.messages({ sessionID: fixture.created.id })).toMatchObject([
+        { type: "shell", status: "killed", metadata: { background: true, reason: "user" } },
+      ])
+      expect(yield* fixture.session.inbox(fixture.created.id)).toMatchObject([
+        {
+          type: "synthetic",
+          payload: {
+            text: expect.stringContaining("Command stopped by user. Do not restart it unless the user asks."),
+            metadata: { source: "shell", shellID: command.shellID, state: "cancelled", reason: "user" },
+          },
+        },
+      ])
+      expect(fixture.control.wakes).toEqual([])
+    }),
+  )
 
   for (const outcome of [
     {

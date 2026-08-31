@@ -723,8 +723,18 @@ test("ignores activity snapshots from an older connection", async () => {
   }
 })
 
-test("projects background user shell metadata from durable shell data", () => {
+test("projects user shell lifecycle metadata", () => {
   const setup = activityFixture(() => Response.json({ data: {} }))
+  const shell = {
+    id: "sh_user",
+    status: "running" as const,
+    command: "pwd",
+    cwd: "/project",
+    shell: "/bin/sh",
+    file: "/project/shell.out",
+    metadata: { sessionID: "ses_refresh", background: true },
+    time: { started: 1 },
+  }
   try {
     setup.emit({
       id: "evt_user_shell",
@@ -733,20 +743,26 @@ test("projects background user shell metadata from durable shell data", () => {
       durable: { aggregateID: "ses_refresh", seq: 1, version: 1 },
       data: {
         sessionID: "ses_refresh",
-        shell: {
-          id: "sh_user",
-          status: "running",
-          command: "pwd",
-          cwd: "/project",
-          shell: "/bin/sh",
-          file: "/project/shell.out",
-          metadata: { sessionID: "ses_refresh", background: true },
-          time: { started: 1 },
-        },
+        shell,
       },
     })
     expect(setup.data.session.message.list("ses_refresh")).toMatchObject([
       { type: "shell", shellID: "sh_user", status: "running", metadata: { background: true } },
+    ])
+    setup.emit({
+      id: "evt_user_shell_stopped",
+      created: 2,
+      type: "session.shell.ended",
+      durable: { aggregateID: "ses_refresh", seq: 2, version: 1 },
+      metadata: { reason: "user" },
+      data: {
+        sessionID: "ses_refresh",
+        shell: { ...shell, status: "killed", time: { started: 1, completed: 2 } },
+        output: { output: "", size: 0, cursor: 0, truncated: false },
+      },
+    })
+    expect(setup.data.session.message.list("ses_refresh")).toMatchObject([
+      { type: "shell", shellID: "sh_user", status: "killed", metadata: { background: true, reason: "user" } },
     ])
   } finally {
     setup.dispose()

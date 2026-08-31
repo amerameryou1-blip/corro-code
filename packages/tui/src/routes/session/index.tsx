@@ -2119,6 +2119,7 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
   })
   const completion = () => source() === "subagent" || source() === "shell"
   const state = () => stringValue(metadata()?.state)
+  const stopped = () => state() === "cancelled" && metadata()?.reason === "user"
   const actor = () => (source() === "shell" ? "Shell" : Locale.titlecase(stringValue(metadata()?.agent) ?? "Subagent"))
   const text = () => {
     if (props.message.type === "system") return props.message.description ?? "Instructions updated"
@@ -2127,14 +2128,16 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
   }
   const description = () => (source() === "shell" ? text().replace(/\s+/g, " ").trim() : text())
   const status = () => {
+    if (stopped()) return "stopped by user"
     if (state() === "completed") return "finished"
     if (state() === "error") return "failed"
     return state() ?? "finished"
   }
-  const heading = () => `${state() === "completed" ? "↳" : "!"} ${actor()} ${status()}`
+  const heading = () => `${state() === "completed" || stopped() ? "↳" : "!"} ${actor()} ${status()}`
   const suffix = () => Locale.truncateWidth(` · ${description()}`, Math.max(0, ctx.width - 3 - stringWidth(heading())))
   const color = () => {
     if (hover()) return theme.text.action.secondary.hovered
+    if (stopped()) return theme.text.subdued
     if (state() === "error") return theme.text.feedback.error.default
     if (state() === "cancelled") return theme.text.feedback.warning.default
     return theme.text.feedback.info.default
@@ -2334,7 +2337,9 @@ function RevertMessage(props: {
 }
 
 function ShellMessage(props: { message: Extract<SessionMessageInfo, { type: "shell" }> }) {
+  const stopped = () => props.message.status === "killed" && props.message.metadata?.reason === "user"
   const error = createMemo(() => {
+    if (stopped()) return
     if (props.message.status === "killed") return "Command cancelled"
     if (props.message.status === "timeout") return "Command timed out"
     if (props.message.exit !== undefined && props.message.exit !== 0)
@@ -2346,6 +2351,7 @@ function ShellMessage(props: { message: Extract<SessionMessageInfo, { type: "she
       shellID={props.message.shellID}
       command={props.message.command}
       status={props.message.status === "running" ? "running" : "completed"}
+      stopped={stopped()}
       output={props.message.output?.output}
       error={error()}
     />
@@ -3181,6 +3187,8 @@ function BlockToolContent(props: BlockToolProps & { borderColor: RGBA }) {
 const SHELL_DISPLAY_LIMIT = 1024 * 1024
 
 function Shell(props: ToolProps) {
+  const stopped = () =>
+    props.part.state.status === "completed" && props.metadata.status === "cancelled" && props.metadata.reason === "user"
   return (
     <ShellDisplay
       part={props.part}
@@ -3188,8 +3196,9 @@ function Shell(props: ToolProps) {
       command={stringValue(props.input.command)}
       workdir={stringValue(props.input.workdir)}
       status={props.part.state.status}
-      background={Boolean(stringValue(props.metadata.shellID)) && props.part.state.status !== "running"}
-      output={stringValue(props.metadata.shellID) ? undefined : props.output}
+      stopped={stopped()}
+      background={!stopped() && Boolean(stringValue(props.metadata.shellID)) && props.part.state.status !== "running"}
+      output={!stopped() && stringValue(props.metadata.shellID) ? undefined : props.output}
     />
   )
 }
@@ -3200,6 +3209,7 @@ function ShellDisplay(props: {
   command?: string
   workdir?: string
   status: SessionMessageAssistantTool["state"]["status"]
+  stopped?: boolean
   background?: boolean
   output?: string
   error?: string
@@ -3217,7 +3227,7 @@ function ShellDisplay(props: {
     const id = props.shellID
     return Boolean(id && data.shell.get(id))
   })
-  const isRunning = createMemo(() => props.status === "running" || backgroundRunning())
+  const isRunning = createMemo(() => !props.stopped && (props.status === "running" || backgroundRunning()))
   const workdir = createMemo(() => pathFormatter.format(props.workdir))
   const [expanded, setExpanded] = createSignal(false)
   const [backgroundOutput, setBackgroundOutput] = createSignal("")
@@ -3331,6 +3341,9 @@ function ShellDisplay(props: {
         </Show>
         <Show when={props.background}>
           <StatusBadge>Background</StatusBadge>
+        </Show>
+        <Show when={props.stopped}>
+          <text fg={theme.text.subdued}>stopped by user</text>
         </Show>
       </box>
     </BlockTool>
@@ -3452,19 +3465,22 @@ function WebSearch(props: ToolProps) {
 function Subagent(props: ToolProps) {
   const { navigate } = useRoute()
   const data = useData()
+  const theme = useTheme()
+  const stopped = () =>
+    props.part.state.status === "completed" && props.metadata.status === "cancelled" && props.metadata.reason === "user"
   const sessionID = createMemo(() => stringValue(props.metadata.sessionID) ?? stringValue(props.metadata.sessionId))
   const description = createMemo(() => stringValue(props.input.description))
   const continuation = createMemo(() => Boolean(stringValue(props.input.sessionID)))
   const isRunning = createMemo(() => {
     const id = sessionID()
-    return props.part.state.status === "running" || Boolean(id && data.session.status(id) === "running")
+    return !stopped() && (props.part.state.status === "running" || Boolean(id && data.session.status(id) === "running"))
   })
 
   return (
     <InlineTool
-      icon={continuation() ? "↳" : isRunning() ? "│" : props.part.state.status === "completed" ? "✓" : "│"}
+      icon={continuation() || stopped() ? "↳" : isRunning() ? "│" : props.part.state.status === "completed" ? "✓" : "│"}
       spinner={!continuation() && isRunning()}
-      complete={description()}
+      complete={stopped() || description()}
       pending="Delegating…"
       part={props.part}
       onClick={() => {
@@ -3472,7 +3488,9 @@ function Subagent(props: ToolProps) {
         if (id) navigate({ type: "session", sessionID: id })
       }}
       status={
-        isBackgroundSubagent(props.metadata, props.part.state.status) ? (
+        stopped() ? (
+          <text fg={theme.text.subdued}>stopped by user</text>
+        ) : isBackgroundSubagent(props.metadata, props.part.state.status) ? (
           <StatusBadge>Background</StatusBadge>
         ) : undefined
       }

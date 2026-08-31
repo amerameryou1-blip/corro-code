@@ -104,13 +104,15 @@ export const layer = (options?: Options) =>
       ) {
         const state = background.status === "running" ? "cancelled" : background.status
         const text =
-          background.status === "running"
-            ? "Command cancelled because the server restarted"
-            : state === "completed"
-              ? (background.output ?? "Command completed")
-              : state === "error"
-                ? (background.error ?? "Command failed")
-                : "Command cancelled"
+          background.reason === "user"
+            ? ShellResult.stopped
+            : background.status === "running"
+              ? "Command cancelled because the server restarted"
+              : state === "completed"
+                ? (background.output ?? "Command completed")
+                : state === "error"
+                  ? (background.error ?? "Command failed")
+                  : "Command cancelled"
 
         yield* sessions
           .synthetic({
@@ -122,9 +124,10 @@ export const layer = (options?: Options) =>
               shellID: recovery.shellID,
               command: recovery.command,
               state,
+              reason: background.reason,
               text,
             }),
-            ...(suspended.has(recovery.sessionID) ? { resume: false } : {}),
+            ...(background.reason === "user" || suspended.has(recovery.sessionID) ? { resume: false } : {}),
           })
           .pipe(
             Effect.catchTag("Session.NotFoundError", () => Effect.void),
@@ -144,7 +147,9 @@ export const layer = (options?: Options) =>
           return
         }
 
-        const notify = Effect.fnUntraced(function* (result: Pick<Job.Background, "status" | "output" | "error">) {
+        const notify = Effect.fnUntraced(function* (
+          result: Pick<Job.Background, "status" | "output" | "error" | "reason">,
+        ) {
           yield* SubagentCompletion.deliver(sessions, jobs, {
             ...result,
             recovery,

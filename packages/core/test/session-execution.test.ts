@@ -196,7 +196,7 @@ describe("SessionExecution lifecycle", () => {
       expect(yield* execution.interrupt(child)).toBeTrue()
       yield* execution.awaitIdle(child)
       expect((yield* jobs.wait({ id: child })).info?.status).toBe("cancelled")
-      expect(yield* jobs.pendingBackground).toMatchObject([{ id: child, status: "cancelled" }])
+      expect(yield* jobs.pendingBackground).toMatchObject([{ id: child, status: "cancelled", reason: "user" }])
       expect((yield* claims(database))[child]).toBe(false)
       yield* Scope.close(scope, Exit.void)
 
@@ -212,9 +212,14 @@ describe("SessionExecution lifecycle", () => {
       )
       yield* Context.get(restarted, SessionRestart.Service).resumeSuspendedSessions
       yield* Context.get(restarted, SessionExecution.Service).awaitIdle(parent)
-      expect(drained).toEqual([parent])
+      expect(drained).toEqual([])
       expect(yield* SessionInbox.list(database.db, parent)).toMatchObject([
-        { payload: { text: expect.stringContaining("Subagent cancelled"), metadata: { state: "cancelled" } } },
+        {
+          payload: {
+            text: expect.stringContaining("Subagent stopped by user"),
+            metadata: { state: "cancelled", reason: "user" },
+          },
+        },
       ])
       expect(yield* restartedJobs.pendingBackground).toEqual([])
     }),
@@ -589,6 +594,42 @@ describe("SessionRestart background recovery", () => {
       const context = yield* buildExecution(scope, () => Effect.void, undefined, restarted)
       yield* Context.get(context, SessionRestart.Service).resumeSuspendedSessions
 
+      expect(yield* restarted.pendingBackground).toEqual([])
+    }),
+  )
+
+  it.effect("recovers a user-stopped shell without waking its idle session", () =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const jobs = yield* Job.Service
+      const sessionID = Session.ID.make("ses_user_stopped_shell")
+      yield* seedSessions(database, [sessionID])
+      yield* seedBackground(jobs, sessionID, [
+        { id: "sh_user_stopped", shellID: "sh_user_stopped", command: "sleep 60" },
+      ])
+      yield* jobs.cancel("sh_user_stopped", { reason: "user" })
+
+      const scope = yield* Scope.make()
+      yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
+      const restarted = yield* Job.make.pipe(Scope.provide(scope))
+      const drained: Session.ID[] = []
+      const context = yield* buildExecution(
+        scope,
+        ({ sessionID }) => Effect.sync(() => void drained.push(sessionID)),
+        undefined,
+        restarted,
+      )
+      yield* Context.get(context, SessionRestart.Service).resumeSuspendedSessions
+      yield* Context.get(context, SessionExecution.Service).awaitIdle(sessionID)
+      expect(drained).toEqual([])
+      expect(yield* SessionInbox.list(database.db, sessionID)).toMatchObject([
+        {
+          payload: {
+            text: expect.stringContaining("Command stopped by user. Do not restart it unless the user asks."),
+            metadata: { source: "shell", state: "cancelled", reason: "user" },
+          },
+        },
+      ])
       expect(yield* restarted.pendingBackground).toEqual([])
     }),
   )

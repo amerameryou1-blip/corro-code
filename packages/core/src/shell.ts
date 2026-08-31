@@ -21,9 +21,12 @@ import { SessionSchema } from "./session/schema.js"
 import { Config } from "./config.js"
 import { ToolOutput } from "./tool-output.js"
 import { ShellResult } from "./shell/result.js"
+import { Job } from "./job.js"
 
 export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Shell.NotFoundError", {
   id: Shell.ID,
+  // Explicit removal unblocks waiters; keep its intent separate from ordinary misses.
+  reason: Schema.optionalKey(Schema.Literal("user")),
 }) {}
 
 // Keep recent exited processes observable in memory, including their file-backed output.
@@ -73,10 +76,20 @@ export interface Interface {
   // Replaces the running command's timeout from now; zero clears it.
   readonly timeout: (id: Shell.ID, duration: number) => Effect.Effect<Shell.Info, NotFoundError>
   readonly output: (id: Shell.ID, input?: Shell.OutputInput) => Effect.Effect<Shell.Output, NotFoundError>
-  readonly remove: (id: Shell.ID) => Effect.Effect<void, NotFoundError>
+  readonly remove: (id: Shell.ID, options?: { reason?: "user" }) => Effect.Effect<void, NotFoundError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Shell") {}
+
+/** User control: cancel the owning tool job before removing its process and capture. */
+export const stop = Effect.fn("Shell.stop")(function* (id: Shell.ID) {
+  const shell = yield* Service
+  const jobs = yield* Job.Service
+  yield* shell.get(id)
+  yield* jobs.cancel(id, { reason: "user" })
+  // Cancelling a tool job also removes its shell through the interruption finalizer.
+  yield* shell.remove(id, { reason: "user" }).pipe(Effect.catchTag("Shell.NotFoundError", () => Effect.void))
+})
 
 export const cleanup = Effect.fn("Shell.cleanup")(function* () {
   const fs = yield* FSUtil.Service
@@ -154,7 +167,7 @@ const layer = () =>
         return command
       })
 
-      const removeCommand = Effect.fnUntraced(function* (id: Shell.ID) {
+      const removeCommand = Effect.fnUntraced(function* (id: Shell.ID, reason?: "user") {
         const command = commands.get(id)
         const index = exitOrder.indexOf(id)
         if (index !== -1) exitOrder.splice(index, 1)
@@ -162,14 +175,14 @@ const layer = () =>
         commands.delete(id)
         if (command.timeoutFiber) yield* Fiber.interrupt(command.timeoutFiber)
         // Unblock any wait still pending when the command is removed before it terminated.
-        yield* Deferred.fail(command.done, new NotFoundError({ id }))
+        yield* Deferred.fail(command.done, new NotFoundError({ id, ...(reason ? { reason } : {}) }))
         yield* Effect.promise(() => unlink(command.file).catch(() => {}))
         yield* bus.publish(Shell.Event.Deleted, { id })
       })
 
-      const remove = Effect.fn("Shell.remove")(function* (id: Shell.ID) {
+      const remove: Interface["remove"] = Effect.fn("Shell.remove")(function* (id, options) {
         yield* require(id)
-        yield* removeCommand(id)
+        yield* removeCommand(id, options?.reason)
       })
 
       const list = Effect.fn("Shell.list")(function* () {
@@ -224,25 +237,29 @@ const layer = () =>
       })
 
       const result = Effect.fn("Shell.result")(function* (started: Shell.Info) {
-        const info = yield* wait(started.id).pipe(
-          Effect.catchTag("Shell.NotFoundError", () =>
-            Effect.succeed({ ...started, status: "killed" as const, time: { ...started.time, completed: Date.now() } }),
+        const terminal = yield* wait(started.id).pipe(
+          Effect.map((info): Pick<ShellResult.Result, "info" | "reason"> => ({ info })),
+          Effect.catchTag("Shell.NotFoundError", (error) =>
+            Effect.succeed({
+              info: { ...started, status: "killed" as const, time: { ...started.time, completed: Date.now() } },
+              ...(error.reason ? { reason: error.reason } : {}),
+            }),
           ),
         )
         const capture = yield* Effect.gen(function* () {
           const limits = Config.latest(yield* config.entries(), "tool_output")
           const maxLines = limits?.max_lines ?? ToolOutput.MAX_LINES
           const maxBytes = limits?.max_bytes ?? ToolOutput.MAX_BYTES
-          const latest = yield* output(info.id, { cursor: Number.MAX_SAFE_INTEGER })
-          const page = yield* output(info.id, { cursor: Math.max(0, latest.size - maxBytes), limit: maxBytes })
+          const latest = yield* output(started.id, { cursor: Number.MAX_SAFE_INTEGER })
+          const page = yield* output(started.id, { cursor: Math.max(0, latest.size - maxBytes), limit: maxBytes })
           const lines = page.output.split("\n")
           if (page.output.endsWith("\n")) lines.pop()
           const truncated = latest.size > maxBytes || lines.length > maxLines
           const text = lines.length > maxLines ? lines.slice(-maxLines).join("\n") : page.output
-          const notice = truncated ? `\n\n[output truncated; full output saved to: ${info.file}]` : ""
+          const notice = truncated ? `\n\n[output truncated; full output saved to: ${started.file}]` : ""
           return { output: `${text || "(no output)"}${notice}`, truncated }
         }).pipe(Effect.catchTag("Shell.NotFoundError", () => Effect.succeed(undefined)))
-        return { info, capture }
+        return { ...terminal, capture }
       })
 
       const create = Effect.fn("Shell.create")(function* <E = never, R = never>(

@@ -40,7 +40,7 @@ export const Input = Schema.Struct({
 
 export const Output = Schema.Struct({
   sessionID: SessionSchema.ID,
-  status: Schema.Literals(["completed", "running"]),
+  status: Schema.Literals(["completed", "running", "cancelled"]),
   output: Schema.String,
 })
 export const description = [
@@ -255,17 +255,28 @@ export const Plugin = {
                 return yield* new ToolFailure({
                   message: `Subagent failed (sessionID: ${child.id}): ${result.info.error ?? "unknown error"}`,
                 })
-              if (result?.info.status === "cancelled")
+              if (result?.info.status === "cancelled") {
+                if (result.info.reason === "user")
+                  return {
+                    sessionID: child.id,
+                    status: "cancelled" as const,
+                    output: SubagentCompletion.STOPPED_BY_USER,
+                  }
                 return yield* new ToolFailure({ message: `Subagent cancelled (sessionID: ${child.id})` })
+              }
               return { sessionID: child.id, status: "completed" as const, output: result?.info.output ?? NO_TEXT }
             }).pipe(
               Effect.map((output) => ({
                 output,
                 content:
-                  output.status === "completed"
-                    ? `<subagent sessionID="${output.sessionID}" state="completed">\n${output.output}\n</subagent>`
-                    : output.output,
-                metadata: { sessionID: output.sessionID, status: output.status },
+                  output.status === "running"
+                    ? output.output
+                    : `<subagent sessionID="${output.sessionID}" state="${output.status}">\n${output.output}\n</subagent>`,
+                metadata: {
+                  sessionID: output.sessionID,
+                  status: output.status,
+                  ...(output.status === "cancelled" ? { reason: "user" } : {}),
+                },
               })),
             ),
         }),

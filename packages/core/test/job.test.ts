@@ -209,11 +209,13 @@ describe("Job", () => {
       expect(marker).toMatchObject({ id: job.id, recovery, status: "running" })
       if (!marker) return yield* Effect.die("background marker missing")
 
-      yield* jobs.cancel(job.id)
+      yield* jobs.cancel(job.id, { reason: "user" })
       expect((yield* jobs.pendingBackground).find((item) => item.id === job.id)).toMatchObject({
         notificationID: marker.notificationID,
         status: "cancelled",
+        reason: "user",
       })
+      expect((yield* jobs.wait({ id: job.id })).info).toMatchObject({ status: "cancelled", reason: "user" })
       yield* jobs.completeBackground(marker.notificationID)
     }),
   )

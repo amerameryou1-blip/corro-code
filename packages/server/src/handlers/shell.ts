@@ -1,4 +1,5 @@
 import { Shell } from "@opencode-ai/core/shell"
+import { Job } from "@opencode-ai/core/job"
 import { Location } from "@opencode-ai/core/location"
 import { PluginSupervisor } from "@opencode-ai/core/plugin/supervisor-service"
 import { Effect } from "effect"
@@ -9,6 +10,7 @@ import { response } from "../location"
 
 export const ShellHandler = HttpApiBuilder.group(Api, "server.shell", (handlers) =>
   Effect.gen(function* () {
+    const jobs = yield* Job.Service
     return handlers
       .handle(
         "shell.list",
@@ -83,16 +85,13 @@ export const ShellHandler = HttpApiBuilder.group(Api, "server.shell", (handlers)
       .handle(
         "shell.remove",
         Effect.fn(function* (ctx) {
-          const shell = yield* Shell.Service
-          yield* shell
-            .remove(ctx.params.id)
-            .pipe(
-              Effect.catchTag(
-                "Shell.NotFoundError",
-                () =>
-                  new ShellNotFoundError({ id: ctx.params.id, message: `Shell command not found: ${ctx.params.id}` }),
-              ),
-            )
+          yield* Shell.stop(ctx.params.id).pipe(
+            Effect.provideService(Job.Service, jobs),
+            Effect.catchTag(
+              "Shell.NotFoundError",
+              () => new ShellNotFoundError({ id: ctx.params.id, message: `Shell command not found: ${ctx.params.id}` }),
+            ),
+          )
           return HttpApiSchema.NoContent.make()
         }),
       )

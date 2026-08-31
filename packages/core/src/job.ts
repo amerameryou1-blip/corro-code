@@ -26,6 +26,7 @@ const Background = Schema.Struct({
     }),
   ]),
   status: Schema.Literals(["running", "completed", "error", "cancelled"]),
+  reason: Schema.optionalKey(Schema.Literal("user")),
   output: Schema.optionalKey(Schema.String),
   error: Schema.optionalKey(Schema.String),
 })
@@ -42,6 +43,7 @@ export type Info = {
   type: string
   title?: string
   status: Status
+  reason?: "user"
   started_at: number
   completed_at?: number
   output?: string
@@ -129,7 +131,7 @@ export interface Interface {
   readonly block: (input: BlockInput) => Effect.Effect<BlockResult | undefined>
   readonly background: (id: string) => Effect.Effect<Info | undefined>
   readonly backgroundAll: (input: BackgroundAllInput) => Effect.Effect<Info[]>
-  readonly cancel: (id: string) => Effect.Effect<Info | undefined>
+  readonly cancel: (id: string, options?: { reason?: "user" }) => Effect.Effect<Info | undefined>
   readonly pendingBackground: Effect.Effect<readonly Background[]>
   readonly completeBackground: (notificationID: SessionMessage.ID) => Effect.Effect<void>
 }
@@ -179,6 +181,7 @@ export const make = Effect.gen(function* () {
       notificationID: job.info.notificationID,
       recovery: job.recovery,
       status: job.info.status,
+      ...(job.info.reason ? { reason: job.info.reason } : {}),
       ...(job.info.output !== undefined ? { output: job.info.output } : {}),
       ...(job.info.error !== undefined ? { error: job.info.error } : {}),
     })
@@ -374,7 +377,7 @@ export const make = Effect.gen(function* () {
     return result.map((item) => item.info)
   })
 
-  const cancel: Interface["cancel"] = Effect.fn("Job.cancel")(function* (id) {
+  const cancel: Interface["cancel"] = Effect.fn("Job.cancel")(function* (id, options) {
     const completed_at = yield* Clock.currentTimeMillis
     const result = yield* SynchronizedRef.modifyEffect(
       state.jobs,
@@ -388,6 +391,7 @@ export const make = Effect.gen(function* () {
           info: {
             ...job.info,
             status: "cancelled" as const,
+            ...(options?.reason ? { reason: options.reason } : {}),
             completed_at,
           },
         }

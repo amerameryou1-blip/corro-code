@@ -164,6 +164,13 @@ const productionIt = testEffect(AppNodeBuilder.build(nodes, replacements))
 const it = testEffect(
   AppNodeBuilder.build(nodes, [...replacements, PluginSupervisor.node.replace(shellPluginSupervisor)]),
 )
+const stopIt = testEffect(
+  AppNodeBuilder.build(nodes, [
+    Permission.node.replace(permission),
+    Global.node.replace(tempGlobalLayer),
+    PluginSupervisor.node.replace(shellPluginSupervisor),
+  ]),
+)
 const permissionIt = testEffect(
   AppNodeBuilder.build(LayerNode.group([nodes, PermissionSaved.node]), [
     SessionExecution.node.replace(executionNode),
@@ -1337,6 +1344,104 @@ describe("ShellTool", () => {
         (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
       ),
     { timeout: 15_000 },
+  )
+
+  it.live("returns an intentional stop result for a foreground command", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      reset()
+      yield* withSession(tmp.path, (registry) =>
+        Effect.gen(function* () {
+          const ready = yield* Deferred.make<string>()
+          const running = yield* executeTool(registry, {
+            ...call({ command: idleCommand }),
+            progress: (update) =>
+              typeof update.shellID === "string"
+                ? Deferred.succeed(ready, update.shellID).pipe(Effect.asVoid)
+                : Effect.void,
+          }).pipe(Effect.forkScoped)
+          const id = ShellSchema.ID.make(yield* Deferred.await(ready))
+          yield* Shell.stop(id)
+          const result = yield* Fiber.join(running)
+          expect(result.metadata).toMatchObject({ status: "cancelled", reason: "user" })
+          expect(result.content).toEqual([
+            Expected.text("Command stopped by user. Do not restart it unless the user asks."),
+          ])
+          const jobs = yield* Job.Service
+          expect((yield* jobs.get(id))?.status).toBe("cancelled")
+        }),
+      )
+    }),
+  )
+
+  it.live("cancels the shell job when interrupted during initial progress", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      reset()
+      yield* withSession(tmp.path, (registry) =>
+        Effect.gen(function* () {
+          const ready = yield* Deferred.make<string>()
+          const running = yield* executeTool(registry, {
+            ...call({ command: idleCommand, background: true }),
+            progress: (update) =>
+              typeof update.shellID === "string"
+                ? Deferred.succeed(ready, update.shellID).pipe(Effect.andThen(Effect.never))
+                : Effect.void,
+          }).pipe(Effect.forkScoped)
+          const id = yield* Deferred.await(ready)
+          yield* Fiber.interrupt(running)
+          const jobs = yield* Job.Service
+          const shell = yield* Shell.Service
+          expect(yield* jobs.get(id)).toMatchObject({ status: "cancelled" })
+          expect(yield* shell.list()).toEqual([])
+          expect(yield* jobs.pendingBackground).toEqual([])
+        }),
+      )
+    }),
+  )
+
+  stopIt.live("records a background user stop without waking the idle session", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      reset()
+      yield* withSession(tmp.path, (registry) =>
+        Effect.gen(function* () {
+          const bus = yield* Bus.Service
+          const jobs = yield* Job.Service
+          const sessions = yield* Session.Service
+          const execution = yield* SessionExecution.Service
+          const started: Session.ID[] = []
+          yield* bus.project(SessionEvent.Execution.Started, (event) =>
+            Effect.sync(() => void started.push(event.data.sessionID)),
+          )
+          const admitted = yield* Deferred.make<Job.Background>()
+          yield* bus.project(SessionEvent.InboxEnqueued, (event) =>
+            Effect.gen(function* () {
+              if (event.data.sessionID !== sessionID || event.data.item.type !== "synthetic") return
+              const marker = (yield* jobs.pendingBackground).find((job) => job.notificationID === event.data.inboxID)
+              if (marker) yield* Deferred.succeed(admitted, marker)
+            }),
+          )
+          const result = yield* executeTool(registry, call({ command: idleCommand, background: true }))
+          const id = result.metadata?.shellID
+          if (typeof id !== "string") return yield* Effect.die("Expected shell ID")
+          yield* Shell.stop(ShellSchema.ID.make(id))
+          expect(yield* Deferred.await(admitted)).toMatchObject({ id, status: "cancelled", reason: "user" })
+          yield* jobs.pendingBackground.pipe(Effect.repeat({ until: (pending) => pending.length === 0 }))
+          yield* execution.awaitIdle(sessionID)
+          expect(started).toEqual([])
+          expect(yield* sessions.inbox(sessionID)).toMatchObject([
+            {
+              type: "synthetic",
+              payload: {
+                text: expect.stringContaining("Command stopped by user. Do not restart it unless the user asks."),
+                metadata: { source: "shell", state: "cancelled", reason: "user", shellID: id },
+              },
+            },
+          ])
+        }),
+      )
+    }),
   )
 
   it.live("returns the shell id for a background command", () =>

@@ -5,6 +5,7 @@ import type { Shell } from "@opencode-ai/schema/shell"
 export type Result = {
   info: Shell.Info
   capture: { output: string; truncated: boolean } | undefined
+  reason?: "user"
 }
 
 type Output = { output: string; truncated: boolean; exit?: number; timeout?: boolean }
@@ -16,6 +17,8 @@ export const unavailable: Shell.Output = {
   size: Buffer.byteLength(missing),
   truncated: false,
 }
+
+export const stopped = "Command stopped by user. Do not restart it unless the user asks."
 
 export function output(result: Result): Output {
   return {
@@ -44,6 +47,7 @@ export function notification(input: {
   jobID?: string
   command: string
   state: "completed" | "cancelled" | "error"
+  reason?: "user"
   text: string
   output?: Output
 }) {
@@ -54,6 +58,7 @@ export function notification(input: {
       shellID: input.shellID,
       ...(input.jobID !== undefined ? { jobID: input.jobID } : {}),
       state: input.state,
+      ...(input.reason ? { reason: input.reason } : {}),
       ...(input.output ? metadata(input.output) : {}),
     },
   }
@@ -62,11 +67,16 @@ export function notification(input: {
 export function userNotification(result: Result) {
   const captured = output(result)
   const status =
-    result.info.status === "killed" ? "Command cancelled." : (notice(captured) ?? "Command exited with code unknown.")
+    result.reason === "user"
+      ? stopped
+      : result.info.status === "killed"
+        ? "Command cancelled."
+        : (notice(captured) ?? "Command exited with code unknown.")
   const message = notification({
     shellID: result.info.id,
     command: result.info.command,
     state: result.info.status === "killed" ? "cancelled" : "completed",
+    reason: result.reason,
     text: `${captured.output}\n\n${status}`,
     output: captured,
   })
