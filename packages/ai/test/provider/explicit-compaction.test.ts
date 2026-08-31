@@ -155,6 +155,11 @@ testEffect(
 
 for (const item of [
   { type: "unknown_provider_item", data: "do not hide in a compaction part" },
+  {
+    type: "message",
+    role: "user",
+    content: [{ type: "input_image", image_url: "https://example.com/image.png", detail: 42 }],
+  },
   { type: "message", role: "user", content: [] },
   {
     type: "message",
@@ -174,6 +179,41 @@ for (const item of [
         expect(error.reason.body).toContain(JSON.stringify(item))
         expect(error.reason.http?.status).toBe(200)
       }),
+  )
+}
+
+for (const model of [
+  OpenAI.configure({ apiKey: "test" }).responses("fixture"),
+  Azure.configure({ apiKey: "test", resourceName: "test" }).responses("fixture"),
+  XAI.configure({ apiKey: "test" }).responses("fixture"),
+]) {
+  const images = [undefined, "low", "high", "auto"].map((detail) => ({
+    type: "input_image",
+    image_url: "https://example.com/image.png",
+    ...(detail === undefined ? {} : { detail }),
+  }))
+  testEffect(
+    dynamicResponse(({ request, text, respond }) =>
+      Effect.sync(() => {
+        if (new URL(request.url).pathname.endsWith("/compact"))
+          return respond(
+            JSON.stringify({
+              object: "response.compaction",
+              output: [{ type: "message", role: "user", content: images }, checkpoint],
+            }),
+          )
+        expect(JSON.parse(text).input[0].content).toEqual(images)
+        return respond(sseEvents({ type: "response.completed", response: { id: "resp_1" } }))
+      }),
+    ),
+  ).effect(`${model.provider} preserves retained image detail through serialization and replay`, () =>
+    Effect.gen(function* () {
+      const request = LLM.request({ model, prompt: "hello" })
+      const compacted = yield* LLMClient.compact(request)
+      const codec = Schema.fromJsonString(Schema.Array(Message))
+      const messages = Schema.decodeSync(codec)(Schema.encodeSync(codec)(compacted.messages))
+      yield* LLMClient.generate(LLMRequest.update(request, { messages }))
+    }),
   )
 }
 

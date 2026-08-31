@@ -137,6 +137,7 @@ function toMessage(item: (typeof Response.Type.output)[number], model: LLMReques
           type: "media",
           data: part.image_url,
           mediaType: /^data:([^;,]+)/.exec(part.image_url)?.[1] ?? "image/*",
+          providerMetadata: part.detail === undefined ? undefined : { [key]: { detail: part.detail } },
         }
       const data = "file_url" in part ? part.file_url : part.file_data
       return {
