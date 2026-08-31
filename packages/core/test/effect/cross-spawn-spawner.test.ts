@@ -185,8 +185,9 @@ describe("cross-spawn spawner", () => {
         `captures ${output} when reading starts after process exit`,
         Effect.gen(function* () {
           const handle = yield* js('process.stdout.write("stdout\\n"); process.stderr.write("stderr\\n")')
-          // Tiny output lets the child and its pipes close before any reader starts, with the scope still open.
           expect(yield* handle.exitCode).toBe(ChildProcessSpawner.ExitCode(0))
+          // Let exit callbacks finish before attaching a reader; the handle scope remains open.
+          yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)))
           expect((yield* decodeByteStream(handle[output])).split("\n").toSorted()).toEqual(
             output === "all" ? ["stderr", "stdout"] : [output],
           )
@@ -248,6 +249,16 @@ describe("cross-spawn spawner", () => {
 
   describe("process control", () => {
     fx.live(
+      "reports exit without waiting for unread stdout",
+      Effect.gen(function* () {
+        const handle = yield* js("process.stdout.write(Buffer.alloc(1024 * 1024)); process.exit(0)")
+        expect(yield* Effect.promise(() => gone(Number(handle.pid)))).toBe(true)
+        expect(yield* handle.exitCode.pipe(Effect.timeout("500 millis"))).toBe(ChildProcessSpawner.ExitCode(0))
+        expect(yield* handle.isRunning).toBe(false)
+      }),
+    )
+
+    fx.live(
       "releases a process with unread buffered stdout",
       Effect.gen(function* () {
         const pid = yield* Effect.scoped(
@@ -261,6 +272,34 @@ describe("cross-spawn spawner", () => {
           }),
         )
         expect(yield* Effect.promise(() => gone(pid))).toBe(true)
+      }).pipe(Effect.timeout("3 seconds")),
+    )
+
+    fx.live(
+      "preserves successful descendants when an exit-only scope closes",
+      Effect.gen(function* () {
+        const tmp = yield* Effect.acquireRelease(
+          Effect.promise(() => tmpdir()),
+          (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+        )
+        const pidFile = path.join(tmp.path, "child.pid")
+        yield* Effect.addFinalizer(() =>
+          Effect.tryPromise(async () => process.kill(Number(await fs.readFile(pidFile, "utf8")), "SIGKILL")).pipe(
+            Effect.ignore,
+          ),
+        )
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            // This fixture's child shares the process group and holds stdio after the parent exits on stdin EOF.
+            const handle = yield* ChildProcess.make(
+              "node",
+              [path.join(import.meta.dir, "../fixture/held-stdio.cjs"), "mcp", pidFile],
+              { stdin: "ignore", forceKillAfter: 100 },
+            )
+            expect(yield* handle.exitCode).toBe(ChildProcessSpawner.ExitCode(0))
+          }),
+        )
+        expect(alive(Number(yield* Effect.promise(() => fs.readFile(pidFile, "utf8"))))).toBe(true)
       }).pipe(Effect.timeout("3 seconds")),
     )
 

@@ -2,6 +2,7 @@ import { describe, expect } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Schedule, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { Bus } from "@opencode-ai/core/bus"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { Location } from "@opencode-ai/core/location"
@@ -271,6 +272,45 @@ describe("Session.shell", () => {
       }),
     )
   }
+
+  it.effect("keeps success when the invocation timeout expires during post-exit capture", () =>
+    Effect.gen(function* () {
+      const fixture = yield* setup
+      const pidFile = path.join(fixture.tmp.path, "child.pid")
+      yield* Effect.addFinalizer(() =>
+        Effect.tryPromise(async () => process.kill(Number(await fs.readFile(pidFile, "utf8")), "SIGKILL")).pipe(
+          Effect.ignore,
+        ),
+      )
+      const info = yield* fixture.shell.create({
+        command: `node "${path.join(import.meta.dir, "fixture/held-stdio.cjs")}" exit "${pidFile}"`,
+        timeout: 500,
+      })
+      const completion = yield* fixture.shell.wait(info.id).pipe(Effect.forkScoped)
+      // Wait for the real process without advancing its invocation timeout or capture deadline.
+      yield* fixture.shell
+        .get(info.id)
+        .pipe(
+          Effect.repeat({ until: (info) => info.status === "exited", schedule: Schedule.spaced("10 millis") }),
+          Effect.timeout("3 seconds"),
+          TestClock.withLive,
+        )
+      yield* TestClock.adjust("500 millis")
+      expect(yield* fixture.shell.get(info.id)).toMatchObject({ status: "exited", exit: 0 })
+      expect(completion.pollUnsafe()).toBeUndefined()
+
+      yield* TestClock.adjust("500 millis")
+      expect(yield* Fiber.join(completion).pipe(Effect.timeout("3 seconds"), TestClock.withLive)).toMatchObject({
+        status: "exited",
+        exit: 0,
+      })
+      const result = yield* fixture.shell.result(info)
+      expect(result.capture?.output).toContain("foreground-out")
+      expect(result.capture?.output).toContain("foreground-err")
+      const pid = Number(yield* Effect.promise(() => fs.readFile(pidFile, "utf8")))
+      expect(() => process.kill(pid, 0)).not.toThrow()
+    }),
+  )
 
   for (const outcome of [
     {

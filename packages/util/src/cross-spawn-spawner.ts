@@ -442,8 +442,11 @@ const makeCrossSpawnSpawner = Effect.gen(function* () {
             }),
             Effect.fnUntraced(
               function* ([proc, closed, exited, stopOutput]) {
-                const done = (yield* Deferred.isDone(closed)) || (yield* Deferred.isDone(stopOutput))
-                if (done) {
+                discard(proc.stdout)
+                discard(proc.stderr)
+                if (yield* Deferred.isDone(exited)) {
+                  // Reporting exit must not shorten the inherited-pipe grace period on scope release.
+                  yield* Effect.raceFirst(Deferred.await(closed), Deferred.await(stopOutput))
                   const [code] = yield* Deferred.await(exited)
                   if (process.platform === "win32") return
                   if (code === 0 || Predicate.isNull(code)) return
@@ -466,10 +469,6 @@ const makeCrossSpawnSpawner = Effect.gen(function* () {
             ),
           )
 
-          const completion = Effect.raceFirst(
-            Deferred.await(closed),
-            Deferred.await(stopOutput).pipe(Effect.andThen(Deferred.await(exited))),
-          )
           const fd = yield* setupFds(command, proc, extra)
           const out = yield* setupOutput(command, proc, sout, serr, stopOutput)
           let ref = true
@@ -481,10 +480,8 @@ const makeCrossSpawnSpawner = Effect.gen(function* () {
             all: out.all,
             getInputFd: fd.getInputFd,
             getOutputFd: fd.getOutputFd,
-            isRunning: Effect.gen(function* () {
-              return !(yield* Deferred.isDone(closed)) && !(yield* Deferred.isDone(stopOutput))
-            }),
-            exitCode: Effect.flatMap(completion, ([code, signal]) => {
+            isRunning: Effect.map(Deferred.isDone(exited), (done) => !done),
+            exitCode: Effect.flatMap(Deferred.await(exited), ([code, signal]) => {
               if (Predicate.isNotNull(code)) return Effect.succeed(ExitCode(code))
               return Effect.fail(
                 toPlatformError(
