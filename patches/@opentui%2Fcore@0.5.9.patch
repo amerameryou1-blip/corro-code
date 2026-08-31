@@ -1,0 +1,391 @@
+diff --git a/node_modules/@opentui/core/.bun-tag-1ebf445c0c1c7e45 b/.bun-tag-1ebf445c0c1c7e45
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/node_modules/@opentui/core/.bun-tag-8b2df39a1d17e4c2 b/.bun-tag-8b2df39a1d17e4c2
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/chunk-bun-b0662dgp.js b/chunk-bun-b0662dgp.js
+index be58d3ea205d26d3f3a33137a43fa50727e9abe7..cea6b5d507de1115951fc0bb3f53d4ba338b1cc9 100644
+--- a/chunk-bun-b0662dgp.js
++++ b/chunk-bun-b0662dgp.js
+@@ -8517,6 +8517,7 @@ class TreeSitterClient extends EventEmitter2 {
+   initializePromise;
+   initializeResolvers;
+   messageCallbacks = new Map;
++  highlightCache = new Map;
+   messageIdCounter = 0;
+   editQueues = new Map;
+   debouncer;
+@@ -8599,6 +8600,7 @@ class TreeSitterClient extends EventEmitter2 {
+     if (this.worker !== worker) {
+       return;
+     }
++    this.highlightCache = new Map;
+     worker.onmessage = null;
+     worker.onerror = null;
+     this.worker = undefined;
+@@ -8655,6 +8657,7 @@ class TreeSitterClient extends EventEmitter2 {
+     }
+   }
+   async handleReset() {
++    this.highlightCache = new Map;
+     this.buffers.clear();
+     await this.stopWorker();
+     this.startWorker();
+@@ -8748,6 +8751,7 @@ class TreeSitterClient extends EventEmitter2 {
+     return path;
+   }
+   addFiletypeParser(filetypeParser) {
++    this.highlightCache = new Map;
+     this.sendWorkerMessage({ type: "ADD_FILETYPE_PARSER", filetypeParser: this.resolveFiletypeParser(filetypeParser) });
+   }
+   resolveFiletypeParser(filetypeParser) {
+@@ -8773,7 +8777,21 @@ class TreeSitterClient extends EventEmitter2 {
+       }
+     });
+   }
++  getCachedHighlight(content, filetype) {
++    const key = JSON.stringify([filetype, content]);
++    const result = this.highlightCache.get(key);
++    if (result) {
++      this.highlightCache.delete(key);
++      this.highlightCache.set(key, result);
++    }
++    return result === undefined ? undefined : structuredClone(result);
++  }
+   async highlightOnce(content, filetype) {
++    const cached = this.getCachedHighlight(content, filetype);
++    if (cached)
++      return cached;
++    // Invalidation replaces this map so older requests cannot refill the cache.
++    const cache = this.highlightCache;
+     if (!this.initialized) {
+       try {
+         await this.initialize();
+@@ -8783,7 +8801,20 @@ class TreeSitterClient extends EventEmitter2 {
+     }
+     const messageId = `oneshot_${this.messageIdCounter++}`;
+     return new Promise((resolve3, reject) => {
+-      this.messageCallbacks.set(messageId, { resolve: resolve3, reject });
++      this.messageCallbacks.set(messageId, {
++        resolve: (result) => {
++          if (this.highlightCache === cache && !result.error && !result.warning && result.highlights) {
++            const key = JSON.stringify([filetype, content]);
++            cache.delete(key);
++            cache.set(key, structuredClone(result));
++            if (cache.size > 500) {
++              cache.delete(cache.keys().next().value);
++            }
++          }
++          resolve3(result);
++        },
++        reject
++      });
+       try {
+         this.sendWorkerMessage({
+           type: "ONESHOT_HIGHLIGHT",
+@@ -9029,6 +9060,7 @@ class TreeSitterClient extends EventEmitter2 {
+     if (this.destroyPromise) {
+       return this.destroyPromise;
+     }
++    this.highlightCache = new Map;
+     let resolveDestroy;
+     let rejectDestroy;
+     const destroyPromise = new Promise((resolve3, reject) => {
+@@ -9094,6 +9126,7 @@ class TreeSitterClient extends EventEmitter2 {
+     if (this.options.dataPath === dataPath) {
+       return;
+     }
++    this.highlightCache = new Map;
+     this.options.dataPath = dataPath;
+     if (this.initialized && this.worker) {
+       const messageId = `update_datapath_${this.messageIdCounter++}`;
+@@ -9122,6 +9155,7 @@ class TreeSitterClient extends EventEmitter2 {
+     }
+   }
+   async clearCache() {
++    this.highlightCache = new Map;
+     if (!this.initialized || !this.worker) {
+       throw new Error("Cannot clear cache: client is not initialized");
+     }
+diff --git a/chunk-bun-jxfx3h5k.js b/chunk-bun-jxfx3h5k.js
+index 5150999349c76c2f632c789e77f4800282691270..edb4f2c951e483c67de802b0512b7bd2676d4770 100644
+--- a/chunk-bun-jxfx3h5k.js
++++ b/chunk-bun-jxfx3h5k.js
+@@ -3191,13 +3191,16 @@ class CodeRenderable extends TextBufferRenderable {
+     this._onHighlight = options.onHighlight;
+     this._onChunks = options.onChunks;
+     if (this._content.length > 0) {
+-      if (this._initialStyledText && this._drawUnstyledText) {
+-        this.textBuffer.setStyledText(this._initialStyledText);
+-      } else {
+-        this.textBuffer.setText(this._content);
++      const cached = this.applyCachedHighlights();
++      if (!cached) {
++        if (this._initialStyledText && this._drawUnstyledText) {
++          this.textBuffer.setStyledText(this._initialStyledText);
++        } else {
++          this.textBuffer.setText(this._content);
++        }
+       }
+       this.updateTextInfo();
+-      this._shouldRenderTextBuffer = this._drawUnstyledText || !this._filetype;
++      this._shouldRenderTextBuffer = cached || this._drawUnstyledText || !this._filetype;
+     }
+     this._highlightsDirty = this._content.length > 0;
+   }
+@@ -3212,6 +3215,10 @@ class CodeRenderable extends TextBufferRenderable {
+     if (this._content !== value) {
+       this._content = value;
+       this.invalidateHighlights();
++      if (this.applyCachedHighlights()) {
++        this.updateTextInfo();
++        return;
++      }
+       if (this._streaming && this._filetype && !this._drawUnstyledText) {
+         this.requestRender();
+         return;
+@@ -3356,9 +3363,32 @@ class CodeRenderable extends TextBufferRenderable {
+     const modified = await this._onChunks(chunks, context);
+     return modified ?? chunks;
+   }
++  applyCachedHighlights() {
++    if (!this._filetype || !this._syntaxStyle || this._initialStyledText || this._onHighlight || this._onChunks || this.transformChunks !== CodeRenderable.prototype.transformChunks)
++      return false;
++    const highlights = this._treeSitterClient.getCachedHighlight(this._content, this._filetype)?.highlights;
++    if (!highlights?.length)
++      return false;
++    const chunks = treeSitterToTextChunks(this._content, highlights, this._syntaxStyle, {
++      enabled: this._conceal,
++      baseHighlight: this._baseHighlight
++    });
++    this.textBuffer.setStyledText(new StyledText(chunks));
++    this.setRenderedLineSources(this.getConcealLinesSourceMap(this._content, highlights));
++    this._shouldRenderTextBuffer = true;
++    return true;
++  }
++  onLifecyclePass = () => {
++    if (this._highlightsDirty && this.applyCachedHighlights())
++      this.updateTextInfo();
++  };
+   ensureVisibleTextBeforeHighlight() {
+     if (this.isDestroyed)
+       return;
++    if (this.applyCachedHighlights()) {
++      this.updateTextInfo();
++      return;
++    }
+     const content = this._content;
+     if (!this._filetype) {
+       this._shouldRenderTextBuffer = true;
+diff --git a/chunk-node-dcyj0dm5.js b/chunk-node-dcyj0dm5.js
+index 83e49b1de936315dcfcdca5338f56ce7dc3996e6..b1fdcb98dcf3600c4b6640695f1f2ceac004bdf0 100644
+--- a/chunk-node-dcyj0dm5.js
++++ b/chunk-node-dcyj0dm5.js
+@@ -3190,13 +3190,16 @@ class CodeRenderable extends TextBufferRenderable {
+     this._onHighlight = options.onHighlight;
+     this._onChunks = options.onChunks;
+     if (this._content.length > 0) {
+-      if (this._initialStyledText && this._drawUnstyledText) {
+-        this.textBuffer.setStyledText(this._initialStyledText);
+-      } else {
+-        this.textBuffer.setText(this._content);
++      const cached = this.applyCachedHighlights();
++      if (!cached) {
++        if (this._initialStyledText && this._drawUnstyledText) {
++          this.textBuffer.setStyledText(this._initialStyledText);
++        } else {
++          this.textBuffer.setText(this._content);
++        }
+       }
+       this.updateTextInfo();
+-      this._shouldRenderTextBuffer = this._drawUnstyledText || !this._filetype;
++      this._shouldRenderTextBuffer = cached || this._drawUnstyledText || !this._filetype;
+     }
+     this._highlightsDirty = this._content.length > 0;
+   }
+@@ -3211,6 +3214,10 @@ class CodeRenderable extends TextBufferRenderable {
+     if (this._content !== value) {
+       this._content = value;
+       this.invalidateHighlights();
++      if (this.applyCachedHighlights()) {
++        this.updateTextInfo();
++        return;
++      }
+       if (this._streaming && this._filetype && !this._drawUnstyledText) {
+         this.requestRender();
+         return;
+@@ -3355,9 +3362,32 @@ class CodeRenderable extends TextBufferRenderable {
+     const modified = await this._onChunks(chunks, context);
+     return modified ?? chunks;
+   }
++  applyCachedHighlights() {
++    if (!this._filetype || !this._syntaxStyle || this._initialStyledText || this._onHighlight || this._onChunks || this.transformChunks !== CodeRenderable.prototype.transformChunks)
++      return false;
++    const highlights = this._treeSitterClient.getCachedHighlight(this._content, this._filetype)?.highlights;
++    if (!highlights?.length)
++      return false;
++    const chunks = treeSitterToTextChunks(this._content, highlights, this._syntaxStyle, {
++      enabled: this._conceal,
++      baseHighlight: this._baseHighlight
++    });
++    this.textBuffer.setStyledText(new StyledText(chunks));
++    this.setRenderedLineSources(this.getConcealLinesSourceMap(this._content, highlights));
++    this._shouldRenderTextBuffer = true;
++    return true;
++  }
++  onLifecyclePass = () => {
++    if (this._highlightsDirty && this.applyCachedHighlights())
++      this.updateTextInfo();
++  };
+   ensureVisibleTextBeforeHighlight() {
+     if (this.isDestroyed)
+       return;
++    if (this.applyCachedHighlights()) {
++      this.updateTextInfo();
++      return;
++    }
+     const content = this._content;
+     if (!this._filetype) {
+       this._shouldRenderTextBuffer = true;
+diff --git a/chunk-node-zcz10bhr.js b/chunk-node-zcz10bhr.js
+index ff0f5b6685d8f2fd40f66feaf7984be5cd8413a3..b8227bc3b15383fdae280a710f3548412fa51cac 100644
+--- a/chunk-node-zcz10bhr.js
++++ b/chunk-node-zcz10bhr.js
+@@ -8496,6 +8496,7 @@ class TreeSitterClient extends EventEmitter2 {
+   initializePromise;
+   initializeResolvers;
+   messageCallbacks = new Map;
++  highlightCache = new Map;
+   messageIdCounter = 0;
+   editQueues = new Map;
+   debouncer;
+@@ -8578,6 +8579,7 @@ class TreeSitterClient extends EventEmitter2 {
+     if (this.worker !== worker) {
+       return;
+     }
++    this.highlightCache = new Map;
+     worker.onmessage = null;
+     worker.onerror = null;
+     this.worker = undefined;
+@@ -8634,6 +8636,7 @@ class TreeSitterClient extends EventEmitter2 {
+     }
+   }
+   async handleReset() {
++    this.highlightCache = new Map;
+     this.buffers.clear();
+     await this.stopWorker();
+     this.startWorker();
+@@ -8727,6 +8730,7 @@ class TreeSitterClient extends EventEmitter2 {
+     return path;
+   }
+   addFiletypeParser(filetypeParser) {
++    this.highlightCache = new Map;
+     this.sendWorkerMessage({ type: "ADD_FILETYPE_PARSER", filetypeParser: this.resolveFiletypeParser(filetypeParser) });
+   }
+   resolveFiletypeParser(filetypeParser) {
+@@ -8752,7 +8756,21 @@ class TreeSitterClient extends EventEmitter2 {
+       }
+     });
+   }
++  getCachedHighlight(content, filetype) {
++    const key = JSON.stringify([filetype, content]);
++    const result = this.highlightCache.get(key);
++    if (result) {
++      this.highlightCache.delete(key);
++      this.highlightCache.set(key, result);
++    }
++    return result === undefined ? undefined : structuredClone(result);
++  }
+   async highlightOnce(content, filetype) {
++    const cached = this.getCachedHighlight(content, filetype);
++    if (cached)
++      return cached;
++    // Invalidation replaces this map so older requests cannot refill the cache.
++    const cache = this.highlightCache;
+     if (!this.initialized) {
+       try {
+         await this.initialize();
+@@ -8762,7 +8780,20 @@ class TreeSitterClient extends EventEmitter2 {
+     }
+     const messageId = `oneshot_${this.messageIdCounter++}`;
+     return new Promise((resolve3, reject) => {
+-      this.messageCallbacks.set(messageId, { resolve: resolve3, reject });
++      this.messageCallbacks.set(messageId, {
++        resolve: (result) => {
++          if (this.highlightCache === cache && !result.error && !result.warning && result.highlights) {
++            const key = JSON.stringify([filetype, content]);
++            cache.delete(key);
++            cache.set(key, structuredClone(result));
++            if (cache.size > 500) {
++              cache.delete(cache.keys().next().value);
++            }
++          }
++          resolve3(result);
++        },
++        reject
++      });
+       try {
+         this.sendWorkerMessage({
+           type: "ONESHOT_HIGHLIGHT",
+@@ -9008,6 +9039,7 @@ class TreeSitterClient extends EventEmitter2 {
+     if (this.destroyPromise) {
+       return this.destroyPromise;
+     }
++    this.highlightCache = new Map;
+     let resolveDestroy;
+     let rejectDestroy;
+     const destroyPromise = new Promise((resolve3, reject) => {
+@@ -9073,6 +9105,7 @@ class TreeSitterClient extends EventEmitter2 {
+     if (this.options.dataPath === dataPath) {
+       return;
+     }
++    this.highlightCache = new Map;
+     this.options.dataPath = dataPath;
+     if (this.initialized && this.worker) {
+       const messageId = `update_datapath_${this.messageIdCounter++}`;
+@@ -9101,6 +9134,7 @@ class TreeSitterClient extends EventEmitter2 {
+     }
+   }
+   async clearCache() {
++    this.highlightCache = new Map;
+     if (!this.initialized || !this.worker) {
+       throw new Error("Cannot clear cache: client is not initialized");
+     }
+diff --git a/lib/tree-sitter/client.d.ts b/lib/tree-sitter/client.d.ts
+index cb8c63ba847e48b3b9fd053e48daa47e228f0699..942daf13d770d26da4692f10574bc8f698a84ad1 100644
+--- a/lib/tree-sitter/client.d.ts
++++ b/lib/tree-sitter/client.d.ts
+@@ -14,6 +14,7 @@ export declare class TreeSitterClient extends EventEmitter<TreeSitterClientEvent
+     private initializePromise;
+     private initializeResolvers;
+     private messageCallbacks;
++    private highlightCache;
+     private messageIdCounter;
+     private editQueues;
+     private debouncer;
+@@ -43,6 +44,11 @@ export declare class TreeSitterClient extends EventEmitter<TreeSitterClientEvent
+     addFiletypeParser(filetypeParser: FiletypeParserOptions): void;
+     private resolveFiletypeParser;
+     getPerformance(): Promise<PerformanceStats>;
++    getCachedHighlight(content: string, filetype: string): {
++        highlights?: SimpleHighlight[];
++        warning?: string;
++        error?: string;
++    } | undefined;
+     highlightOnce(content: string, filetype: string): Promise<{
+         highlights?: SimpleHighlight[];
+         warning?: string;
+diff --git a/renderables/Code.d.ts b/renderables/Code.d.ts
+index 9f660f2502da274748ece24a42e613203fb7b500..5d54249be0693a60822ba89f2eb8c93ceced2207 100644
+--- a/renderables/Code.d.ts
++++ b/renderables/Code.d.ts
+@@ -90,6 +90,8 @@ export declare class CodeRenderable extends TextBufferRenderable {
+     get isHighlighting(): boolean;
+     get highlightingDone(): Promise<void>;
+     protected transformChunks(chunks: TextChunk[], context: ChunkRenderContext): Promise<TextChunk[]>;
++    private applyCachedHighlights;
++    onLifecyclePass: () => void;
+     private ensureVisibleTextBeforeHighlight;
+     private startHighlight;
+     private runHighlights;
