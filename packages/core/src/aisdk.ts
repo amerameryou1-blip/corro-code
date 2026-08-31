@@ -303,6 +303,7 @@ function modelFromLanguage(info: Info, language: LanguageModelV3) {
   const projected = mapBodyToProviderOptions(info, packageName)
   const optionKey = providerOptionKey(packageName, info.providerID)
   const route: AnyRoute = {
+    compact: undefined,
     id: `ai-sdk:${packageName}`,
     provider: ProviderID.make(info.providerID),
     providerMetadataKey: optionKey,
