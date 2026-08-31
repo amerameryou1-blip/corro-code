@@ -7,6 +7,7 @@ import type { SessionEvent } from "@opencode-ai/schema/session-event"
 import { Global } from "@opencode-ai/util/global"
 import { Effect, Stream } from "effect"
 import path from "path"
+import { LocationMutation } from "../location-mutation.js"
 import { Permission } from "../permission.js"
 
 const plan = Agent.ID.make("plan")
@@ -29,6 +30,7 @@ export const Plugin = define({
   effect: Effect.fn(function* (ctx) {
     const global = yield* Global.Service
     const directory = path.join(global.home, ".opencode", "plan")
+    const resource = LocationMutation.permissionTarget(ctx.location, directory).resource
     const enterReminder = enter(directory)
     yield* ctx.agent.transform((draft) => {
       draft.update(plan, (item) => {
@@ -37,7 +39,7 @@ export const Plugin = define({
         item.mode = "primary"
         item.permissions.push({ action: "question", resource: "*", effect: "allow" })
         item.permissions.push({ action: "edit", resource: "*", effect: "deny" })
-        item.permissions.push({ action: "edit", resource: path.join(directory, "*"), effect: "allow" })
+        item.permissions.push({ action: "edit", resource: path.join(resource, "*"), effect: "allow" })
         item.permissions.push({ action: "external_directory", resource: path.join(directory, "*"), effect: "allow" })
       })
     })

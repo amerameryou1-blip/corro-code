@@ -76,6 +76,17 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Lo
 
 const slash = (value: string) => value.replaceAll("\\", "/")
 
+export const permissionTarget = (location: Location.Info, absolute: string) => {
+  const worktree = path.resolve(location.project.directory)
+  const internal =
+    FSUtil.contains(location.directory, absolute) ||
+    (worktree !== path.parse(worktree).root && FSUtil.contains(worktree, absolute))
+  return {
+    internal,
+    resource: slash(internal ? path.relative(location.directory, absolute) || "." : absolute),
+  }
+}
+
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -85,14 +96,11 @@ const layer = Layer.effect(
 
     const resolve = Effect.fnUntraced(function* (input: ResolveInput) {
       const absolute = resolvePath(location.directory, input.path)
-      const worktree = path.resolve(location.project.directory)
-      const internal =
-        FSUtil.contains(location.directory, absolute) ||
-        (worktree !== path.parse(worktree).root && FSUtil.contains(worktree, absolute))
-      if (internal) {
+      const target = permissionTarget(location, absolute)
+      if (target.internal) {
         return {
           absolute,
-          resource: slash(path.relative(location.directory, absolute) || "."),
+          resource: target.resource,
         } satisfies Target
       }
       const type =

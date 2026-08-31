@@ -9,7 +9,9 @@ import { Event } from "@opencode-ai/schema/event"
 import { Model } from "@opencode-ai/core/model"
 import { PlanPlugin } from "@opencode-ai/core/plugin/plan"
 import { Permission } from "@opencode-ai/core/permission"
+import { Project } from "@opencode-ai/core/project"
 import { Provider } from "@opencode-ai/core/provider"
+import { AbsolutePath } from "@opencode-ai/core/schema"
 import { Session } from "@opencode-ai/core/session"
 import { SessionEvent } from "@opencode-ai/core/session/event"
 import { SessionInbox } from "@opencode-ai/core/session/inbox"
@@ -35,7 +37,10 @@ const agentSelected = (agent: Agent.ID, previous: Agent.ID): SessionEvent.AgentS
 })
 
 /** Runs the plan plugin against stubbed domains, capturing persisted reminders and the context hook. */
-const run = Effect.fnUntraced(function* (events: ReadonlyArray<SessionEvent.AgentSelected> = []) {
+const run = Effect.fnUntraced(function* (
+  events: ReadonlyArray<SessionEvent.AgentSelected> = [],
+  locationDirectory = "/workspace",
+) {
   const persisted = new Array<string>()
   let contextHook: ((input: SessionContext) => Effect.Effect<void>) | undefined
   let toolHook: ((input: ToolHooks["execute.after"]) => Effect.Effect<void>) | undefined
@@ -53,6 +58,14 @@ const run = Effect.fnUntraced(function* (events: ReadonlyArray<SessionEvent.Agen
   const driver = Environment.makeMemoryDriver()
   yield* PlanPlugin.Plugin.effect(
     host({
+      location: {
+        directory: AbsolutePath.make(locationDirectory),
+        project: {
+          id: Project.ID.global,
+          directory: AbsolutePath.make(locationDirectory),
+          canonical: AbsolutePath.make(locationDirectory),
+        },
+      },
       agent: {
         get: () => Effect.die("unused agent.get"),
         list: () => Effect.die("unused agent.list"),
@@ -259,6 +272,14 @@ describe("plan plugin mutations", () => {
         "allow",
       )
       expect(Permission.evaluate("edit", "/workspace/source.ts", planAgent.permissions).effect).toBe("deny")
+      expect(Permission.evaluate("edit", "source.ts", planAgent.permissions).effect).toBe("deny")
+    }),
+  )
+
+  it.effect("allows the Plan directory when the Location is the home directory", () =>
+    Effect.gen(function* () {
+      const { planAgent } = yield* run([], home)
+      expect(Permission.evaluate("edit", ".opencode/plan/work.md", planAgent.permissions).effect).toBe("allow")
       expect(Permission.evaluate("edit", "source.ts", planAgent.permissions).effect).toBe("deny")
     }),
   )
