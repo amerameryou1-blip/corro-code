@@ -1289,26 +1289,28 @@ const onResponseFinish = Effect.fn("OpenResponses.onResponseFinish")(function* (
   const events: LLMEvent[] = []
   if (event.type === "response.completed") {
     for (const item of event.response?.output ?? []) {
+      if (item.type !== "compaction" && item.type !== "function_call") continue
       const id = item.id ?? (item.type === "function_call" ? item.call_id : undefined)
       if (id === undefined) continue
-      if (item.type !== "compaction" && (item.type !== "function_call" || !current.tools[id])) continue
+      if (item.type === "function_call" && !current.tools[id]) continue
       const [next, emitted] = yield* onOutputItemDone(current, item)
       current = next
       events.push(...emitted)
     }
+    // Some compatible providers omit output_item.done even after completing the response.
+    const pending = yield* ToolStream.finishAll(current.id, current.tools)
+    current = {
+      ...current,
+      tools: pending.tools,
+      hasFunctionCall:
+        current.hasFunctionCall ||
+        pending.events.some((event) => LLMEvent.is.toolCall(event) || LLMEvent.is.toolInputError(event)),
+    }
+    events.push(...pending.events)
   }
-  // Some compatible providers omit output_item.done even after completing the response.
-  const pending =
-    event.type === "response.completed"
-      ? yield* ToolStream.finishAll(current.id, current.tools)
-      : { tools: current.tools, events: NO_EVENTS }
-  events.push(...pending.events)
-  const hasFunctionCall =
-    pending.events.some((event) => LLMEvent.is.toolCall(event) || LLMEvent.is.toolInputError(event)) ||
-    current.hasFunctionCall
   const lifecycle = Lifecycle.finish(current.lifecycle, events, {
     reason: {
-      normalized: mapFinishReason(event, hasFunctionCall),
+      normalized: mapFinishReason(event, current.hasFunctionCall),
       raw: event.response?.incomplete_details?.reason,
     },
     usage: mapUsage(event.response?.usage, current.providerMetadataKey),
@@ -1320,7 +1322,7 @@ const onResponseFinish = Effect.fn("OpenResponses.onResponseFinish")(function* (
           })
         : undefined,
   })
-  return [{ ...current, lifecycle, hasFunctionCall, tools: pending.tools }, events] satisfies StepResult
+  return [{ ...current, lifecycle }, events] satisfies StepResult
 })
 
 // Build the prettiest summary available from whatever the provider supplied.

@@ -142,11 +142,9 @@ const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>, tool
 const decodeBody = ProviderShared.validateWith(Schema.decodeUnknownEffect(OpenAIResponsesBody))
 
 const fromRequest = Effect.fn("OpenAIResponses.fromRequest")(function* (request: LLMRequest) {
-  const context = request.providerOptions?.contextManagement
-  const management =
-    context === undefined
-      ? undefined
-      : yield* ProviderShared.validateWith(Schema.decodeUnknownEffect(ContextManagement))(context)
+  const management = yield* ProviderShared.validateWith(
+    Schema.decodeUnknownEffect(Schema.UndefinedOr(ContextManagement)),
+  )(request.providerOptions?.contextManagement)
   const body = yield* OpenResponses.fromRequestWithExtension(
     LLMRequest.update(request, { tools: [], toolChoice: undefined }),
     extension,

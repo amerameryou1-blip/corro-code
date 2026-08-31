@@ -7,6 +7,58 @@ import { testEffect } from "../lib/effect.js"
 import { dynamicResponse, fixedResponse } from "../lib/http.js"
 import { sseEvents } from "../lib/sse.js"
 
+for (const fixture of [
+  {
+    name: "empty iterations fall back to top-level usage",
+    usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: null, iterations: [] },
+    expected: { inputTokens: 2, outputTokens: 3, totalTokens: 5, contextTokens: undefined },
+  },
+  {
+    name: "compaction-only usage has no post-compaction context size",
+    usage: {
+      input_tokens: 0,
+      output_tokens: 0,
+      iterations: [{ type: "compaction", input_tokens: 7, cache_read_input_tokens: 3, output_tokens: 2 }],
+    },
+    expected: { inputTokens: 10, outputTokens: 2, totalTokens: 12, contextTokens: undefined },
+  },
+  {
+    name: "partially reported iterations preserve known totals",
+    usage: {
+      iterations: [
+        { type: "compaction", input_tokens: 7, cache_creation_input_tokens: 2 },
+        { type: "message", output_tokens: 3 },
+      ],
+    },
+    expected: { inputTokens: 9, outputTokens: 3, totalTokens: 12, contextTokens: undefined },
+  },
+  {
+    name: "missing counters remain unknown rather than zero",
+    usage: { iterations: [{ type: "message" }] },
+    expected: { inputTokens: undefined, outputTokens: undefined, totalTokens: undefined, contextTokens: undefined },
+  },
+]) {
+  testEffect(
+    fixedResponse(
+      sseEvents(
+        { type: "message_start", message: { usage: fixture.usage } },
+        { type: "message_delta", delta: { stop_reason: "end_turn" } },
+        { type: "message_stop" },
+      ),
+    ),
+  ).effect(fixture.name, () =>
+    Effect.gen(function* () {
+      const result = yield* LLMClient.generate(
+        LLM.request({
+          model: Anthropic.configure({ apiKey: "test" }).model("claude-opus-4-6"),
+          prompt: "hello",
+        }),
+      )
+      expect(result.usage).toMatchObject(fixture.expected)
+    }),
+  )
+}
+
 for (const model of [
   Anthropic.configure({ apiKey: "test" }).model("claude-opus-4-6"),
   GoogleVertexMessages.configure({ accessToken: "test", project: "test" }).model("claude-opus-4-6"),

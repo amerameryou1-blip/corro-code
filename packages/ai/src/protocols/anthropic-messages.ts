@@ -1059,11 +1059,9 @@ const resolveThinking = Effect.fn("AnthropicMessages.resolveThinking")(function*
 })
 
 const fromRequest = Effect.fn("AnthropicMessages.fromRequest")(function* (request: LLMRequest) {
-  const context = request.providerOptions?.contextManagement
-  const management =
-    context === undefined
-      ? undefined
-      : yield* ProviderShared.validateWith(Schema.decodeUnknownEffect(ContextManagement))(context)
+  const management = yield* ProviderShared.validateWith(
+    Schema.decodeUnknownEffect(Schema.UndefinedOr(ContextManagement)),
+  )(request.providerOptions?.contextManagement)
   const generation = request.generation
   const toolSchemaCompatibility = request.model.compatibility?.toolSchema
   // Allocate the 4-breakpoint budget in invalidation order: tools → system →
@@ -1098,19 +1096,8 @@ const fromRequest = Effect.fn("AnthropicMessages.fromRequest")(function* (reques
     )
   }
   const options = yield* resolveOptions(request)
-  return {
+  const body = {
     model: request.model.id,
-    context_management:
-      management === undefined
-        ? undefined
-        : {
-            edits: management.edits.map((edit) => ({
-              type: edit.type,
-              trigger: edit.trigger,
-              pause_after_compaction: edit.pauseAfterCompaction,
-              instructions: edit.instructions,
-            })),
-          },
     system,
     messages,
     tools,
@@ -1129,6 +1116,18 @@ const fromRequest = Effect.fn("AnthropicMessages.fromRequest")(function* (reques
     inference_geo: options.inference_geo,
     metadata: options.metadata,
     service_tier: options.service_tier,
+  }
+  if (!management) return body
+  return {
+    ...body,
+    context_management: {
+      edits: management.edits.map((edit) => ({
+        type: edit.type,
+        trigger: edit.trigger,
+        pause_after_compaction: edit.pauseAfterCompaction,
+        instructions: edit.instructions,
+      })),
+    },
   }
 })
 
@@ -1151,32 +1150,31 @@ const mapFinishReason = (reason: string | null | undefined): FinishReason => {
 // expose that subset through `output_tokens_details.thinking_tokens`.
 const mapUsage = (usage: AnthropicUsage | undefined, providerMetadataKey: string): Usage | undefined => {
   if (!usage) return undefined
-  if (usage.iterations?.length) {
-    const iterations = usage.iterations.map((iteration) => mapUsage(iteration, providerMetadataKey)!)
-    return new Usage({
-      inputTokens: ProviderShared.sumTokens(...iterations.map((item) => item.inputTokens)),
-      outputTokens: ProviderShared.sumTokens(...iterations.map((item) => item.outputTokens)),
-      totalTokens: ProviderShared.sumTokens(...iterations.map((item) => item.totalTokens)),
-      nonCachedInputTokens: ProviderShared.sumTokens(...iterations.map((item) => item.nonCachedInputTokens)),
-      cacheReadInputTokens: ProviderShared.sumTokens(...iterations.map((item) => item.cacheReadInputTokens)),
-      cacheWriteInputTokens: ProviderShared.sumTokens(...iterations.map((item) => item.cacheWriteInputTokens)),
-      reasoningTokens: ProviderShared.sumTokens(...iterations.map((item) => item.reasoningTokens)),
-      contextTokens: usage.iterations.at(-1)?.type === "message" ? iterations.at(-1)?.inputTokens : undefined,
-      providerMetadata: { [providerMetadataKey]: usage },
-    })
-  }
-  const nonCached = usage.input_tokens ?? undefined
-  const cacheRead = usage.cache_read_input_tokens ?? undefined
-  const cacheWrite = usage.cache_creation_input_tokens ?? undefined
+  const iterations = usage.iterations?.length ? usage.iterations : [usage]
+  const last = usage.iterations?.at(-1)
+  const nonCached = ProviderShared.sumTokens(...iterations.map((item) => item.input_tokens ?? undefined))
+  const cacheRead = ProviderShared.sumTokens(...iterations.map((item) => item.cache_read_input_tokens ?? undefined))
+  const cacheWrite = ProviderShared.sumTokens(
+    ...iterations.map((item) => item.cache_creation_input_tokens ?? undefined),
+  )
   const inputTokens = ProviderShared.sumTokens(nonCached, cacheRead, cacheWrite)
+  const outputTokens = ProviderShared.sumTokens(...iterations.map((item) => item.output_tokens))
   return new Usage({
     inputTokens,
-    outputTokens: usage.output_tokens,
+    outputTokens,
+    contextTokens:
+      last?.type === "message"
+        ? ProviderShared.sumTokens(
+            last.input_tokens ?? undefined,
+            last.cache_read_input_tokens ?? undefined,
+            last.cache_creation_input_tokens ?? undefined,
+          )
+        : undefined,
     nonCachedInputTokens: nonCached,
     cacheReadInputTokens: cacheRead,
     cacheWriteInputTokens: cacheWrite,
-    reasoningTokens: usage.output_tokens_details?.thinking_tokens,
-    totalTokens: ProviderShared.totalTokens(inputTokens, usage.output_tokens, undefined),
+    reasoningTokens: ProviderShared.sumTokens(...iterations.map((item) => item.output_tokens_details?.thinking_tokens)),
+    totalTokens: ProviderShared.totalTokens(inputTokens, outputTokens, undefined),
     providerMetadata: { [providerMetadataKey]: usage },
   })
 }
@@ -1257,7 +1255,6 @@ const onContentBlockStart = (
   event: AnthropicEvent & { readonly content_block: AnthropicStreamBlock },
 ): StepResult => {
   const block = event.content_block
-  if (!block) return [state, NO_EVENTS]
 
   if (block.type === "tool_use" || block.type === "server_tool_use") {
     if (event.index === undefined || !block.id) return [state, NO_EVENTS]
@@ -1352,7 +1349,7 @@ const onContentBlockDelta = Effect.fn("AnthropicMessages.onContentBlockDelta")(f
 ) {
   const delta = event.delta
 
-  if (delta?.type === "compaction_delta") {
+  if (delta.type === "compaction_delta") {
     if (event.index === undefined || !(event.index in state.compactions) || delta.content === undefined)
       return yield* ProviderShared.eventError(ADAPTER, "Compaction delta is missing its block or content")
     return [
@@ -1361,7 +1358,7 @@ const onContentBlockDelta = Effect.fn("AnthropicMessages.onContentBlockDelta")(f
     ] satisfies StepResult
   }
 
-  if (delta?.type === "text_delta" && delta.text) {
+  if (delta.type === "text_delta" && delta.text) {
     if (!state.lifecycle.text.has(`text-${event.index ?? 0}`)) return [state, NO_EVENTS] satisfies StepResult
     const events: LLMEvent[] = []
     return [
@@ -1370,7 +1367,7 @@ const onContentBlockDelta = Effect.fn("AnthropicMessages.onContentBlockDelta")(f
     ] satisfies StepResult
   }
 
-  if (delta?.type === "thinking_delta" && delta.thinking) {
+  if (delta.type === "thinking_delta" && delta.thinking) {
     if (!state.lifecycle.reasoning.has(`reasoning-${event.index ?? 0}`)) return [state, NO_EVENTS] satisfies StepResult
     const events: LLMEvent[] = []
     return [
@@ -1382,7 +1379,7 @@ const onContentBlockDelta = Effect.fn("AnthropicMessages.onContentBlockDelta")(f
     ] satisfies StepResult
   }
 
-  if (delta?.type === "signature_delta" && delta.signature) {
+  if (delta.type === "signature_delta" && delta.signature) {
     const index = event.index ?? 0
     if (!state.lifecycle.reasoning.has(`reasoning-${index}`)) return [state, NO_EVENTS] satisfies StepResult
     return [
@@ -1394,7 +1391,7 @@ const onContentBlockDelta = Effect.fn("AnthropicMessages.onContentBlockDelta")(f
     ] satisfies StepResult
   }
 
-  if (delta?.type === "input_json_delta" && event.index !== undefined) {
+  if (delta.type === "input_json_delta" && event.index !== undefined) {
     if (!delta.partial_json) return [state, NO_EVENTS] satisfies StepResult
     if (!state.tools[event.index]) return [state, NO_EVENTS] satisfies StepResult
     const result = ToolStream.appendExisting(
@@ -1529,21 +1526,21 @@ const onError = (event: AnthropicEvent) => {
   )
 }
 
-const isKnownStreamBlockType = (type: string) =>
-  type === "compaction" ||
-  type === "text" ||
-  type === "thinking" ||
-  type === "redacted_thinking" ||
-  type === "tool_use" ||
-  type === "server_tool_use" ||
-  isServerToolResultType(type)
-
-const isKnownStreamDeltaType = (type: string) =>
-  type === "compaction_delta" ||
-  type === "text_delta" ||
-  type === "thinking_delta" ||
-  type === "signature_delta" ||
-  type === "input_json_delta"
+const STREAM_BLOCK_TYPES = new Set([
+  "compaction",
+  "text",
+  "thinking",
+  "redacted_thinking",
+  "tool_use",
+  "server_tool_use",
+])
+const STREAM_DELTA_TYPES = new Set([
+  "compaction_delta",
+  "text_delta",
+  "thinking_delta",
+  "signature_delta",
+  "input_json_delta",
+])
 
 const invalidStreamEvent = (event: AnthropicEvent) =>
   Effect.fail(
@@ -1580,7 +1577,8 @@ const step = (state: ParserState, event: AnthropicEvent) => {
         NO_EVENTS,
       ])
     }
-    if (!isKnownStreamBlockType(event.content_block.type)) return Effect.succeed<StepResult>([state, NO_EVENTS])
+    if (!STREAM_BLOCK_TYPES.has(event.content_block.type) && !isServerToolResultType(event.content_block.type))
+      return Effect.succeed<StepResult>([state, NO_EVENTS])
     const decoded = decodeAnthropicStreamBlock(event.content_block)
     if (Option.isNone(decoded)) return invalidStreamEvent(event)
     const block = decoded.value
@@ -1594,7 +1592,7 @@ const step = (state: ParserState, event: AnthropicEvent) => {
   }
   if (event.type === "content_block_delta") {
     if (!ProviderShared.isRecord(event.delta)) return invalidStreamEvent(event)
-    if (typeof event.delta.type === "string" && !isKnownStreamDeltaType(event.delta.type))
+    if (typeof event.delta.type === "string" && !STREAM_DELTA_TYPES.has(event.delta.type))
       return Effect.succeed<StepResult>([state, NO_EVENTS])
     const decoded = decodeAnthropicStreamDelta(event.delta)
     if (Option.isNone(decoded)) return invalidStreamEvent(event)
