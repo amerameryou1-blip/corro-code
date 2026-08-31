@@ -63,6 +63,8 @@ export { ProviderMetadata } from "./messages.js"
  * Matches the same escape-hatch field on `LLMEvent`.
  */
 export class Usage extends Schema.Class<Usage>("AI.Usage")({
+  /** Effective input size of the final provider iteration, distinct from billed totals. */
+  contextTokens: Schema.optional(Schema.Number),
   inputTokens: Schema.optional(Schema.Number),
   outputTokens: Schema.optional(Schema.Number),
   nonCachedInputTokens: Schema.optional(Schema.Number),
