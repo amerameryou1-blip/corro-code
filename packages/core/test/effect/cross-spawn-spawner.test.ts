@@ -275,7 +275,9 @@ describe("cross-spawn spawner", () => {
       }).pipe(Effect.timeout("3 seconds")),
     )
 
-    fx.live(
+    // Node puts non-detached Windows children in a kill-on-parent-exit job; this guards POSIX group cleanup.
+    const groupTest = process.platform === "win32" ? fx.live.skip : fx.live
+    groupTest(
       "preserves successful descendants when an exit-only scope closes",
       Effect.gen(function* () {
         const tmp = yield* Effect.acquireRelease(
