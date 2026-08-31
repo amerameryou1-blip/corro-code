@@ -44,6 +44,8 @@ export interface Route<Body, Prepared = unknown> {
   readonly protocol: ProtocolID
   readonly endpoint: Endpoint.Definition<Body>
   readonly auth: Auth.Definition
+  /** Deployment headers resolved once for every operation, before transport authentication. */
+  readonly headers?: (input: { readonly request: LLMRequest }) => Record<string, string>
   readonly transport: Transport<Body, Prepared, unknown>
   readonly defaults: RouteDefaults
   readonly body: RouteBody<Body>
@@ -304,6 +306,7 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
       protocol: protocol.id,
       endpoint: routeInput.endpoint,
       auth: routeInput.auth ?? Auth.none,
+      headers: routeInput.headers,
       transport: routeInput.transport,
       defaults: routeInput.defaults ?? {},
       body: protocol.body,
@@ -333,7 +336,6 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
           endpoint: routeInput.endpoint,
           auth: routeInput.auth ?? Auth.none,
           encodeBody,
-          headers: routeInput.headers,
           middleware: options?.http,
           webSocket: options?.webSocket,
         }),
@@ -463,11 +465,19 @@ export function make<Body, Prepared, Frame, Event, State>(
   })
 }
 
-const compile = Effect.fn("LLM.compile")(function* (request: LLMRequest, options?: StreamOptions) {
+const prepareRequest = (request: LLMRequest) => {
   const original = applyCachePolicy(resolveRequestOptions(request))
   const sanitized = LLMRequest.update(original, sanitizeSurrogates({ ...LLMRequest.input(original), model: undefined }))
   const tools = [...new Map(sanitized.tools.map((tool) => [tool.name, tool])).values()]
   const resolved = tools.length === sanitized.tools.length ? sanitized : LLMRequest.update(sanitized, { tools })
+  const headers = resolved.model.route.headers?.({ request: resolved })
+  return headers === undefined
+    ? resolved
+    : LLMRequest.update(resolved, { http: mergeHttpOptions(new HttpOptions({ headers }), resolved.http) })
+}
+
+const compile = Effect.fn("LLM.compile")(function* (request: LLMRequest, options?: StreamOptions) {
+  const resolved = prepareRequest(request)
   const route = resolved.model.route
 
   const body = yield* route.body
@@ -557,12 +567,7 @@ export const layer: Layer.Layer<Service, never, RequestExecutor.Service> = Layer
             return ProviderShared.invalidRequest(
               `${request.model.provider}/${request.model.route.id} does not support explicit compaction`,
             )
-          const resolved = resolveRequestOptions(request)
-          return operation(
-            LLMRequest.update(resolved, sanitizeSurrogates({ ...LLMRequest.input(resolved), model: undefined })),
-            executor,
-            options,
-          )
+          return operation(prepareRequest(request), executor, options)
         }),
     })
   }),

@@ -1,7 +1,10 @@
 import { expect } from "bun:test"
 import { Effect, Schema } from "effect"
 import { LLM, LLMRequest, Message } from "../../src/index.js"
-import { LLMClient } from "../../src/route/client.js"
+import { LLMClient, Route } from "../../src/route/client.js"
+import { Auth } from "../../src/route/auth.js"
+import { Endpoint } from "../../src/route/endpoint.js"
+import { OpenAIResponses } from "../../src/protocols/openai-responses.js"
 import { OpenAI, Azure, XAI, Anthropic, AmazonBedrockMantle } from "../../src/providers/index.js"
 import { testEffect } from "../lib/effect.js"
 import { dynamicResponse, fixedResponse } from "../lib/http.js"
@@ -16,6 +19,65 @@ const retained = {
   content: [{ type: "input_text", text: "retained" }],
 }
 const output = [retained, checkpoint]
+
+testEffect(
+  dynamicResponse(({ request, text, respond }) =>
+    Effect.sync(() => {
+      expect(request.headers["x-deployment"]).toBe("fixture")
+      expect(request.headers["x-override"]).toBe("request")
+      expect(request.headers["x-default"]).toBe("configured")
+      expect(request.headers.authorization).toBe("Bearer test")
+      expect(new URL(request.url).searchParams.get("api-version")).toBe("fixture")
+      expect(new URL(request.url).searchParams.get("trace")).toBe("request")
+      if (new URL(request.url).pathname.endsWith("/compact")) {
+        expect(JSON.parse(text)).toEqual({
+          model: "fixture",
+          input: [{ role: "user", content: [{ type: "input_text", text: "hello" }] }],
+        })
+        return respond(JSON.stringify({ object: "response.compaction", output }))
+      }
+      return respond(sseEvents({ type: "response.completed", response: { id: "resp_1" } }))
+    }),
+  ),
+).effect("generation and compaction share deployment headers, defaults, auth, query, and middleware", () =>
+  Effect.gen(function* () {
+    const headers: string[] = []
+    const middleware: string[] = []
+    const route = Route.make({
+      id: "compaction-headers",
+      provider: "openai",
+      protocol: OpenAIResponses.protocol,
+      compact: OpenAIResponses.route.compact,
+      transport: OpenAIResponses.httpTransport,
+      endpoint: Endpoint.path("/responses", { baseURL: "https://example.com", query: { "api-version": "fixture" } }),
+      auth: Auth.bearer("test"),
+      headers: ({ request }) => {
+        expect(request.providerOptions?.store).toBe(false)
+        headers.push(String(request.model.id))
+        return { "x-deployment": "fixture", "x-override": "route" }
+      },
+      defaults: {
+        headers: { "x-default": "configured", "x-override": "configured" },
+        providerOptions: { store: false },
+      },
+    })
+    const request = LLM.request({
+      model: route.model({ id: "fixture" }),
+      prompt: "hello",
+      http: { headers: { "x-override": "request" }, query: { trace: "request" }, body: { store: false, stream: true } },
+    })
+    const options: Parameters<typeof LLMClient.compact>[1] = {
+      http: (request, next) => {
+        middleware.push(new URL(request.url).pathname)
+        return next(request)
+      },
+    }
+    yield* LLMClient.generate(request, options)
+    yield* LLMClient.compact(request, options)
+    expect(headers).toEqual(["fixture", "fixture"])
+    expect(middleware).toEqual(["/responses", "/responses/compact"])
+  }),
+)
 
 const retainedItems = [
   retained,
