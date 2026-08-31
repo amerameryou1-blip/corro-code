@@ -132,7 +132,7 @@ export const Plugin = {
                   const target = yield* resolveTarget(hunk.path)
                   if (prepared.some((change) => change.target.absolute === target.absolute)) {
                     return yield* new ToolFailure({
-                      message: `apply_patch verification failed: invalid patch: multiple operations target ${target.absolute}`,
+                      message: `patch verification failed: invalid patch: multiple operations target ${target.absolute}`,
                     })
                   }
                   if (hunk.type === "add") {

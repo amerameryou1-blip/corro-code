@@ -347,7 +347,7 @@ describe("PatchTool", () => {
                 status: "error",
                 error: {
                   type: "tool.execution",
-                  message: `apply_patch verification failed: invalid patch: multiple operations target ${target}`,
+                  message: `patch verification failed: invalid patch: multiple operations target ${target}`,
                 },
               })
               expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("before\n")
