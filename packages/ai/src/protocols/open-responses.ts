@@ -430,9 +430,8 @@ interface ReasoningStreamItem {
   readonly open: boolean
   readonly encryptedContent: string | null | undefined
   readonly text: string
-  readonly rawDeltaIndexes: ReadonlySet<number>
-  readonly summaryDeltaIndexes: ReadonlySet<number>
-  readonly summaryTextIndexes: ReadonlySet<number>
+  readonly rawIndexes: ReadonlySet<number>
+  readonly summaryIndexes: ReadonlySet<number>
 }
 
 // =============================================================================
@@ -897,16 +896,17 @@ const joinReasoningText = (parts: ReadonlyArray<string | undefined>) => {
 export const outputItemID = (state: ParserState, event: Event) =>
   event.output_index === undefined ? event.item_id : (state.outputItems[event.output_index] ?? event.item_id)
 
-const onReasoningText = (state: ParserState, event: Event, itemID: string): StepResult => {
-  const item = state.reasoningItems[itemID]
-  const value = event.type.endsWith(".done") ? event.text : event.delta
-  if (!value || !item?.open) return [state, NO_EVENTS]
-  const summary = event.type.startsWith("response.reasoning_summary_")
-  const index = (summary ? event.summary_index : event.content_index) ?? 0
-  const indexes = summary ? item.summaryDeltaIndexes : item.rawDeltaIndexes
-  if (event.type.endsWith(".done") && indexes.has(index)) return [state, NO_EVENTS]
-  const separator = summary && index > 0 && !item.summaryTextIndexes.has(index) && item.text.length > 0 ? "\n\n" : ""
-  const text = separator + value
+type ReasoningRawDeltaEvent = Pick<Event, "content_index" | "delta">
+type ReasoningRawDoneEvent = Pick<Event, "content_index" | "text">
+type ReasoningSummaryDeltaEvent = Pick<Event, "delta" | "summary_index">
+type ReasoningSummaryDoneEvent = Pick<Event, "summary_index" | "text">
+
+const appendReasoningText = (
+  state: ParserState,
+  itemID: string,
+  item: ReasoningStreamItem,
+  text: string,
+): StepResult => {
   const events: LLMEvent[] = []
   return [
     {
@@ -917,14 +917,54 @@ const onReasoningText = (state: ParserState, event: Event, itemID: string): Step
         [itemID]: {
           ...item,
           text: item.text + text,
-          rawDeltaIndexes: summary ? item.rawDeltaIndexes : new Set([...item.rawDeltaIndexes, index]),
-          summaryDeltaIndexes: summary ? new Set([...item.summaryDeltaIndexes, index]) : item.summaryDeltaIndexes,
-          summaryTextIndexes: summary ? new Set([...item.summaryTextIndexes, index]) : item.summaryTextIndexes,
         },
       },
     },
     events,
   ]
+}
+
+const onReasoningRawDelta = (state: ParserState, event: ReasoningRawDeltaEvent, itemID: string): StepResult => {
+  const item = state.reasoningItems[itemID]
+  if (!event.delta || !item?.open) return [state, NO_EVENTS]
+  const index = event.content_index ?? 0
+  return appendReasoningText(state, itemID, { ...item, rawIndexes: new Set([...item.rawIndexes, index]) }, event.delta)
+}
+
+const onReasoningRawDone = (state: ParserState, event: ReasoningRawDoneEvent, itemID: string): StepResult => {
+  const item = state.reasoningItems[itemID]
+  if (!event.text || !item?.open) return [state, NO_EVENTS]
+  const index = event.content_index ?? 0
+  if (item.rawIndexes.has(index)) return [state, NO_EVENTS]
+  return appendReasoningText(state, itemID, { ...item, rawIndexes: new Set([...item.rawIndexes, index]) }, event.text)
+}
+
+const appendReasoningSummary = (
+  state: ParserState,
+  itemID: string,
+  item: ReasoningStreamItem,
+  index: number,
+  text: string,
+) =>
+  appendReasoningText(
+    state,
+    itemID,
+    { ...item, summaryIndexes: new Set([...item.summaryIndexes, index]) },
+    (index > 0 && !item.summaryIndexes.has(index) && item.text.length > 0 ? "\n\n" : "") + text,
+  )
+
+const onReasoningSummaryDelta = (state: ParserState, event: ReasoningSummaryDeltaEvent, itemID: string): StepResult => {
+  const item = state.reasoningItems[itemID]
+  if (!event.delta || !item?.open) return [state, NO_EVENTS]
+  return appendReasoningSummary(state, itemID, item, event.summary_index ?? 0, event.delta)
+}
+
+const onReasoningSummaryDone = (state: ParserState, event: ReasoningSummaryDoneEvent, itemID: string): StepResult => {
+  const item = state.reasoningItems[itemID]
+  if (!event.text || !item?.open) return [state, NO_EVENTS]
+  const index = event.summary_index ?? 0
+  if (item.summaryIndexes.has(index)) return [state, NO_EVENTS]
+  return appendReasoningSummary(state, itemID, item, index, event.text)
 }
 
 const completedReasoningItem = (
@@ -1001,9 +1041,8 @@ const onOutputItemAdded = (state: ParserState, event: Event): StepResult => {
             open: true,
             encryptedContent: item.encrypted_content,
             text: "",
-            rawDeltaIndexes: new Set(),
-            summaryDeltaIndexes: new Set(),
-            summaryTextIndexes: new Set(),
+            rawIndexes: new Set(),
+            summaryIndexes: new Set(),
           },
         },
       },
@@ -1194,9 +1233,8 @@ const onOutputItemDone = Effect.fn("OpenResponses.onOutputItemDone")(function* (
             open: false,
             encryptedContent: completed?.encrypted_content,
             text,
-            rawDeltaIndexes: new Set(),
-            summaryDeltaIndexes: new Set(),
-            summaryTextIndexes: new Set(),
+            rawIndexes: new Set(),
+            summaryIndexes: new Set(),
           },
         },
       },
@@ -1304,16 +1342,21 @@ export const step = (state: ParserState, input: Event) => {
         : onOutputTextDone(state, { ...event, text: value }, event.item_id),
     )
   }
-  if (
-    event.type === "response.reasoning.delta" ||
-    event.type === "response.reasoning.done" ||
-    event.type === "response.reasoning_text.delta" ||
-    event.type === "response.reasoning_text.done" ||
-    event.type === "response.reasoning_summary_text.delta" ||
-    event.type === "response.reasoning_summary_text.done"
-  ) {
+  if (event.type === "response.reasoning.delta" || event.type === "response.reasoning_text.delta") {
     if (event.item_id === undefined) return ProviderShared.eventError(state.id, `${event.type} is missing item_id`)
-    return Effect.succeed(onReasoningText(state, event, event.item_id))
+    return Effect.succeed(onReasoningRawDelta(state, event, event.item_id))
+  }
+  if (event.type === "response.reasoning.done" || event.type === "response.reasoning_text.done") {
+    if (event.item_id === undefined) return ProviderShared.eventError(state.id, `${event.type} is missing item_id`)
+    return Effect.succeed(onReasoningRawDone(state, event, event.item_id))
+  }
+  if (event.type === "response.reasoning_summary_text.delta") {
+    if (event.item_id === undefined) return ProviderShared.eventError(state.id, `${event.type} is missing item_id`)
+    return Effect.succeed(onReasoningSummaryDelta(state, event, event.item_id))
+  }
+  if (event.type === "response.reasoning_summary_text.done") {
+    if (event.item_id === undefined) return ProviderShared.eventError(state.id, `${event.type} is missing item_id`)
+    return Effect.succeed(onReasoningSummaryDone(state, event, event.item_id))
   }
   if (event.type === "response.reasoning_summary_part.added")
     return event.item_id !== undefined
