@@ -28,6 +28,12 @@ describe("public import boundaries", () => {
     expect(within(network.all, core)).toEqual([])
     expect(within(network.all, server)).toEqual([])
 
+    const rpc = await bundleInputs("@opencode-ai/client/effect/websocket", "browser")
+    expect(within(rpc.eager, effect).length).toBeGreaterThan(0)
+    expect(within(rpc.eager, protocol).length).toBeGreaterThan(0)
+    expect(within(rpc.all, core)).toEqual([])
+    expect(within(rpc.all, server)).toEqual([])
+
     const promiseService = await bundleInputs("@opencode-ai/client/service", "bun")
 
     expect(within(promiseService.all, effect)).toEqual([])
