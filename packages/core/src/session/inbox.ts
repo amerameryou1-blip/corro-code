@@ -517,7 +517,7 @@ export const promote = Effect.fn("SessionInbox.promote")(function* (
         .limit(1)
         .get()
         .pipe(Effect.orDie)
-      if (!queued) return 0
+      if (!queued || queued.type === "compaction" || queued.type === "move") return 0
       const promoted = yield* publish(db, bus, sessionID, [queued])
       const arrivedSteers = yield* pendingSteers(db, sessionID)
       const control = arrivedSteers.findIndex((row) => row.type === "compaction" || row.type === "move")

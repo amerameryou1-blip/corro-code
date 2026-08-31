@@ -128,15 +128,16 @@ const layer = Layer.effect(
               }
               if (!force && !continuing && (!pending || (pending.delivery === "queue" && promotable === "steer")))
                 return DrainResult.Complete()
-              return yield* restore(
+              const ready = yield* restore(
                 Effect.gen(function* () {
                   const selected = yield* prepareContext(sessionID)
-                  const promoted = yield* SessionInbox.promote(
-                    db,
-                    bus,
-                    sessionID,
-                    entering && !continuing ? promotable : "steer",
-                  )
+                  const scope = entering && !continuing ? promotable : "steer"
+                  const promoted = yield* SessionInbox.promote(db, bus, sessionID, scope)
+                  if (promoted === 0) {
+                    // Cancellation during preparation can expose a control instead of input.
+                    const next = yield* SessionInbox.nextPromotable(db, sessionID, scope)
+                    if (next?.type === "compaction" || next?.type === "move") return undefined
+                  }
                   if (promoted > 0 && !selected.session.parentID && SessionTitle.isUntitled(selected.session))
                     yield* FiberMap.run(titles, sessionID, title.generate(sessionID), {
                       onlyIfMissing: true,
@@ -145,6 +146,7 @@ const layer = Layer.effect(
                   return { _tag: "Ready" as const, context: yield* context.load(selected) }
                 }),
               )
+              if (ready) return ready
             }
           }),
         ),

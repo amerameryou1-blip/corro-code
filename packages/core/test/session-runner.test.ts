@@ -1422,6 +1422,67 @@ describe("SessionRunnerLLM", () => {
     })
   })
 
+  scenario("dispatches a queued move exposed by cancellation during preparation", function* (s) {
+    const runner = yield* SessionRunner.Service
+    const prompt = yield* s.session.prompt({ sessionID, text: "Cancel me", delivery: "queue", resume: false })
+    const location = Location.Ref.make({ directory: AbsolutePath.make("/moved") })
+    yield* s.sessionInbox.admit({
+      id: SessionMessage.ID.create(),
+      sessionID,
+      item: {
+        type: "move",
+        payload: { location, projectID: Project.ID.global },
+        delivery: "queue",
+      },
+    })
+    s.systemLoadHook = Effect.gen(function* () {
+      s.systemLoadHook = Effect.void
+      yield* s.session.cancelInbox({ sessionID, inboxID: prompt.id }).pipe(Effect.orDie)
+    })
+
+    expect(yield* runner.drain({ sessionID, force: false })).toEqual(SessionRunner.DrainResult.Moved({}))
+    expect((yield* s.session.get(sessionID)).location).toEqual(location)
+    expect(s.closedTransports).toEqual([sessionID])
+    expect(s.requests).toHaveLength(0)
+    expect(yield* s.messages).toMatchObject([{ type: "location-switched", location }])
+    expect(yield* s.inbox).toEqual([])
+    expect((yield* recordedEventTypes(sessionID)).slice(-2)).toEqual([
+      Bus.versionedType(SessionEvent.InboxDelivered.type, 1),
+      Bus.versionedType(SessionEvent.Moved.type, 1),
+    ])
+  })
+
+  scenario("dispatches a queued compaction exposed by cancellation during preparation", function* (s) {
+    const runner = yield* SessionRunner.Service
+    const prompt = yield* s.session.prompt({ sessionID, text: "Cancel me", delivery: "queue", resume: false })
+    const compaction = yield* s.sessionInbox.admitCompaction({
+      id: SessionMessage.ID.create(),
+      sessionID,
+      delivery: "queue",
+    })
+    s.systemLoadHook = Effect.gen(function* () {
+      s.systemLoadHook = Effect.void
+      yield* s.session.cancelInbox({ sessionID, inboxID: prompt.id }).pipe(Effect.orDie)
+    })
+
+    expect(yield* runner.drain({ sessionID, force: false })).toEqual(SessionRunner.DrainResult.Complete())
+    expect(s.requests).toHaveLength(0)
+    expect(yield* s.inbox).toEqual([])
+    expect(yield* s.messages).toMatchObject([
+      {
+        id: compaction.id,
+        type: "compaction",
+        status: "failed",
+        error: { type: "compaction.unavailable", message: "Nothing to compact yet" },
+      },
+    ])
+    expect((yield* recordedEventTypes(sessionID)).slice(-3)).toEqual([
+      Bus.versionedType(SessionEvent.InboxDelivered.type, 1),
+      Bus.versionedType(SessionEvent.Compaction.Started.type, 1),
+      Bus.versionedType(SessionEvent.Compaction.Failed.type, 1),
+    ])
+  })
+
   scenario("delivers a queued move atomically at the idle boundary", function* (s) {
     const inboxID = SessionMessage.ID.create()
     yield* s.sessionInbox.admit({
