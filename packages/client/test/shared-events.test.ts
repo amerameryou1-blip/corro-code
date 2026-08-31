@@ -97,7 +97,11 @@ test("multiple consumers share one source and receive live native and RPC events
   const first = shared.subscribe()[Symbol.asyncIterator]()
   const second = shared.subscribe()[Symbol.asyncIterator]()
 
-  for (const event of [{ type: "server.connected" }, { type: "session.updated" }, { type: "rpc.example.updated", value: 1 }]) {
+  for (const event of [
+    { type: "server.connected" },
+    { type: "session.updated" },
+    { type: "rpc.example.updated", value: 1 },
+  ]) {
     const reads = [first.next(), second.next()]
     events.connections[0].push(event)
     expect(await Promise.all(reads)).toEqual([
@@ -113,6 +117,32 @@ test("multiple consumers share one source and receive live native and RPC events
   expect((await next).value).toEqual({ type: "rpc.example.updated", value: 2 })
   await second.return!()
   await events.connections[0].closed
+})
+
+test("a paused consumer does not block other subscribers", async () => {
+  const events = source()
+  const shared = SharedEvents.make((signal) => events.connect(signal))
+  const paused = shared.subscribe()[Symbol.asyncIterator]()
+  const active = shared.subscribe()[Symbol.asyncIterator]()
+  const connected = [paused.next(), active.next()]
+  const connection = await events.at(0)
+  connection.push({ type: "server.connected" })
+  await Promise.all(connected)
+
+  for (const event of [
+    { type: "session.updated", value: 1 },
+    { type: "session.updated", value: 2 },
+  ]) {
+    const next = active.next()
+    connection.push(event)
+    expect(await within(next)).toEqual({ done: false, value: event })
+  }
+
+  expect(await paused.next()).toEqual({ done: false, value: { type: "session.updated", value: 1 } })
+  expect(await paused.next()).toEqual({ done: false, value: { type: "session.updated", value: 2 } })
+  await paused.return!()
+  await active.return!()
+  await connection.closed
 })
 
 test("late consumers receive the latest connection marker but no business event replay", async () => {
@@ -279,3 +309,13 @@ test("synchronous source creation failures reject subscribers without automatic 
   await expect(shared.subscribe()[Symbol.asyncIterator]().next()).rejects.toBe(failure)
   expect(attempts).toHaveLength(2)
 })
+
+async function within<Value>(promise: Promise<Value>) {
+  const timeout = Promise.withResolvers<never>()
+  const timer = setTimeout(() => timeout.reject(new Error("active subscriber was blocked")), 1_000)
+  try {
+    return await Promise.race([promise, timeout.promise])
+  } finally {
+    clearTimeout(timer)
+  }
+}

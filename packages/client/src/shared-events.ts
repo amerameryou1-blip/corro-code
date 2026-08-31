@@ -3,7 +3,7 @@ export * as SharedEvents from "./shared-events.js"
 export function make<A extends { readonly type: string }>(connect: (signal: AbortSignal) => AsyncIterable<A>) {
   type Completion = { readonly error: unknown } | Record<string, never>
   type Subscriber = {
-    push: (value: A) => Promise<void>
+    push: (value: A) => void
     finish: (completion: Completion) => void
   }
   type Connection = {
@@ -13,7 +13,6 @@ export function make<A extends { readonly type: string }>(connect: (signal: Abor
   }
 
   let current: Connection | undefined
-  const delivered = Promise.resolve()
 
   function stop(connection: Connection) {
     connection.connected = undefined
@@ -31,7 +30,7 @@ export function make<A extends { readonly type: string }>(connect: (signal: Abor
         const item = await iterator.next()
         if (item.done || connection.controller.signal.aborted) break
         if (item.value.type === "server.connected") connection.connected = item.value
-        await Promise.all(Array.from(connection.subscribers, (subscriber) => subscriber.push(item.value)))
+        connection.subscribers.forEach((subscriber) => subscriber.push(item.value))
       }
     } catch (error) {
       completion = { error }
@@ -54,12 +53,10 @@ export function make<A extends { readonly type: string }>(connect: (signal: Abor
           let started = false
           let completion: Completion | undefined
           let connection: Connection | undefined
-          let offered: { readonly value: A; readonly accepted: ReturnType<typeof Promise.withResolvers<void>> } | undefined
+          const queued: A[] = []
 
           function finish(result: Completion) {
             completion = result
-            offered?.accepted.resolve()
-            offered = undefined
             options?.signal?.removeEventListener("abort", abort)
             if (connection?.subscribers.delete(subscriber) && !connection.subscribers.size) stop(connection)
             pending.splice(0).forEach((request) => {
@@ -69,21 +66,20 @@ export function make<A extends { readonly type: string }>(connect: (signal: Abor
           }
 
           function abort() {
+            queued.splice(0)
             finish({})
           }
 
           const subscriber: Subscriber = {
             finish,
             push(value) {
-              if (completion) return delivered
+              if (completion) return
               const request = pending.shift()
               if (request) {
                 request.resolve({ done: false, value })
-                return delivered
+                return
               }
-              const accepted = Promise.withResolvers<void>()
-              offered = { value, accepted }
-              return accepted.promise
+              queued.push(value)
             },
           }
 
@@ -96,18 +92,14 @@ export function make<A extends { readonly type: string }>(connect: (signal: Abor
             }
             current = connection
             connection.subscribers.add(subscriber)
-            if (connection.connected) void subscriber.push(connection.connected)
+            if (connection.connected) subscriber.push(connection.connected)
             if (fresh) void run(connection)
           }
 
           return {
             next(): Promise<IteratorResult<A>> {
-              if (offered) {
-                const current = offered
-                offered = undefined
-                current.accepted.resolve()
-                return Promise.resolve({ done: false, value: current.value })
-              }
+              const value = queued.shift()
+              if (value) return Promise.resolve({ done: false, value })
               if (completion) {
                 if ("error" in completion) return Promise.reject(completion.error)
                 return Promise.resolve({ done: true, value: undefined })
@@ -126,6 +118,7 @@ export function make<A extends { readonly type: string }>(connect: (signal: Abor
               return request.promise
             },
             return(): Promise<IteratorResult<A>> {
+              queued.splice(0)
               finish({})
               return Promise.resolve({ done: true, value: undefined })
             },
