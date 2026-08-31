@@ -231,38 +231,56 @@ const makeCrossSpawnSpawner = Effect.gen(function* () {
       return Effect.succeed(sink)
     })
 
-  const setupOutput = (
+  const setupOutput = Effect.fnUntraced(function* (
     command: ChildProcess.StandardCommand,
     proc: NodeChildProcess.ChildProcess,
     out: ChildProcess.StdoutConfig,
     err: ChildProcess.StderrConfig,
     stopOutput: Deferred.Deferred<void>,
-  ) => {
-    const capture = (readable: NodeChildProcess.ChildProcess["stdout"], name: string) => {
+  ) {
+    const capture = Effect.fnUntraced(function* (readable: NodeChildProcess.ChildProcess["stdout"], name: string) {
       if (!readable) return Stream.empty
-      return NodeStream.fromReadable({
-        evaluate: () => readable,
-        onError: (cause) => toPlatformError(`fromReadable(${name})`, toError(cause), command),
-        closeOnDone: false,
-      }).pipe(
+      // Buffer before the child exits: Node may drain unread stdio before an Effect reader starts.
+      const tap = new PassThrough()
+      const onError = (cause: Error) => tap.destroy(cause)
+      readable.on("error", onError)
+      // Errors before subscription remain observable through tap.errored.
+      tap.on("error", () => {})
+      readable.pipe(tap)
+      const release = Effect.sync(() => {
+        readable.unpipe(tap)
+        readable.off("error", onError)
+        tap.destroy()
+      })
+      yield* Effect.addFinalizer(() => release)
+      return Stream.suspend(() =>
+        tap.errored
+          ? Stream.fail(toPlatformError(`fromReadable(${name})`, tap.errored, command))
+          : NodeStream.fromReadable({
+              evaluate: () => tap,
+              onError: (cause) => toPlatformError(`fromReadable(${name})`, toError(cause), command),
+              closeOnDone: false,
+            }),
+      ).pipe(
         Stream.interruptWhen(Deferred.await(stopOutput)),
         Stream.ensuring(
           Effect.gen(function* () {
+            yield* release
             // Only the capture deadline transfers the reader back to the process scope.
             if (yield* Deferred.isDone(stopOutput)) return
             readable.destroy()
           }),
         ),
       )
-    }
+    })
 
-    let stdout = capture(proc.stdout, "stdout")
-    let stderr = capture(proc.stderr, "stderr")
+    let stdout = yield* capture(proc.stdout, "stdout")
+    let stderr = yield* capture(proc.stderr, "stderr")
     if (Sink.isSink(out.stream)) stdout = Stream.transduce(stdout, out.stream)
     if (Sink.isSink(err.stream)) stderr = Stream.transduce(stderr, err.stream)
 
     return { stdout, stderr, all: Stream.merge(stdout, stderr) }
-  }
+  })
 
   const launchProcess = (command: ChildProcess.StandardCommand, opts: NodeChildProcess.SpawnOptions) =>
     Effect.callback<Spawned, PlatformError.PlatformError>((resume) => {
@@ -318,7 +336,8 @@ const makeCrossSpawnSpawner = Effect.gen(function* () {
 
   const discard = (readable: NodeChildProcess.ChildProcess["stdout"]) => {
     if (!readable || readable.destroyed) return
-    // read() also drains while a backpressured Effect adapter still has a readable listener.
+    // Capture has ended; discard inherited output without filling the bounded buffer.
+    readable.unpipe()
     const drain = () => {
       while (readable.read() !== null) {}
     }
@@ -452,7 +471,7 @@ const makeCrossSpawnSpawner = Effect.gen(function* () {
             Deferred.await(stopOutput).pipe(Effect.andThen(Deferred.await(exited))),
           )
           const fd = yield* setupFds(command, proc, extra)
-          const out = setupOutput(command, proc, sout, serr, stopOutput)
+          const out = yield* setupOutput(command, proc, sout, serr, stopOutput)
           let ref = true
           return makeHandle({
             pid: ProcessId(proc.pid!),

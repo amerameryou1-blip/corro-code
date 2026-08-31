@@ -180,6 +180,36 @@ describe("cross-spawn spawner", () => {
   })
 
   describe("combined output (all)", () => {
+    for (const output of ["stdout", "stderr", "all"] as const) {
+      fx.live(
+        `captures ${output} when reading starts after process exit`,
+        Effect.gen(function* () {
+          const handle = yield* js('process.stdout.write("stdout\\n"); process.stderr.write("stderr\\n")')
+          // Tiny output lets the child and its pipes close before any reader starts, with the scope still open.
+          expect(yield* handle.exitCode).toBe(ChildProcessSpawner.ExitCode(0))
+          expect((yield* decodeByteStream(handle[output])).split("\n").toSorted()).toEqual(
+            output === "all" ? ["stderr", "stdout"] : [output],
+          )
+        }).pipe(Effect.timeout("3 seconds")),
+      )
+    }
+
+    fx.live(
+      "drains output larger than the capture buffers",
+      Effect.gen(function* () {
+        const text = "x".repeat(1024 * 1024)
+        const handle = yield* js(
+          `const text = "x".repeat(${text.length}); process.stdout.write(text); process.stderr.write(text)`,
+        )
+        const [stdout, stderr] = yield* Effect.all([decodeByteStream(handle.stdout), decodeByteStream(handle.stderr)], {
+          concurrency: 2,
+        })
+        expect(stdout).toBe(text)
+        expect(stderr).toBe(text)
+        expect(yield* handle.exitCode).toBe(ChildProcessSpawner.ExitCode(0))
+      }).pipe(Effect.timeout("3 seconds")),
+    )
+
     fx.effect(
       "captures stdout via .all when no stderr",
       Effect.gen(function* () {
@@ -217,6 +247,23 @@ describe("cross-spawn spawner", () => {
   })
 
   describe("process control", () => {
+    fx.live(
+      "releases a process with unread buffered stdout",
+      Effect.gen(function* () {
+        const pid = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const handle = yield* js(
+              'process.stdout.write("x".repeat(1024 * 1024)); process.stderr.write("ready"); setInterval(() => {}, 10_000)',
+              { forceKillAfter: 100 },
+            )
+            expect(yield* decodeByteStream(handle.stderr.pipe(Stream.take(1)))).toBe("ready")
+            return Number(handle.pid)
+          }),
+        )
+        expect(yield* Effect.promise(() => gone(pid))).toBe(true)
+      }).pipe(Effect.timeout("3 seconds")),
+    )
+
     for (const mode of ["exit", "SIGKILL"] as const) {
       const test = mode === "SIGKILL" && process.platform === "win32" ? fx.live.skip : fx.live
       test(
