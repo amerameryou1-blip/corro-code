@@ -5,7 +5,7 @@ import { Auth } from "../route/auth.js"
 import { Endpoint } from "../route/endpoint.js"
 import { Protocol } from "../route/protocol.js"
 import { HttpTransport } from "../route/transport/index.js"
-import { LLMRequest, type JsonSchema, type ToolDefinition } from "../schema/index.js"
+import type { LLMRequest, JsonSchema, ToolDefinition } from "../schema/index.js"
 import { OpenResponses } from "./open-responses.js"
 import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared.js"
 import { OpenAIImage } from "./utils/openai-image.js"
@@ -145,16 +145,11 @@ const fromRequest = Effect.fn("OpenAIResponses.fromRequest")(function* (request:
   const management = yield* ProviderShared.validateWith(
     Schema.decodeUnknownEffect(Schema.UndefinedOr(ContextManagement)),
   )(request.providerOptions?.contextManagement)
-  const body = yield* OpenResponses.fromRequestWithExtension(
-    LLMRequest.update(request, { tools: [], toolChoice: undefined }),
-    extension,
-  )
   const toolSchemaCompatibility = request.model.compatibility?.toolSchema
-  const parallelToolCalls = OpenResponses.resolveParallelToolCalls(request)
   return yield* decodeBody({
-    ...body,
+    ...(yield* OpenResponses.lowerConversation(request, extension)),
+    ...OpenResponses.lowerGeneration(request),
     context_management: management?.map((edit) => ({ type: edit.type, compact_threshold: edit.compactThreshold })),
-    ...(parallelToolCalls === undefined ? {} : { parallel_tool_calls: parallelToolCalls }),
     tools:
       request.tools.length === 0
         ? undefined
@@ -162,7 +157,8 @@ const fromRequest = Effect.fn("OpenAIResponses.fromRequest")(function* (request:
             lowerTool(tool, ToolSchemaProjection.modelCompatibility(tool.inputSchema, toolSchemaCompatibility)),
           ),
     tool_choice:
-      body.tool_choice ?? (request.toolChoice ? yield* lowerToolChoice(request.toolChoice, request.tools) : undefined),
+      OpenResponses.allowedToolChoice(request) ??
+      (request.toolChoice ? yield* lowerToolChoice(request.toolChoice, request.tools) : undefined),
   })
 })
 
@@ -244,7 +240,7 @@ export const transport = channelTransport({
 })
 
 export const route = Route.make({
-  compact: ResponsesCompaction.execute,
+  compact: ResponsesCompaction.make(extension),
   id: ADAPTER,
   provider: "openai",
   providerMetadataKey: "openai",

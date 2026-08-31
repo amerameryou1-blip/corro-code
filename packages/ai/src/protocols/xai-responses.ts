@@ -4,6 +4,7 @@ import type { LLMRequest } from "../schema/index.js"
 import { OpenResponses } from "./open-responses.js"
 import { JsonObject, optionalNull, ProviderShared } from "./shared.js"
 import { ResponsesHostedTools } from "./utils/responses-hosted-tools.js"
+import { ResponsesCompaction } from "./utils/responses-compaction.js"
 
 const ADAPTER = "xai-responses"
 const NAME = "xAI Responses"
@@ -87,5 +88,7 @@ export const protocol = Protocol.make({
     terminal: OpenResponses.terminal,
   },
 })
+
+export const compact = ResponsesCompaction.make(extension)
 
 export * as XAIResponses from "./xai-responses.js"

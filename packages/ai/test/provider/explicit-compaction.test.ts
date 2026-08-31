@@ -31,8 +31,10 @@ testEffect(
       expect(new URL(request.url).searchParams.get("trace")).toBe("request")
       if (new URL(request.url).pathname.endsWith("/compact")) {
         expect(JSON.parse(text)).toEqual({
-          model: "fixture",
+          model: "overlaid",
           input: [{ role: "user", content: [{ type: "input_text", text: "hello" }] }],
+          instructions: "request instructions",
+          previous_response_id: "resp_previous",
         })
         return respond(JSON.stringify({ object: "response.compaction", output }))
       }
@@ -49,7 +51,10 @@ testEffect(
       protocol: OpenAIResponses.protocol,
       compact: OpenAIResponses.route.compact,
       transport: OpenAIResponses.httpTransport,
-      endpoint: Endpoint.path("/responses", { baseURL: "https://example.com", query: { "api-version": "fixture" } }),
+      endpoint: Endpoint.path(({ body }) => `/${body.model}/responses`, {
+        baseURL: "https://example.com",
+        query: { "api-version": "fixture" },
+      }),
       auth: Auth.bearer("test"),
       headers: ({ request }) => {
         expect(request.providerOptions?.store).toBe(false)
@@ -59,12 +64,24 @@ testEffect(
       defaults: {
         headers: { "x-default": "configured", "x-override": "configured" },
         providerOptions: { store: false },
+        http: { body: { instructions: "default instructions" } },
       },
     })
     const request = LLM.request({
       model: route.model({ id: "fixture" }),
       prompt: "hello",
-      http: { headers: { "x-override": "request" }, query: { trace: "request" }, body: { store: false, stream: true } },
+      system: "system instructions",
+      http: {
+        headers: { "x-override": "request" },
+        query: { trace: "request" },
+        body: {
+          model: "overlaid",
+          instructions: "request instructions",
+          previous_response_id: "resp_previous",
+          store: false,
+          stream: true,
+        },
+      },
     })
     const options: Parameters<typeof LLMClient.compact>[1] = {
       http: (request, next) => {
@@ -75,9 +92,60 @@ testEffect(
     yield* LLMClient.generate(request, options)
     yield* LLMClient.compact(request, options)
     expect(headers).toEqual(["fixture", "fixture"])
-    expect(middleware).toEqual(["/responses", "/responses/compact"])
+    expect(middleware).toEqual(["/fixture/responses", "/fixture/responses/compact"])
   }),
 )
+
+for (const model of [
+  OpenAI.configure({ apiKey: "test" }).responses("fixture"),
+  Azure.configure({ apiKey: "test", resourceName: "test" }).responses("fixture"),
+  XAI.configure({ apiKey: "test" }).responses("fixture"),
+]) {
+  const item = {
+    type: model.provider === "xai" ? "x_search_call" : "computer_call",
+    id: "hosted_1",
+    status: "completed",
+  }
+  testEffect(
+    dynamicResponse(({ request, text, respond }) =>
+      Effect.sync(() => {
+        expect(new URL(request.url).pathname).toEndWith("/responses/compact")
+        expect(JSON.parse(text)).toEqual({ model: "fixture", input: [item], instructions: "Keep the context" })
+        return respond(JSON.stringify({ object: "response.compaction", output: [checkpoint] }))
+      }),
+    ),
+  ).effect(`${model.provider} compacts provider-specific history without lowering generation settings`, () =>
+    Effect.gen(function* () {
+      const request = LLM.request({
+        model,
+        system: "Keep the context",
+        messages: [
+          Message.assistant({
+            type: "tool-result",
+            id: item.id,
+            name: item.type,
+            result: { type: "json", value: item },
+            providerExecuted: true,
+            providerMetadata: { [model.route.providerMetadataKey ?? model.provider]: { itemId: item.id } },
+          }),
+        ],
+      })
+      for (const candidate of [
+        LLMRequest.update(request, {
+          tools: [
+            { name: "unsupported", description: "Generation only", inputSchema: {}, native: { unsupported: {} } },
+          ],
+        }),
+        LLMRequest.update(request, { providerOptions: { contextManagement: "invalid-generation-option" } }),
+      ]) {
+        const error = yield* LLMClient.generate(candidate).pipe(Effect.flip)
+        expect(error.reason._tag).toBe("InvalidRequest")
+        const response = yield* LLMClient.compact(candidate)
+        expect(response.messages[0]?.content[0]?.type).toBe("compaction")
+      }
+    }),
+  )
+}
 
 const retainedItems = [
   retained,

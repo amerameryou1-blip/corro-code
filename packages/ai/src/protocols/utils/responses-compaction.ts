@@ -58,10 +58,10 @@ const Response = Schema.Struct({
   usage: Schema.optional(Schema.StructWithRest(OpenResponses.OpenResponsesUsage, [JsonObject])),
 })
 
-export const execute: CompactOperation = Effect.fn("ResponsesCompaction.execute")(
-  function* (request, executor, options) {
+export const make = (extension: OpenResponses.Extension): CompactOperation =>
+  Effect.fn("ResponsesCompaction.execute")(function* (request, executor, options) {
     const route = request.model.route
-    const native = yield* route.body.from(request)
+    const native = yield* OpenResponses.lowerConversation(request, extension)
     const body = yield* ProviderShared.validateWith(Schema.decodeUnknownEffect(Body))(
       mergeJsonRecords(native, request.http?.body),
     )
@@ -106,8 +106,7 @@ export const execute: CompactOperation = Effect.fn("ResponsesCompaction.execute"
       messages: result.output.map((item) => toMessage(item, request.model)),
       usage: OpenResponses.mapUsage(result.usage, route.providerMetadataKey ?? String(request.model.provider)),
     })
-  },
-)
+  })
 
 function toMessage(item: (typeof Response.Type.output)[number], model: LLMRequest["model"]): Message {
   if (item.type === "compaction")
