@@ -135,7 +135,7 @@ export interface Interface {
     }) => Effect.Effect<ReadonlySet<RelativePath>, OperationError>
   }
   readonly tree: {
-    readonly exists: (repository: Repository, tree: TreeID) => Effect.Effect<boolean, OperationError>
+    readonly exists: (repository: Repository, tree: TreeID) => Effect.Effect<boolean>
     /** Retain a tree's borrowed objects in this repository, independent of its alternates. */
     readonly retain: (input: {
       repository: Repository
@@ -495,12 +495,12 @@ const layer = Layer.effect(
       return TreeID.make((yield* repositoryOperation("write_tree", repository, ["write-tree"])).text.trim())
     })
 
-    const treeExists = Effect.fn("Git.tree.exists")(function* (repository: Repository, tree: TreeID) {
-      return yield* repositoryOperation("list_files", repository, ["cat-file", "-e", `${tree}^{tree}`]).pipe(
+    const treeExists = Effect.fn("Git.tree.exists")((repository: Repository, tree: TreeID) =>
+      repositoryOperation("list_files", repository, ["cat-file", "-e", `${tree}^{tree}`]).pipe(
         Effect.as(true),
-        Effect.catch(() => Effect.succeed(false)),
-      )
-    })
+        Effect.orElseSucceed(() => false),
+      ),
+    )
 
     const retain = Effect.fn("Git.tree.retain")((input: { repository: Repository; trees: readonly TreeID[] }) =>
       locked(
@@ -658,20 +658,22 @@ const layer = Layer.effect(
               ({ file, tree, present }) =>
                 Effect.gen(function* () {
                   if (present) {
-                    // Re-index the restored content without foreign alternates so future local captures can read it.
                     yield* repositoryOperation("restore", input.repository, [
                       "--literal-pathspecs",
                       "restore",
                       `--source=${tree}`,
+                      ...(input.repository.objectDirectories?.length ? [] : ["--staged"]),
                       "--worktree",
                       "--",
                       file,
                     ])
-                    yield* repositoryOperation(
-                      "restore",
-                      new Repository({ ...input.repository, objectDirectories: undefined }),
-                      ["--literal-pathspecs", "add", "--force", "--sparse", "--", file],
-                    )
+                    // Re-index foreign content without alternates so future local captures can read it.
+                    if (input.repository.objectDirectories?.length)
+                      yield* repositoryOperation(
+                        "restore",
+                        new Repository({ ...input.repository, objectDirectories: undefined }),
+                        ["--literal-pathspecs", "add", "--force", "--sparse", "--", file],
+                      )
                     return
                   }
                   yield* fs.remove(path.join(input.repository.worktree, file), { recursive: true, force: true }).pipe(

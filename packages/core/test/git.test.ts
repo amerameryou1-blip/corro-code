@@ -7,7 +7,7 @@ import { LayerNode } from "@opencode-ai/util/effect/layer-node"
 import { Git } from "@opencode-ai/core/git"
 import { AbsolutePath, RelativePath } from "@opencode-ai/core/schema"
 import { branch, commit, initRepo, read, withRemote } from "./fixture/git"
-import { tmpdir } from "./fixture/tmpdir"
+import { tmpdir, tmpdirScoped } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(LayerNode.compile(Git.node))
@@ -107,10 +107,7 @@ describe("Git worktrees", () => {
 describe("Git trees", () => {
   it.live("retains borrowed tree objects once for restoration without the source repository", () =>
     Effect.gen(function* () {
-      const root = yield* Effect.acquireRelease(
-        Effect.promise(() => tmpdir()),
-        (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
-      )
+      const root = yield* tmpdirScoped()
       const source = AbsolutePath.make(path.join(root.path, "source"))
       const destination = AbsolutePath.make(path.join(root.path, "destination"))
       yield* Effect.promise(async () => {
@@ -130,6 +127,8 @@ describe("Git trees", () => {
         seed,
       })
       const before = yield* git.tree.capture({ repository, scopes: [RelativePath.make(".")] })
+      expect(yield* git.tree.exists(repository, before)).toBe(true)
+      expect(yield* git.tree.exists(repository, Git.TreeID.make("0".repeat(40)))).toBe(false)
       yield* git.tree.retain({ repository, trees: [before, before] })
       yield* Effect.promise(() => Bun.write(path.join(source, "file.txt"), "Snapshot-only content.\n"))
       const after = yield* git.tree.capture({ repository, scopes: [RelativePath.make(".")] })
@@ -138,7 +137,7 @@ describe("Git trees", () => {
       yield* git.tree.retain({ repository, trees: [before, after] })
       expect(yield* Effect.promise(() => fs.readdir(path.join(repository.gitDirectory, "objects/pack")))).toEqual(packs)
       yield* Effect.promise(() => fs.rm(source, { recursive: true }))
-      const moved = new Git.Repository({ ...repository, worktree: destination })
+      const moved = new Git.Repository({ ...repository, worktree: destination, objectDirectories: [] })
       yield* git.tree.restore({ repository: moved, files: new Map([[RelativePath.make("file.txt"), before]]) })
       expect(yield* read(path.join(destination, "file.txt"))).toBe("Borrowed committed content.\n")
       yield* git.tree.restore({ repository: moved, files: new Map([[RelativePath.make("file.txt"), after]]) })

@@ -10,77 +10,73 @@ import { Location } from "@opencode-ai/core/location"
 import { AbsolutePath, RelativePath } from "@opencode-ai/core/schema"
 import { Snapshot } from "@opencode-ai/core/snapshot"
 import { Hash } from "@opencode-ai/util/hash"
-import { tmpdir } from "./fixture/tmpdir"
+import { tmpdir, tmpdirScoped } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
 describe("Snapshot", () => {
   for (const transition of ["symlink", "file"] as const) {
     testEffect(Layer.empty).live(`restores directory/${transition} transitions without touching external files`, () =>
-      Effect.acquireUseRelease(
-        Effect.promise(() => tmpdir()),
-        (tmp) =>
-          Effect.gen(function* () {
-            const project = path.join(tmp.path, "project")
-            const assets = path.join(project, "assets")
-            const external = path.join(tmp.path, "external")
-            const leaf = transition === "symlink" ? "assets/logo.svg" : "assets/nested/logo.svg"
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped()
+        const project = path.join(tmp.path, "project")
+        const assets = path.join(project, "assets")
+        const external = path.join(tmp.path, "external")
+        const leaf = transition === "symlink" ? "assets/logo.svg" : "assets/nested/logo.svg"
+        yield* Effect.promise(async () => {
+          await fs.mkdir(project)
+          await fs.mkdir(external)
+          await Bun.write(path.join(external, "logo.svg"), "External content must survive.\n")
+          if (transition === "symlink") await fs.symlink(external, assets, "dir")
+          if (transition === "file") {
+            await fs.mkdir(path.dirname(path.join(project, leaf)), { recursive: true })
+            await Bun.write(path.join(project, leaf), "Directory content.\n")
+          }
+          await initGit(project)
+        })
+        yield* Effect.gen(function* () {
+          const snapshot = yield* Snapshot.Service
+          const before = yield* snapshot.capture()
+          if (!before) throw new Error("Initial snapshot missing")
+          yield* Effect.promise(async () => {
+            await fs.rm(assets, { recursive: true })
+            if (transition === "file") await Bun.write(assets, "File content.\n")
+            if (transition === "symlink") {
+              await fs.mkdir(assets)
+              await Bun.write(path.join(project, leaf), "Directory content.\n")
+            }
+          })
+          const after = yield* snapshot.capture()
+          if (!after) throw new Error("Changed snapshot missing")
+          const files = yield* snapshot.files({ from: before, to: after })
+          expect(files).toEqual([RelativePath.make("assets"), RelativePath.make(leaf)])
+          const restored = yield* snapshot
+            .restore({ files: new Map(files.map((file) => [file, before])) })
+            .pipe(Effect.exit)
+          expect(yield* Effect.promise(() => Bun.file(path.join(external, "logo.svg")).exists())).toBe(true)
+          expect(yield* read(path.join(external, "logo.svg"))).toBe("External content must survive.\n")
+          yield* restored
+          if (transition === "symlink") {
+            expect(yield* Effect.promise(() => fs.readlink(assets))).toBe(external)
             yield* Effect.promise(async () => {
-              await fs.mkdir(project)
-              await fs.mkdir(external)
-              await Bun.write(path.join(external, "logo.svg"), "External content must survive.\n")
-              if (transition === "symlink") await fs.symlink(external, assets, "dir")
-              if (transition === "file") {
-                await fs.mkdir(path.dirname(path.join(project, leaf)), { recursive: true })
-                await Bun.write(path.join(project, leaf), "Directory content.\n")
-              }
-              await initGit(project)
+              await fs.rm(assets)
+              await fs.mkdir(assets)
             })
-            yield* Effect.gen(function* () {
-              const snapshot = yield* Snapshot.Service
-              const before = yield* snapshot.capture()
-              if (!before) throw new Error("Initial snapshot missing")
-              yield* Effect.promise(async () => {
-                await fs.rm(assets, { recursive: true })
-                if (transition === "file") await Bun.write(assets, "File content.\n")
-                if (transition === "symlink") {
-                  await fs.mkdir(assets)
-                  await Bun.write(path.join(project, leaf), "Directory content.\n")
-                }
-              })
-              const after = yield* snapshot.capture()
-              if (!after) throw new Error("Changed snapshot missing")
-              const files = yield* snapshot.files({ from: before, to: after })
-              expect(files).toEqual([RelativePath.make("assets"), RelativePath.make(leaf)])
-              const restored = yield* snapshot
-                .restore({ files: new Map(files.map((file) => [file, before])) })
-                .pipe(Effect.exit)
-              expect(yield* Effect.promise(() => Bun.file(path.join(external, "logo.svg")).exists())).toBe(true)
-              expect(yield* read(path.join(external, "logo.svg"))).toBe("External content must survive.\n")
-              yield* restored
-              if (transition === "symlink") {
-                expect(yield* Effect.promise(() => fs.readlink(assets))).toBe(external)
-                yield* Effect.promise(async () => {
-                  await fs.rm(assets)
-                  await fs.mkdir(assets)
-                })
-                yield* snapshot.restore({
-                  files: new Map([
-                    [RelativePath.make("assets"), before],
-                    [RelativePath.make(leaf), after],
-                  ]),
-                })
-                expect(yield* read(path.join(external, "logo.svg"))).toBe("External content must survive.\n")
-                expect(yield* Effect.promise(async () => (await fs.lstat(assets)).isDirectory())).toBe(true)
-                expect(yield* read(path.join(project, leaf))).toBe("Directory content.\n")
-                return
-              }
-              expect(yield* read(path.join(project, leaf))).toBe("Directory content.\n")
-              yield* snapshot.restore({ files: new Map(files.toReversed().map((file) => [file, after])) })
-              expect(yield* read(assets)).toBe("File content.\n")
-            }).pipe(Effect.provide(snapshotLayer(tmp.path, project)))
-          }),
-        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-      ),
+            yield* snapshot.restore({
+              files: new Map([
+                [RelativePath.make("assets"), before],
+                [RelativePath.make(leaf), after],
+              ]),
+            })
+            expect(yield* read(path.join(external, "logo.svg"))).toBe("External content must survive.\n")
+            expect(yield* Effect.promise(async () => (await fs.lstat(assets)).isDirectory())).toBe(true)
+            expect(yield* read(path.join(project, leaf))).toBe("Directory content.\n")
+            return
+          }
+          expect(yield* read(path.join(project, leaf))).toBe("Directory content.\n")
+          yield* snapshot.restore({ files: new Map(files.toReversed().map((file) => [file, after])) })
+          expect(yield* read(assets)).toBe("File content.\n")
+        }).pipe(Effect.provide(snapshotLayer(tmp.path, project)))
+      }),
     )
   }
 

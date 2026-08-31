@@ -100,7 +100,18 @@ const layer = Layer.effect(
           : yield* git.repo
               .create({ worktree, gitDirectory, seed: source })
               .pipe(Effect.mapError((cause) => failure("capture", cause)))
-        return { source, worktree, snapshotRepository }
+        return {
+          source,
+          worktree,
+          snapshotRepository,
+          foreignRepository: (directory: AbsolutePath) =>
+            new Git.Repository({
+              worktree,
+              gitDirectory: directory,
+              commonDirectory: directory,
+              objectDirectories: [AbsolutePath.make(path.join(source.commonDirectory, "objects"))],
+            }),
+        }
       }).pipe(Effect.forkIn(lifetime)),
     )
     const repository = repositoryFiber.pipe(Effect.uninterruptible, Effect.flatMap(Fiber.join))
@@ -141,12 +152,7 @@ const layer = Layer.effect(
           .pipe(Effect.mapError((cause) => failure("restore", cause)))
         for (const store of stores.filter((entry) => entry.type === "directory" && /^[a-f0-9]{40}$/.test(entry.name))) {
           const directory = AbsolutePath.make(path.join(root, project.name, store.name))
-          const candidate = new Git.Repository({
-            worktree: repo.worktree,
-            gitDirectory: directory,
-            commonDirectory: directory,
-            objectDirectories: [AbsolutePath.make(path.join(repo.source.commonDirectory, "objects"))],
-          })
+          const candidate = repo.foreignRepository(directory)
           if (!(yield* git.tree.exists(candidate, tree))) continue
           // Identical legacy trees can exist in several stores; skip incomplete copies.
           if (
@@ -174,15 +180,7 @@ const layer = Layer.effect(
       }
       for (const [directory, trees] of stores) {
         // A renamed checkout can supply the old store's borrowed objects at its new path.
-        yield* git.tree.retain({
-          repository: new Git.Repository({
-            worktree: repo.worktree,
-            gitDirectory: directory,
-            commonDirectory: directory,
-            objectDirectories: [AbsolutePath.make(path.join(repo.source.commonDirectory, "objects"))],
-          }),
-          trees,
-        })
+        yield* git.tree.retain({ repository: repo.foreignRepository(directory), trees })
       }
       return new Git.Repository({
         ...repo.snapshotRepository,
