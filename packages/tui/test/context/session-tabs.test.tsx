@@ -932,6 +932,58 @@ test("user prompt admissions pulse an already-busy background tab", async () => 
   }
 })
 
+test("parked synthetic context does not keep a tab busy", async () => {
+  const setup = await renderSessionTabs("shell")
+
+  try {
+    await wait(() => setup.tabs.current() === "shell")
+    setup.emit({
+      id: "evt_shell_complete",
+      created: Date.now(),
+      type: "session.inbox.enqueued",
+      durable: { aggregateID: "shell", seq: 1, version: 1 },
+      data: {
+        sessionID: "shell",
+        inboxID: "msg_shell_complete",
+        item: {
+          type: "synthetic",
+          payload: {
+            text: "The following shell command was executed by the user",
+            metadata: { source: "shell", state: "completed" },
+          },
+          delivery: "steer",
+        },
+      },
+    })
+
+    await wait(() => setup.data.session.pending.list("shell").length === 1)
+    expect(setup.tabs.status("shell").busy).toBe(false)
+
+    setup.emit({
+      id: "evt_execution_started",
+      created: Date.now(),
+      type: "session.execution.started",
+      durable: { aggregateID: "shell", seq: 2, version: 1 },
+      data: { sessionID: "shell" },
+    })
+    await wait(() => setup.tabs.status("shell").busy)
+
+    setup.emit({
+      id: "evt_execution_succeeded",
+      created: Date.now(),
+      type: "session.execution.succeeded",
+      durable: { aggregateID: "shell", seq: 3, version: 1 },
+      data: { sessionID: "shell" },
+    })
+    await wait(() => !setup.tabs.status("shell").busy)
+
+    setup.emit(admitted("shell", "msg_4"))
+    await wait(() => setup.tabs.status("shell").busy)
+  } finally {
+    await setup.destroy()
+  }
+})
+
 test("tracks a temporary new session tab across close and creation", async () => {
   const setup = await renderSessionTabs("first")
 
