@@ -81,3 +81,56 @@ testEffect(
     expect(error.reason.body).toContain("cmp_bad")
   }),
 )
+
+const textItem = {
+  type: "message",
+  id: "msg_after",
+  role: "assistant",
+  content: [{ type: "output_text", text: "After checkpoint" }],
+}
+
+for (const completed of [false, true]) {
+  testEffect(
+    fixedResponse(
+      sseEvents(
+        { type: "response.output_item.added", output_index: 0, item: { type: "compaction", id: checkpoint.id } },
+        ...(completed ? [{ type: "response.output_item.done", output_index: 0, item: checkpoint }] : []),
+        { type: "response.output_item.added", output_index: 1, item: textItem },
+        { type: "response.output_text.delta", output_index: 1, item_id: textItem.id, delta: "After checkpoint" },
+        { type: "response.output_item.done", output_index: 1, item: textItem },
+        { type: "response.completed", response: { id: "resp_1", output: [checkpoint, textItem] } },
+      ),
+    ),
+  ).effect(completed ? "keeps streamed checkpoints before later text" : "rejects order-unsafe terminal recovery", () =>
+    Effect.gen(function* () {
+      const request = LLM.request({ model: OpenAI.configure({ apiKey: "test" }).responses("fixture"), prompt: "hello" })
+      if (completed) {
+        const response = yield* LLMClient.generate(request)
+        expect(response.message.content.map((part) => part.type)).toEqual(["compaction", "text"])
+        return
+      }
+      const error = yield* LLMClient.generate(request).pipe(Effect.flip)
+      expect(error.reason._tag).toBe("InvalidProviderOutput")
+      expect(error.message).toContain("Cannot recover a compaction checkpoint")
+      expect(error.reason.body).toContain("response.completed")
+      expect(error.reason.http?.status).toBe(200)
+    }),
+  )
+}
+
+testEffect(
+  fixedResponse(
+    sseEvents({
+      type: "response.completed",
+      response: { output: [{ type: "compaction", encrypted_content: "opaque" }] },
+    }),
+  ),
+).effect("rejects terminal checkpoints missing an id", () =>
+  Effect.gen(function* () {
+    const error = yield* LLMClient.generate(
+      LLM.request({ model: OpenAI.configure({ apiKey: "test" }).responses("fixture"), prompt: "hello" }),
+    ).pipe(Effect.flip)
+    expect(error.reason._tag).toBe("InvalidProviderOutput")
+    expect(error.message).toContain("missing its id")
+  }),
+)

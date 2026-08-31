@@ -1301,9 +1301,15 @@ const onResponseFinish = Effect.fn("OpenResponses.onResponseFinish")(function* (
   if (event.type === "response.completed") {
     for (const item of event.response?.output ?? []) {
       if (item.type !== "compaction" && item.type !== "function_call") continue
-      const id = item.id ?? (item.type === "function_call" ? item.call_id : undefined)
-      if (id === undefined) continue
-      if (item.type === "function_call" && !current.tools[id]) continue
+      if (item.type === "compaction") {
+        // Terminal recovery cannot insert a checkpoint before already-emitted content.
+        if (state.lifecycle.stepStarted && !state.completedCompactions.has(item.id ?? ""))
+          return yield* ProviderShared.eventError(
+            state.id,
+            "Cannot recover a compaction checkpoint after output has been emitted",
+          )
+      }
+      if (item.type === "function_call" && !current.tools[item.id ?? item.call_id ?? ""]) continue
       const [next, emitted] = yield* onOutputItemDone(current, item)
       current = next
       events.push(...emitted)
