@@ -3,6 +3,7 @@ import { LLM } from "@opencode-ai/schema/llm"
 import { ContentBlockID, ToolCallID } from "./ids.js"
 import {
   Message,
+  CompactionPart,
   ProviderMetadata,
   ToolCallPart,
   ToolOutput,
@@ -241,6 +242,7 @@ export const ProviderErrorEvent = Schema.Struct({
 export type ProviderErrorEvent = Schema.Schema.Type<typeof ProviderErrorEvent>
 
 const llmEventTagged = Schema.Union([
+  CompactionPart,
   StepStart,
   TextStart,
   TextDelta,
@@ -274,6 +276,7 @@ const toolCallID = (value: ToolCallID | string) => ToolCallID.make(value)
  * `events.filter(LLMEvent.guards["tool-call"])`.
  */
 export const LLMEvent = Object.assign(llmEventTagged, {
+  compaction: CompactionPart.make,
   stepStart: StepStart.make,
   textStart: (input: WithID<TextStart, ContentBlockID>) => TextStart.make({ ...input, id: contentBlockID(input.id) }),
   textDelta: (input: WithID<TextDelta, ContentBlockID>) => TextDelta.make({ ...input, id: contentBlockID(input.id) }),
@@ -311,6 +314,7 @@ export const LLMEvent = Object.assign(llmEventTagged, {
     }),
   providerError: ProviderErrorEvent.make,
   is: {
+    compaction: llmEventTagged.guards.compaction,
     stepStart: llmEventTagged.guards["step-start"],
     textStart: llmEventTagged.guards["text-start"],
     textDelta: llmEventTagged.guards["text-delta"],
@@ -563,6 +567,8 @@ const reduceToolCall = (state: ResponseState, event: ToolCall): ResponseState =>
 const reduceResponseState = (state: ResponseState, event: LLMEvent): ResponseState => {
   const next = appendEvent(state, event)
   switch (event.type) {
+    case "compaction":
+      return appendContent(next, event)
     case "text-start":
       return ensureText(next, event.id, event.providerMetadata)
     case "text-delta":

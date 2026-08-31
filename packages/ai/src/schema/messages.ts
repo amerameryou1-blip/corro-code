@@ -10,6 +10,7 @@ import {
   ProviderOptions,
 } from "./options.js"
 import { isRecord } from "../utils/record.js"
+import { ProviderID } from "./ids.js"
 
 export const MessageRole = Schema.Literals(["system", "user", "assistant", "tool"])
 export type MessageRole = Schema.Schema.Type<typeof MessageRole>
@@ -190,9 +191,26 @@ export const ReasoningPart = Schema.Struct({
 }).annotate({ identifier: "LLM.Content.Reasoning" })
 export type ReasoningPart = Schema.Schema.Type<typeof ReasoningPart>
 
-export const ContentPart = Schema.Union([TextPart, MediaPart, ToolCallPart, ToolResultPart, ReasoningPart]).pipe(
-  Schema.toTaggedUnion("type"),
-)
+/** Provider-owned replay state, not assistant text. Preserve its value and position verbatim. */
+const compactionPartSchema = Schema.Struct({
+  type: Schema.Literal("compaction"),
+  provider: ProviderID,
+  format: Schema.Literals(["responses", "anthropic-messages"]),
+  value: Schema.declare<Schema.Schema.Type<typeof Schema.Json>>(Schema.is(Schema.Json)),
+}).annotate({ identifier: "LLM.Content.Compaction" })
+export type CompactionPart = typeof compactionPartSchema.Type
+export const CompactionPart = Object.assign(compactionPartSchema, {
+  make: (input: Omit<CompactionPart, "type">): CompactionPart => ({ type: "compaction", ...input }),
+})
+
+export const ContentPart = Schema.Union([
+  TextPart,
+  MediaPart,
+  ToolCallPart,
+  ToolResultPart,
+  ReasoningPart,
+  CompactionPart,
+]).pipe(Schema.toTaggedUnion("type"))
 export type ContentPart = Schema.Schema.Type<typeof ContentPart>
 
 export class Message extends Schema.Class<Message>("LLM.Message")({
