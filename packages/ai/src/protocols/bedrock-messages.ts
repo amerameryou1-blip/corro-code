@@ -8,6 +8,7 @@ import { classifyProviderFailure } from "../provider-error.js"
 import { AnthropicMessages } from "./anthropic-messages.js"
 import { BedrockEventStream } from "./bedrock-event-stream.js"
 import { BedrockAuth } from "./utils/bedrock-auth.js"
+import { AnthropicBetas } from "./utils/anthropic-betas.js"
 import { JsonObject, ProviderShared } from "./shared.js"
 
 const ID = "bedrock-messages"
@@ -36,22 +37,11 @@ export const protocol = Protocol.make({
     schema: Body,
     from: Effect.fn("BedrockMessages.fromRequest")(function* (request) {
       const body = yield* AnthropicMessages.protocol.body.from(request)
-      const headers = Headers.fromInput(request.http?.headers)
-      const betas = new Set(
-        (headers["anthropic-beta"] ?? "")
-          .split(",")
-          .map((value) => value.trim())
-          .filter(Boolean),
-      )
-      if (
-        body.context_management?.edits.length ||
-        body.messages.some((message) => message.content.some((block) => block.type === "compaction"))
-      )
-        betas.add("compact-2026-01-12")
+      const betas = AnthropicBetas.resolve(body, Headers.fromInput(request.http?.headers)["anthropic-beta"])
       return {
         ...Struct.omit(body, ["model", "stream"]),
         anthropic_version: VERSION,
-        anthropic_beta: betas.size ? [...betas] : undefined,
+        anthropic_beta: betas.length ? betas : undefined,
       } satisfies typeof Body.Type
     }),
   },
