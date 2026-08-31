@@ -211,38 +211,44 @@ describe("SessionRunCoordinator", () => {
     }
   }
 
-  it.effect("suspends a settlement-window wake after its terminal hook completes", () =>
-    Effect.gen(function* () {
-      const settling = yield* Deferred.make<void>()
-      const release = yield* Deferred.make<void>()
-      const scope = yield* Scope.make()
-      yield* Effect.addFinalizer(() =>
-        Deferred.succeed(release, undefined).pipe(Effect.andThen(Scope.close(scope, Exit.void))),
-      )
-      const lifecycle: string[] = []
-      const coordinator = yield* SessionRunCoordinator.make({
-        drain: () => Effect.sync(() => void lifecycle.push("drained")),
-        settled: () =>
-          Deferred.succeed(settling, undefined).pipe(
-            Effect.andThen(Deferred.await(release)),
-            Effect.andThen(Effect.sync(() => void lifecycle.push("settled"))),
-          ),
-        suspended: () => Effect.sync(() => void lifecycle.push("suspended")),
-      }).pipe(Scope.provide(scope))
+  for (const outcome of ["success", "effect defect", "synchronous throw"]) {
+    it.effect(`settles a shutdown-deferred successor after suspension hook ${outcome}`, () =>
+      Effect.gen(function* () {
+        const settling = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const scope = yield* Scope.make()
+        yield* Effect.addFinalizer(() =>
+          Deferred.succeed(release, undefined).pipe(Effect.andThen(Scope.close(scope, Exit.void))),
+        )
+        const lifecycle: string[] = []
+        const coordinator = yield* SessionRunCoordinator.make({
+          drain: () => Effect.sync(() => void lifecycle.push("drained")),
+          settled: () =>
+            Deferred.succeed(settling, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.andThen(Effect.sync(() => void lifecycle.push("settled"))),
+            ),
+          suspended: () => {
+            lifecycle.push("suspended")
+            if (outcome === "synchronous throw") throw new Error("suspension failed")
+            return outcome === "effect defect" ? Effect.die(new Error("suspension failed")) : Effect.void
+          },
+        }).pipe(Scope.provide(scope))
 
-      yield* coordinator.wake("session")
-      yield* Deferred.await(settling)
-      yield* coordinator.wake("session")
-      const closing = yield* Scope.close(scope, Exit.void).pipe(Effect.forkChild({ startImmediately: true }))
-      yield* Effect.yieldNow
-      yield* Deferred.succeed(release, undefined)
-      yield* Fiber.join(closing)
+        yield* coordinator.wake("session")
+        yield* Deferred.await(settling)
+        yield* coordinator.wake("session")
+        const closing = yield* Scope.close(scope, Exit.void).pipe(Effect.forkChild({ startImmediately: true }))
+        yield* Effect.yieldNow
+        yield* Deferred.succeed(release, undefined)
+        yield* Fiber.join(closing)
 
-      expect(lifecycle).toEqual(["drained", "settled", "suspended"])
-      expect(yield* coordinator.active).toEqual(new Set())
-      yield* coordinator.awaitIdle("session")
-    }),
-  )
+        expect(lifecycle).toEqual(["drained", "settled", "suspended"])
+        expect(yield* coordinator.active).toEqual(new Set())
+        yield* coordinator.awaitIdle("session")
+      }),
+    )
+  }
 
   it.effect("coalesces wakes received during active execution", () =>
     Effect.gen(function* () {

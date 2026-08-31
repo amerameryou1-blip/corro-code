@@ -110,7 +110,7 @@ export const make = <Key, E, Reason = never>(options: {
           Effect.onExit((exit) =>
             Effect.suspend(() => {
               if (closing && execution.pendingWake)
-                return (options.suspended?.(key) ?? Effect.void).pipe(
+                return Effect.suspend(() => options.suspended?.(key) ?? Effect.void).pipe(
                   Effect.ensuring(Effect.sync(() => settle(key, execution, exit))),
                 )
               settle(key, execution, exit)
