@@ -276,7 +276,16 @@ const next = LLMRequest.update(request, {
 })
 ```
 
-`store: false` remains the default. Keep the entire `response.message`, not just `response.text`. Compaction events become ordered `CompactionPart`s alongside text, reasoning, and tools. Their native JSON `value` survives serialization and replay without becoming visible assistant text. Replaying a checkpoint to another provider or an incompatible API fails rather than silently losing context.
+`store: false` remains the default. Keep the entire `response.message`, not just `response.text`. Compaction events become ordered `CompactionPart`s alongside text and reasoning. The conversation contains everything needed to continue; there is no separate replay object or hidden provider transcript.
+
+A compaction part has `provider` and exactly one representation: `encrypted` for Responses, or `text` for Anthropic. Responses also preserves the optional checkpoint `id`. These fields survive message serialization without becoming visible assistant text. Sending a checkpoint to another provider or an incompatible API fails rather than silently losing context.
+
+```ts
+import { CompactionPart, ProviderID } from "@opencode-ai/ai"
+
+CompactionPart.make({ provider: ProviderID.make("openai"), id: "cmp_123", encrypted: "..." })
+CompactionPart.make({ provider: ProviderID.make("anthropic"), text: "Summary of the conversation..." })
+```
 
 For Anthropic, use:
 
@@ -297,7 +306,7 @@ providerOptions: {
 - Custom instructions replace Anthropic's default summarization instructions.
 - The route adds `compact-2026-01-12` to existing beta headers, including when replaying a checkpoint without enabling new compactions.
 - A pause is exposed as `response.finishReason.raw === "compaction"`. The caller explicitly issues the next request; the package never automatically resumes.
-- Anthropic can return a compaction block with `content: null` when summarization fails. It is retained for faithful replay, but is **not** a successful replacement for prior history. The package never prunes history automatically.
+- Anthropic can return a compaction block with `content: null` when summarization fails. This becomes a compaction part with `text: null`, which is **not** a successful replacement for prior history. The package never prunes history automatically.
 - `Usage` totals include all reported Anthropic `usage.iterations`, including compaction. `contextTokens` separately reports the final message iteration's inclusive input size, when available. A compaction-only pause does not report a post-compaction context size. Raw iteration usage remains in `providerMetadata`.
 
 Bedrock's Converse API does not support this feature. Select the native Claude Messages route explicitly; the default `.model(...)` remains Converse:
@@ -312,23 +321,23 @@ The corresponding package entrypoint is `@opencode-ai/ai/providers/amazon-bedroc
 
 ### Explicit compaction
 
-`LLMClient.compact(request)` performs exactly one HTTP call to `/responses/compact`, using the selected route's endpoint, credentials, query, and HTTP middleware. It returns a `CompactionResponse` containing a replayable `message` and usage, not a normal generation response.
+`LLMClient.compact(request)` performs exactly one HTTP call to `/responses/compact`, using the selected route's endpoint, credentials, query, and HTTP middleware. It returns a `CompactionResponse` containing replacement `messages` and usage, not a normal generation response.
 
 ```ts
 const compacted = yield * LLMClient.compact(request)
 const next = LLMRequest.update(request, {
-  messages: [compacted.message, Message.user("Continue")],
+  messages: [...compacted.messages, Message.user("Continue")],
 })
 const response = yield * LLMClient.generate(next)
 ```
 
-Replace the prior window with `compacted.message`. Do not append it to the original transcript or extract only the encrypted item: the provider may retain additional messages in its output. The entire returned window is preserved in the compaction part and lowered back in its original order. Generation-only body overlays such as `stream` and `store` are not sent to the compact endpoint.
+Replace the prior window with `compacted.messages`. Do not append it to the original transcript or extract only the encrypted item: the provider may retain additional messages in its output. Retained user and assistant messages remain ordinary messages with typed text, media, or reasoning parts, in their original order. Provider-specific message IDs, status, and phase use `providerMetadata`, not a raw output array hidden in an assistant message. Unsupported returned item types fail explicitly. Generation-only body overlays such as `stream` and `store` are not sent to the compact endpoint.
 
 The input must still fit the model's context window. Explicit compaction is not an overflow-recovery operation. xAI supports this explicit path, not the automatic OpenAI option. Unsupported routes, including Bedrock Mantle, do not inherit an explicit compact endpoint simply because they use a Responses protocol.
 
 ### Ownership and verification
 
-The AI package transports options and replay state. It does not schedule compaction, persist Session checkpoints, select history, switch providers, or replace Core's existing local compaction policy. Native compaction is not enabled for OpenCode Sessions by this feature; Session integration must persist these parts before enabling it. The AI SDK bridge rejects native compaction parts rather than dropping them.
+The AI package transports options and typed conversation parts. It does not schedule compaction, persist Session checkpoints, select history, switch providers, or replace Core's existing local compaction policy. Native compaction is not enabled for OpenCode Sessions by this feature; Session integration must persist these parts before enabling it. The AI SDK bridge rejects native compaction parts rather than dropping them. Provider-executed tool APIs and persistence changes are a separate follow-up.
 
 Tests cover serialized round trips, real local HTTP plus a tool loop, AWS binary frames and signing, provider errors, malformed blocks, and usage accounting. Live provider tests are gated by `RECORD=true` and the relevant API keys:
 
