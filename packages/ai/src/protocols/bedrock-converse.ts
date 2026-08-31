@@ -29,6 +29,8 @@ import { ToolSchemaProjection } from "./utils/tool-schema.js"
 import { ToolStream } from "./utils/tool-stream.js"
 
 const ADAPTER = "bedrock-converse"
+const EMPTY_MESSAGE = "(empty message)"
+const EMPTY_TOOL_OUTPUT = "(no tool output)"
 
 export type { Credentials as BedrockCredentials } from "./utils/bedrock-auth.js"
 
@@ -288,13 +290,16 @@ const lowerToolCall = (part: ToolCallPart): BedrockToolUseBlock => ({
 })
 
 const lowerToolResultContent = Effect.fn("BedrockConverse.lowerToolResultContent")(function* (part: ToolResultPart) {
-  if (part.result.type === "text" || part.result.type === "error")
-    return [{ text: ProviderShared.toolResultText(part) }]
+  if (part.result.type === "text" || part.result.type === "error") {
+    const text = ProviderShared.toolResultText(part)
+    return [{ text: text.trim().length === 0 ? EMPTY_TOOL_OUTPUT : text }]
+  }
   if (part.result.type === "json") return [{ json: part.result.value }]
 
   const content: Array<Schema.Schema.Type<typeof BedrockToolResultContentItem>> = []
   for (const item of part.result.value) {
     if (item.type === "text") {
+      if (item.text.trim().length === 0) continue
       content.push({ text: item.text })
       continue
     }
@@ -306,7 +311,7 @@ const lowerToolResultContent = Effect.fn("BedrockConverse.lowerToolResultContent
     })
     content.push(media)
   }
-  return content
+  return content.length === 0 ? [{ text: EMPTY_TOOL_OUTPUT }] : content
 })
 
 const lowerToolResult = Effect.fn("BedrockConverse.lowerToolResult")(function* (part: ToolResultPart) {
@@ -318,6 +323,13 @@ const lowerToolResult = Effect.fn("BedrockConverse.lowerToolResult")(function* (
     },
   } satisfies BedrockToolResultBlock
 })
+
+const hasNonblankToolResultContent = (part: ToolResultPart) => {
+  if (part.result.type === "text" || part.result.type === "error")
+    return ProviderShared.toolResultText(part).trim().length > 0
+  if (part.result.type === "json") return true
+  return part.result.value.some((item) => item.type !== "text" || item.text.trim().length > 0)
+}
 
 const lowerMessages = Effect.fn("BedrockConverse.lowerMessages")(function* (
   request: LLMRequest,
@@ -343,6 +355,7 @@ const lowerMessages = Effect.fn("BedrockConverse.lowerMessages")(function* (
         if (!ProviderShared.supportsContent(part, ["text", "media"]))
           return yield* ProviderShared.unsupportedContent("Bedrock Converse", "user", ["text", "media"])
         if (part.type === "text") {
+          if (part.text.trim().length === 0) continue
           content.push(...textWithCache(breakpoints, part.text, part.cache))
           continue
         }
@@ -351,10 +364,16 @@ const lowerMessages = Effect.fn("BedrockConverse.lowerMessages")(function* (
           continue
         }
       }
+      const needsPlaceholder =
+        content.length === 0 ||
+        (message.content.some((part) => part.type === "text") &&
+          content.some((part) => "document" in part) &&
+          !content.some((part) => "text" in part))
+      const lowered = needsPlaceholder ? [{ text: EMPTY_MESSAGE }, ...content] : content
       const previous = messages.at(-1)
       if (previous?.role === "user")
-        messages[messages.length - 1] = { role: "user", content: [...previous.content, ...content] }
-      else messages.push({ role: "user", content })
+        messages[messages.length - 1] = { role: "user", content: [...previous.content, ...lowered] }
+      else messages.push({ role: "user", content: lowered })
       continue
     }
 
@@ -368,6 +387,7 @@ const lowerMessages = Effect.fn("BedrockConverse.lowerMessages")(function* (
             "tool-call",
           ])
         if (part.type === "text") {
+          if (part.text.trim().length === 0) continue
           content.push(...textWithCache(breakpoints, part.text, part.cache))
           continue
         }
@@ -401,7 +421,7 @@ const lowerMessages = Effect.fn("BedrockConverse.lowerMessages")(function* (
       if (!ProviderShared.supportsContent(part, ["tool-result"]))
         return yield* ProviderShared.unsupportedContent("Bedrock Converse", "tool", ["tool-result"])
       content.push(yield* lowerToolResult(part))
-      const cachePoint = BedrockCache.block(breakpoints, part.cache)
+      const cachePoint = hasNonblankToolResultContent(part) ? BedrockCache.block(breakpoints, part.cache) : undefined
       if (cachePoint) content.push(cachePoint)
     }
     const previous = messages.at(-1)
@@ -415,10 +435,7 @@ const lowerMessages = Effect.fn("BedrockConverse.lowerMessages")(function* (
 
 // System prompts share the cache-point convention: emit the text block, then
 // optionally a positional `cachePoint` marker.
-const lowerSystem = (
-  breakpoints: BedrockCache.Breakpoints,
-  system: ReadonlyArray<LLMRequest["system"][number]>,
-) => {
+const lowerSystem = (breakpoints: BedrockCache.Breakpoints, system: ReadonlyArray<LLMRequest["system"][number]>) => {
   const content = system
     .filter((part) => part.text.length > 0)
     .flatMap((part) => textWithCache(breakpoints, part.text, part.cache))

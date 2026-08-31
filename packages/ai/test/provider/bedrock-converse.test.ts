@@ -208,6 +208,106 @@ describe("Bedrock Converse route", () => {
     }),
   )
 
+  it.effect("replaces blank-only user text with one compatibility block", () =>
+    Effect.gen(function* () {
+      const cache = new CacheHint({ type: "ephemeral" })
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model,
+          messages: [
+            Message.user([
+              { type: "text", text: "   ", cache },
+              { type: "text", text: "\t" },
+              { type: "text", text: "\n\n" },
+            ]),
+          ],
+          cache: "none",
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([{ role: "user", content: [{ text: "(empty message)" }] }])
+    }),
+  )
+
+  it.effect("removes blank user text around meaningful text and media", () =>
+    Effect.gen(function* () {
+      const withText = yield* compileRequest(
+        LLM.request({
+          model,
+          messages: [
+            Message.user([
+              { type: "text", text: "\t\n" },
+              { type: "text", text: "  Keep this spacing.  " },
+              { type: "text", text: "   " },
+            ]),
+          ],
+          cache: "none",
+        }),
+      )
+      const withImage = yield* compileRequest(
+        LLM.request({
+          model,
+          messages: [
+            Message.user([
+              { type: "text", text: " \n\t " },
+              { type: "media", mediaType: "image/png", data: "AAAA" },
+            ]),
+          ],
+          cache: "none",
+        }),
+      )
+      const withDocument = yield* compileRequest(
+        LLM.request({
+          model,
+          messages: [
+            Message.user([
+              { type: "text", text: " \n\t " },
+              { type: "media", mediaType: "application/pdf", data: "UERGREFUQQ==", filename: "report.pdf" },
+            ]),
+          ],
+          cache: "none",
+        }),
+      )
+
+      expect(withText.body.messages).toEqual([{ role: "user", content: [{ text: "  Keep this spacing.  " }] }])
+      expect(withImage.body.messages).toEqual([
+        { role: "user", content: [{ image: { format: "png", source: { bytes: "AAAA" } } }] },
+      ])
+      expect(withDocument.body.messages).toEqual([
+        {
+          role: "user",
+          content: [
+            { text: "(empty message)" },
+            { document: { format: "pdf", name: "report.pdf", source: { bytes: "UERGREFUQQ==" } } },
+          ],
+        },
+      ])
+    }),
+  )
+
+  it.effect("drops blank assistant text without leaving an empty or cache-only message", () =>
+    Effect.gen(function* () {
+      const cache = new CacheHint({ type: "ephemeral" })
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model,
+          messages: [
+            Message.user("First"),
+            Message.assistant([
+              { type: "text", text: "   ", cache },
+              { type: "text", text: "\t" },
+              { type: "text", text: "\n" },
+            ]),
+            Message.user("  Second  "),
+          ],
+          cache: "none",
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([{ role: "user", content: [{ text: "First" }, { text: "  Second  " }] }])
+    }),
+  )
+
   it.effect("prepares tool config with toolSpec and toolChoice", () =>
     Effect.gen(function* () {
       const prepared = yield* compileRequest(
@@ -308,6 +408,65 @@ describe("Bedrock Converse route", () => {
           },
         ],
       })
+    }),
+  )
+
+  it.effect("replaces blank tool-result content while preserving identity and status", () =>
+    Effect.gen(function* () {
+      const cache = new CacheHint({ type: "ephemeral" })
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model,
+          messages: [
+            Message.assistant([
+              ToolCallPart.make({ id: "tool_1", name: "lookup", input: {} }),
+              ToolCallPart.make({ id: "tool_2", name: "lookup", input: {} }),
+            ]),
+            Message.tool({ id: "tool_1", name: "lookup", result: " \t\n ", resultType: "error", cache }),
+            Message.tool({
+              id: "tool_2",
+              name: "lookup",
+              result: {
+                type: "content",
+                value: [
+                  { type: "text", text: "   " },
+                  { type: "text", text: "\t\n" },
+                ],
+              },
+            }),
+          ],
+          cache: "none",
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([
+        {
+          role: "assistant",
+          content: [
+            { toolUse: { toolUseId: "tool_1", name: "lookup", input: {} } },
+            { toolUse: { toolUseId: "tool_2", name: "lookup", input: {} } },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              toolResult: {
+                toolUseId: "tool_1",
+                content: [{ text: "(no tool output)" }],
+                status: "error",
+              },
+            },
+            {
+              toolResult: {
+                toolUseId: "tool_2",
+                content: [{ text: "(no tool output)" }],
+                status: "success",
+              },
+            },
+          ],
+        },
+      ])
     }),
   )
 
@@ -435,7 +594,7 @@ describe("Bedrock Converse route", () => {
     }),
   )
 
-  it.effect("lowers image content in tool-result messages", () =>
+  it.effect("removes blank text from mixed tool-result content", () =>
     Effect.gen(function* () {
       const prepared = yield* compileRequest(
         LLM.request({
@@ -450,8 +609,10 @@ describe("Bedrock Converse route", () => {
               result: {
                 type: "content",
                 value: [
-                  { type: "text", text: "Screenshot captured." },
+                  { type: "text", text: " \t\n " },
+                  { type: "text", text: "  Screenshot captured.  " },
                   { type: "file", uri: "data:image/png;base64,AAAA", mime: "image/png" },
+                  { type: "text", text: "   " },
                 ],
               },
             }),
@@ -473,7 +634,10 @@ describe("Bedrock Converse route", () => {
               {
                 toolResult: {
                   toolUseId: "tool_1",
-                  content: [{ text: "Screenshot captured." }, { image: { format: "png", source: { bytes: "AAAA" } } }],
+                  content: [
+                    { text: "  Screenshot captured.  " },
+                    { image: { format: "png", source: { bytes: "AAAA" } } },
+                  ],
                   status: "success",
                 },
               },
