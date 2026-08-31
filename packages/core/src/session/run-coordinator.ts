@@ -113,6 +113,8 @@ export const make = <Key, E, Reason = never>(options: {
                 return Effect.suspend(() => options.suspended?.(key) ?? Effect.void).pipe(
                   Effect.ensuring(Effect.sync(() => settle(key, execution, exit))),
                 )
+              // Keep this decision and settlement synchronous. An Effect boundary could yield
+              // to shutdown after skipping suspension but before starting the successor.
               settle(key, execution, exit)
               return Effect.void
             }),

@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Scheduler, Scope } from "effect"
 import { SessionInbox } from "@opencode-ai/core/session/inbox"
 import { SessionRunCoordinator } from "@opencode-ai/core/session/run-coordinator"
 import { testEffect } from "./lib/effect"
@@ -246,6 +246,76 @@ describe("SessionRunCoordinator", () => {
         expect(lifecycle).toEqual(["drained", "settled", "suspended"])
         expect(yield* coordinator.active).toEqual(new Set())
         yield* coordinator.awaitIdle("session")
+      }),
+    )
+  }
+
+  for (const cutoff of Array.from({ length: 40 }, (_, index) => index + 1)) {
+    it.effect(`shutdown at settlement operation ${cutoff} preserves its pending successor`, () =>
+      Effect.gen(function* () {
+        const running = yield* Deferred.make<void>()
+        const cleanup = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const closeNow = yield* Deferred.make<void>()
+        const scope = yield* Scope.make()
+        yield* Effect.addFinalizer(() =>
+          Deferred.succeed(release, undefined).pipe(Effect.andThen(Scope.close(scope, Exit.void))),
+        )
+        const base = new Scheduler.MixedScheduler()
+        const dispatcher = base.makeDispatcher()
+        const lifecycle: string[] = []
+        let owner: number | undefined
+        let seen = 0
+        const scheduler: Scheduler.Scheduler = {
+          executionMode: base.executionMode,
+          makeDispatcher: () => base.makeDispatcher(),
+          shouldYield: (fiber) => {
+            if (fiber.id === owner && ++seen === cutoff) {
+              // Close on the next scheduler tick, never reentrantly inside the current operation.
+              dispatcher.scheduleTask(() => Deferred.doneUnsafe(closeNow, Exit.void), 0)
+              return true
+            }
+            return base.shouldYield(fiber)
+          },
+        }
+        const coordinator = yield* SessionRunCoordinator.make({
+          started: () => {
+            // Count scheduling even if shutdown interrupts the successor before its first drain.
+            lifecycle.push("scheduled")
+            return Effect.void
+          },
+          drain: () =>
+            Deferred.succeed(running, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.onInterrupt(() =>
+                Deferred.succeed(cleanup, undefined).pipe(Effect.andThen(Deferred.await(release))),
+              ),
+            ),
+          settled: () =>
+            Effect.withFiber((fiber) => {
+              owner ??= fiber.id
+              return Effect.void
+            }),
+          suspended: () => Effect.sync(() => void lifecycle.push("suspended")),
+        }).pipe(Scope.provide(scope), Effect.provideService(Scheduler.Scheduler, scheduler))
+
+        yield* coordinator.wake("session")
+        yield* Deferred.await(running)
+        yield* coordinator.interrupt("session")
+        yield* Deferred.await(cleanup)
+        yield* coordinator.wake("session")
+        const closing = yield* Deferred.await(closeNow).pipe(
+          Effect.andThen(Scope.close(scope, Exit.void)),
+          Effect.forkChild({ startImmediately: true }),
+        )
+        yield* Deferred.succeed(release, undefined)
+        yield* Effect.yieldNow
+        // If settlement finished before the cutoff, close the already-scheduled successor.
+        yield* Deferred.succeed(closeNow, undefined)
+        yield* Fiber.join(closing)
+
+        expect(lifecycle.length).toBe(2)
+        expect(yield* coordinator.active).toEqual(new Set())
       }),
     )
   }
