@@ -63,7 +63,7 @@ export { ProviderMetadata } from "./messages.js"
  * Matches the same escape-hatch field on `LLMEvent`.
  */
 export class Usage extends Schema.Class<Usage>("AI.Usage")({
-  /** Effective input size of the final provider iteration, distinct from billed totals. */
+  /** Effective input size of the final message iteration, when reported; not billed totals. */
   contextTokens: Schema.optional(Schema.Number),
   inputTokens: Schema.optional(Schema.Number),
   outputTokens: Schema.optional(Schema.Number),
@@ -75,7 +75,7 @@ export class Usage extends Schema.Class<Usage>("AI.Usage")({
   providerMetadata: Schema.optional(ProviderMetadata),
 }) {
   /**
-   * Visible output tokens — `outputTokens` minus `reasoningTokens`, clamped
+   * Non-reasoning output tokens (including compaction summaries) — `outputTokens` minus `reasoningTokens`, clamped
    * to zero. The one place subtraction happens in this contract; the clamp
    * means a provider reporting `reasoningTokens > outputTokens` produces a
    * harmless zero rather than a negative that crashes downstream schemas.

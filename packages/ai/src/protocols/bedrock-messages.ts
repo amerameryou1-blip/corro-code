@@ -52,7 +52,7 @@ export const protocol = Protocol.make({
         ...Struct.omit(body, ["model", "stream"]),
         anthropic_version: VERSION,
         anthropic_beta: betas.size ? [...betas] : undefined,
-      }
+      } satisfies typeof Body.Type
     }),
   },
   stream: {

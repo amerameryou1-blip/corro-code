@@ -49,6 +49,7 @@ for (const model of [
       const rejected = yield* LLMClient.generate(
         LLMRequest.update(request, {
           model: XAI.configure({ apiKey: "test" }).responses("grok-4.6"),
+          providerOptions: {},
           messages: [message],
         }),
       ).pipe(Effect.flip)

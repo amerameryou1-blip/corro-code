@@ -17,6 +17,18 @@ const retained = {
 }
 const output = [retained, checkpoint]
 
+testEffect(fixedResponse("must not execute")).effect("xAI rejects automatic compaction options", () =>
+  Effect.gen(function* () {
+    const request = LLMRequest.update(
+      LLM.request({ model: XAI.configure({ apiKey: "test" }).responses("grok-4.6"), prompt: "hello" }),
+      { providerOptions: { contextManagement: [{ type: "compaction" }] } },
+    )
+    const error = yield* LLMClient.generate(request).pipe(Effect.flip)
+    expect(error.reason._tag).toBe("InvalidRequest")
+    expect(error.message).toContain("LLMClient.compact")
+  }),
+)
+
 for (const model of [
   OpenAI.configure({ apiKey: "test" }).responses("gpt-5.3-codex"),
   Azure.configure({ apiKey: "test", resourceName: "test" }).responses("deployment"),

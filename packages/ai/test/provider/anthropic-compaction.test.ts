@@ -4,7 +4,7 @@ import { LLM, LLMRequest, Message } from "../../src/index.js"
 import { LLMClient } from "../../src/route/client.js"
 import { Anthropic, GoogleVertexMessages } from "../../src/providers/index.js"
 import { testEffect } from "../lib/effect.js"
-import { dynamicResponse } from "../lib/http.js"
+import { dynamicResponse, fixedResponse } from "../lib/http.js"
 import { sseEvents } from "../lib/sse.js"
 
 for (const model of [
@@ -96,4 +96,25 @@ for (const model of [
         }),
     )
   }
+}
+
+for (const events of [
+  [{ type: "content_block_start", index: 0, content_block: { type: "compaction", content: 42 } }],
+  [{ type: "content_block_delta", index: 0, delta: { type: "compaction_delta", content: "no start" } }],
+  [
+    { type: "content_block_start", index: 0, content_block: { type: "compaction", content: null } },
+    { type: "message_stop" },
+  ],
+]) {
+  testEffect(fixedResponse(sseEvents(...events))).effect(
+    `rejects malformed compaction lifecycle: ${JSON.stringify(events)}`,
+    () =>
+      Effect.gen(function* () {
+        const error = yield* LLMClient.generate(
+          LLM.request({ model: Anthropic.configure({ apiKey: "test" }).model("claude-opus-4-6"), prompt: "hello" }),
+        ).pipe(Effect.flip)
+        expect(error.reason._tag).toBe("InvalidProviderOutput")
+        expect(error.reason.http?.status).toBe(200)
+      }),
+  )
 }

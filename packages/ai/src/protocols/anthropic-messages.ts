@@ -1161,7 +1161,7 @@ const mapUsage = (usage: AnthropicUsage | undefined, providerMetadataKey: string
       cacheReadInputTokens: ProviderShared.sumTokens(...iterations.map((item) => item.cacheReadInputTokens)),
       cacheWriteInputTokens: ProviderShared.sumTokens(...iterations.map((item) => item.cacheWriteInputTokens)),
       reasoningTokens: ProviderShared.sumTokens(...iterations.map((item) => item.reasoningTokens)),
-      contextTokens: iterations.at(-1)?.inputTokens,
+      contextTokens: usage.iterations.at(-1)?.type === "message" ? iterations.at(-1)?.inputTokens : undefined,
       providerMetadata: { [providerMetadataKey]: usage },
     })
   }
@@ -1258,16 +1258,6 @@ const onContentBlockStart = (
 ): StepResult => {
   const block = event.content_block
   if (!block) return [state, NO_EVENTS]
-
-  if (block.type === "compaction" && event.index !== undefined) {
-    return [
-      {
-        ...state,
-        compactions: { ...state.compactions, [event.index]: typeof block.content === "string" ? block.content : null },
-      },
-      NO_EVENTS,
-    ]
-  }
 
   if (block.type === "tool_use" || block.type === "server_tool_use") {
     if (event.index === undefined || !block.id) return [state, NO_EVENTS]
@@ -1493,6 +1483,8 @@ const onMessageDelta = (
 }
 
 const onMessageStop = Effect.fn("AnthropicMessages.onMessageStop")(function* (state: ParserState) {
+  if (Object.keys(state.compactions).length)
+    return yield* ProviderShared.eventError(ADAPTER, "Response ended with an incomplete compaction block")
   const result = yield* ToolStream.finishAll(ADAPTER, state.tools)
   const events: LLMEvent[] = []
   const lifecycle = result.events.length ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
@@ -1580,6 +1572,14 @@ const step = (state: ParserState, event: AnthropicEvent) => {
   if (event.type === "content_block_start") {
     if (!ProviderShared.isRecord(event.content_block) || typeof event.content_block.type !== "string")
       return invalidStreamEvent(event)
+    if (event.content_block.type === "compaction") {
+      const decoded = Schema.decodeUnknownOption(AnthropicCompactionBlock)(event.content_block)
+      if (event.index === undefined || Option.isNone(decoded)) return invalidStreamEvent(event)
+      return Effect.succeed<StepResult>([
+        { ...state, compactions: { ...state.compactions, [event.index]: decoded.value.content } },
+        NO_EVENTS,
+      ])
+    }
     if (!isKnownStreamBlockType(event.content_block.type)) return Effect.succeed<StepResult>([state, NO_EVENTS])
     const decoded = decodeAnthropicStreamBlock(event.content_block)
     if (Option.isNone(decoded)) return invalidStreamEvent(event)

@@ -14,7 +14,7 @@ import type { ProviderPackage } from "../provider-package.js"
 
 export const id = ProviderID.make("xai")
 
-export type XAIProviderOptionsInput = OpenAIOptionsInput
+export type XAIProviderOptionsInput = OpenAIOptionsInput & { readonly contextManagement?: never }
 
 export type LanguageModelOptions = Omit<RouteDefaultsInput, "providerOptions"> &
   ProviderAuthOption<"optional"> & {
