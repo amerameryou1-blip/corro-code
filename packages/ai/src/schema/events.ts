@@ -345,13 +345,10 @@ export const LLMEvent = Object.assign(llmEventTagged, {
 export type LLMEvent = Schema.Schema.Type<typeof llmEventTagged>
 
 /** Joins deltas per fragment, letting an authoritative end value replace that fragment's accumulated deltas. */
-const joinFragments = <
-  Delta extends LLMEvent & { id: string; text: string },
-  End extends LLMEvent & { id: string; text?: string },
->(
+const joinFragments = (
   events: ReadonlyArray<LLMEvent>,
-  isDelta: (event: LLMEvent) => event is Delta,
-  isEnd: (event: LLMEvent) => event is End,
+  isDelta: (event: LLMEvent) => event is LLMEvent & { id: string; text: string },
+  isEnd: (event: LLMEvent) => event is LLMEvent & { id: string; text?: string },
 ) => {
   const order: string[] = []
   const parts = new Map<string, string>()
