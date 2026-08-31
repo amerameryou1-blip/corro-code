@@ -188,6 +188,10 @@ export const ReasoningPart = Schema.Struct({
 export type ReasoningPart = Schema.Schema.Type<typeof ReasoningPart>
 
 /** A provider-generated context checkpoint, distinct from visible assistant text. */
+type CompactionContent =
+  | { readonly encrypted: string; readonly text?: never }
+  | { readonly text: string | null; readonly encrypted?: never }
+
 const compactionPartSchema = Schema.Struct({
   type: Schema.Literal("compaction"),
   provider: ProviderID,
@@ -196,17 +200,16 @@ const compactionPartSchema = Schema.Struct({
   /** Null means the provider failed to produce a summary; prior history must be retained. */
   text: Schema.optional(Schema.NullOr(Schema.String)),
 })
-  .check(
-    Schema.makeFilter(
-      (part) =>
-        (part.encrypted !== undefined) !== (part.text !== undefined) ||
-        "Compaction requires either encrypted content or a summary",
+  .pipe(
+    Schema.refine(
+      (part): part is typeof part & CompactionContent => (part.encrypted !== undefined) !== (part.text !== undefined),
+      { message: "Compaction requires either encrypted content or a summary" },
     ),
   )
   .annotate({ identifier: "LLM.Content.Compaction" })
 export type CompactionPart = typeof compactionPartSchema.Type
 export const CompactionPart = Object.assign(compactionPartSchema, {
-  make: (input: Omit<CompactionPart, "type">): CompactionPart =>
+  make: (input: Omit<CompactionPart, "type" | "encrypted" | "text"> & CompactionContent): CompactionPart =>
     Schema.decodeUnknownSync(compactionPartSchema)({ type: "compaction", ...input }),
 })
 
