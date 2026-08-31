@@ -187,13 +187,12 @@ ultimate source of truth.
       constructors, reactions, `finally`, `await`, and async returns. Thenable methods run deferred, receive
       first-call-wins resolve/reject functions, and ignore throws after settlement. Inherited/accessor `then` fields
       and a JavaScript `this` receiver remain outside the supported object/function model.
-- [x] Dotted tool names are canonicalized into namespace paths; a path can be both callable and a namespace, and the
-      last tool supplied for a canonical path wins.
+- [x] Tools and namespaces are named array entries. Namespaces may nest; a name at one level is either a tool or a
+      namespace, not both. Duplicate names and names containing `.` throw `TypeError`.
 - [x] Tool path segments may be named `constructor`, `prototype`, or `__proto__` because paths use inert Map keys.
-- [x] Explicit namespace descriptions supplied to `CodeMode.make` or `CodeMode.execute` contribute to search matching
-      for descendant tools, including nested ancestors. Search results keep the original tool descriptions and
-      signatures. Metadata does not create executable tools or change namespace enumeration. Host-side
-      `runtime.namespaces()` lists only explicitly described namespaces with descendant tools, sorted by path.
+- [x] Namespace descriptions are optional and contribute to search matching for descendant tools, including nested
+      ancestors. Search results keep the original tool descriptions and signatures. Host-side `runtime.namespaces()`
+      lists namespaces with descendant tools, sorted by path.
 - [x] Outbound tool arguments follow JSON serialization semantics, like `JSON.stringify`: object properties with
       `undefined` values are dropped, `undefined` array elements and non-finite numbers become `null`, and sparse
       arrays densify. Tools never receive `undefined` inside their input object, though a bare `tools.t(undefined)`

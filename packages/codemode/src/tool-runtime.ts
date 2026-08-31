@@ -26,16 +26,18 @@ export type Services<T> = ServicesOf<T, []>
 
 type ServicesOf<T, Depth extends ReadonlyArray<unknown>> = Depth["length"] extends 8
   ? never
-  : T extends {
-        readonly _tag: "CodeModeTool"
-        readonly execute: (input: unknown) => Effect.Effect<unknown, unknown, infer R>
-      }
-    ? R
-    : T extends object
-      ? string extends keyof T
-        ? ServicesOf<T[string], [...Depth, unknown]>
-        : ServicesOf<T[keyof T], [...Depth, unknown]>
+  : T extends ReadonlyArray<infer Entry>
+    ? Entry extends infer Item
+      ? Item extends {
+          readonly _tag: "CodeModeTool"
+          readonly execute: (input: unknown) => Effect.Effect<unknown, unknown, infer R>
+        }
+        ? R
+        : Item extends { readonly _tag: "CodeModeNamespace"; readonly tools: infer Nested }
+          ? ServicesOf<Nested, [...Depth, unknown]>
+          : never
       : never
+    : never
 
 export type ToolCall = {
   readonly name: string
@@ -67,12 +69,9 @@ export type ToolDescription = {
   readonly signature: string
 }
 
-export type Namespace = {
-  readonly description: string
-}
-
-export type NamespaceDescription = Namespace & {
+export type NamespaceDescription = {
   readonly path: string
+  readonly description?: string
 }
 
 export type SafeObject = Record<string, unknown>
@@ -282,33 +281,40 @@ export const copyOut = (value: unknown, mode: CopyOutMode): unknown => {
   return value
 }
 
-// Dots in tool names are namespace separators; the last tool for a canonical path wins.
+// Each registered name is one path segment. Dots are not separators.
 type ToolNode<R> = {
   tool?: Tool<R>
+  description?: string
   readonly children: Map<string, ToolNode<R>>
+}
+
+const requireName = (name: string): void => {
+  if (name === "") throw new TypeError("Name cannot be empty.")
+  if (name.includes(".")) throw new TypeError(`Name '${name}' cannot contain '.'.`)
 }
 
 const toolTrie = <R>(tools: Tools<R>): ToolNode<R> => {
   const root: ToolNode<R> = { children: new Map() }
-  const insert = (node: ToolNode<R>, group: Tools<R>): void => {
-    for (const [name, value] of Object.entries(group)) {
-      let current = node
-      for (const segment of name.split(".")) {
-        if (segment === "") throw new TypeError(`Tool name '${name}' contains an empty segment.`)
-        const child = current.children.get(segment) ?? { children: new Map() }
-        current.children.set(segment, child)
-        current = child
+  const insert = (node: ToolNode<R>, entries: Tools<R>, path: ReadonlyArray<string>): void => {
+    for (const entry of entries) {
+      requireName(entry.name)
+      const next = [...path, entry.name]
+      if (node.children.has(entry.name)) {
+        throw new TypeError(`Duplicate tool path '${next.join(".")}'.`)
       }
-      if (isTool<R>(value)) current.tool = value
-      else insert(current, value)
+      const child: ToolNode<R> = { children: new Map() }
+      node.children.set(entry.name, child)
+      if (isTool<R>(entry)) {
+        child.tool = entry
+        continue
+      }
+      if (entry.description !== undefined) child.description = entry.description
+      insert(child, entry.tools, next)
     }
   }
-  insert(root, tools)
+  insert(root, tools, [])
   return root
 }
-
-const canonicalSegments = (path: ReadonlyArray<string>): ReadonlyArray<string> =>
-  path.flatMap((segment) => segment.split("."))
 
 const flattenTools = <R>(
   node: ToolNode<R>,
@@ -318,15 +324,28 @@ const flattenTools = <R>(
   ...Array.from(node.children, ([name, child]) => flattenTools(child, [...path, name])).flat(),
 ]
 
+const flattenNamespaces = <R>(node: ToolNode<R>, path: ReadonlyArray<string> = []): Array<NamespaceDescription> => {
+  const nested = Array.from(node.children, ([name, child]) => flattenNamespaces(child, [...path, name])).flat()
+  if (path.length === 0 || node.children.size === 0) return nested
+  if (flattenTools(node, path).length === 0) return nested
+  return [
+    {
+      path: path.join("."),
+      ...(node.description === undefined ? {} : { description: node.description }),
+    },
+    ...nested,
+  ]
+}
+
 const describeTool = <R>(path: string, tool: Tool<R>): ToolDescription => ({
   path,
   description: tool.description,
   signature: `${toolExpression(path)}(input: ${inputTypeScript(tool, true)}): Promise<${outputTypeScript(tool, true)}>`,
 })
 
-// Discovery bytes are durable instructions, so order only after canonical-path collisions settle.
-const visibleTools = <R>(tools: Tools<R>) =>
-  flattenTools(toolTrie(tools))
+// Discovery bytes are durable instructions, so order only after the trie is built.
+const visibleTools = <R>(root: ToolNode<R>) =>
+  flattenTools(root)
     .sort((left, right) => compareText(left.path, right.path))
     .map(({ path, tool }) => ({
       path,
@@ -361,6 +380,7 @@ const termForms = (term: string): Array<string> => {
 
 const makeSearchTool = (searchIndex: ReadonlyArray<SearchEntry>): Tool => ({
   _tag: "CodeModeTool",
+  name: "search",
   description: "Search available tools",
   input: SearchInput,
   output: SearchOutput,
@@ -440,7 +460,7 @@ const toSearchEntry = <R>(
     path,
     tool.description,
     ...namespaces
-      .filter((namespace) => path.startsWith(`${namespace.path}.`))
+      .filter((namespace) => path.startsWith(`${namespace.path}.`) && namespace.description !== undefined)
       .map((namespace) => namespace.description),
     ...inputProperties(tool).flatMap(({ name, description: property }) =>
       property === undefined ? [name] : [name, property],
@@ -450,22 +470,12 @@ const toSearchEntry = <R>(
     .toLowerCase(),
 })
 
-export const searchIndex = <R>(
-  tools: Tools<R>,
-  namespaces?: Readonly<Record<string, Namespace>>,
-): ReadonlyArray<SearchEntry> => prepare(tools, namespaces).searchIndex
+export const searchIndex = <R>(tools: Tools<R>): ReadonlyArray<SearchEntry> => prepare(tools).searchIndex
 
-export const prepare = <R>(tools: Tools<R>, namespaces: Readonly<Record<string, Namespace>> = {}): DiscoveryPlan => {
-  const visible = visibleTools(tools)
-  const descriptions = Object.entries(namespaces)
-    .map(([path, namespace]) => {
-      if (path.split(".").some((segment) => segment === "")) {
-        throw new TypeError(`Namespace path '${path}' contains an empty segment.`)
-      }
-      return { path, description: namespace.description }
-    })
-    .filter((namespace) => visible.some((tool) => tool.path.startsWith(`${namespace.path}.`)))
-    .sort((left, right) => compareText(left.path, right.path))
+export const prepare = <R>(tools: Tools<R>): DiscoveryPlan => {
+  const root = toolTrie(tools)
+  const visible = visibleTools(root)
+  const descriptions = flattenNamespaces(root).sort((left, right) => compareText(left.path, right.path))
   return {
     catalog: visible.map(({ description }) => description),
     namespaces: descriptions,
@@ -477,24 +487,22 @@ const lookup = <R>(root: ToolNode<R>, segments: ReadonlyArray<string>): ToolNode
   segments.reduce<ToolNode<R> | undefined>((node, segment) => node?.children.get(segment), root)
 
 const namespaceKeys = <R>(root: ToolNode<R>, path: ReadonlyArray<string>): ReadonlyArray<string> => {
-  const segments = canonicalSegments(path)
-  const node = lookup(root, segments)
+  const node = lookup(root, path)
   if (node === undefined) {
-    throw new ToolRuntimeError("UnknownTool", `Unknown tool namespace '${segments.join(".")}'.`)
+    throw new ToolRuntimeError("UnknownTool", `Unknown tool namespace '${path.join(".")}'.`)
   }
   return Array.from(node.children.keys())
 }
 
 const resolve = <R>(root: ToolNode<R>, path: ReadonlyArray<string>): Tool<R> => {
-  const segments = canonicalSegments(path)
-  const node = lookup(root, segments)
+  const node = lookup(root, path)
   if (node === undefined) {
-    throw new ToolRuntimeError("UnknownTool", `Unknown tool '${segments.join(".")}'.`, [
+    throw new ToolRuntimeError("UnknownTool", `Unknown tool '${path.join(".")}'.`, [
       "The tool may have been removed or renamed. Use search to find available tools.",
     ])
   }
   if (node.tool === undefined) {
-    throw new ToolRuntimeError("UnknownTool", `Tool '${segments.join(".")}' is not callable.`)
+    throw new ToolRuntimeError("UnknownTool", `Tool '${path.join(".")}' is not callable.`)
   }
   return node.tool
 }
@@ -596,7 +604,7 @@ export const make = <R>(
       ),
     execute: (path, args) =>
       Effect.gen(function* () {
-        const name = canonicalSegments(path).join(".")
+        const name = path.join(".")
         const externalArgs = args.map((arg) => copyOut(copyIn(arg, `Arguments for tool '${name}'`), "json"))
         const tool = resolve(root, path)
         return yield* executeTool(name, tool, externalArgs)

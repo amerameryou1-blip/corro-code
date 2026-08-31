@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Deferred, Effect, Schema } from "effect"
-import { CodeMode, Tool, toolError } from "../src/index.js"
+import { CodeMode, Namespace, Tool, toolError } from "../src/index.js"
 
 // Wave 5 acceptance suite: first-class promise values. Un-awaited tool calls start eagerly on
 // supervised fibers, `await` settles them, Promise.all/allSettled/race/resolve/reject are
@@ -30,6 +30,7 @@ const makeTrace = (): Trace => ({ starts: [], active: 0, maxActive: 0, completed
  */
 const echoTool = (trace: Trace) =>
   Tool.make({
+    name: "echo",
     description: "Echo an id immediately",
     input: Schema.Struct({ id: Schema.Number }),
     output: Schema.Number,
@@ -43,6 +44,7 @@ const echoTool = (trace: Trace) =>
 
 const gatedTool = (trace: Trace, gate: (id: number) => Deferred.Deferred<void>) =>
   Tool.make({
+    name: "gated",
     description: "Echo an id once its gate opens",
     input: Schema.Struct({ id: Schema.Number }),
     output: Schema.Number,
@@ -67,6 +69,7 @@ const gatedTool = (trace: Trace, gate: (id: number) => Deferred.Deferred<void>) 
 
 const openTool = (gate: (id: number) => Deferred.Deferred<void>) =>
   Tool.make({
+    name: "open",
     description: "Open the gate for an id",
     input: Schema.Struct({ id: Schema.Number }),
     output: Schema.Boolean,
@@ -75,6 +78,7 @@ const openTool = (gate: (id: number) => Deferred.Deferred<void>) =>
 
 const pendingTool = (trace: Trace) =>
   Tool.make({
+    name: "pending",
     description: "Never settle",
     input: Schema.Struct({ id: Schema.Number }),
     output: Schema.Number,
@@ -95,6 +99,7 @@ const pendingTool = (trace: Trace) =>
   })
 
 const failingTool = Tool.make({
+  name: "fail",
   description: "Always refuse",
   input: Schema.Struct({}),
   output: Schema.String,
@@ -102,6 +107,7 @@ const failingTool = Tool.make({
 })
 
 const interruptedTool = Tool.make({
+  name: "interrupt",
   description: "Interrupt this call",
   input: Schema.Struct({}),
   output: Schema.String,
@@ -110,6 +116,7 @@ const interruptedTool = Tool.make({
 
 const completedTool = (trace: Trace) =>
   Tool.make({
+    name: "completed",
     description: "Return the number of completed calls",
     input: Schema.Struct({}),
     output: Schema.Number,
@@ -119,6 +126,7 @@ const completedTool = (trace: Trace) =>
 /** Never settles, and holds interruption cleanup for `cleanupMs` so completion cleanup can outlast a timeout. */
 const stubbornTool = (trace: Trace) =>
   Tool.make({
+    name: "stubborn",
     description: "Never settle; clean up slowly when interrupted",
     input: Schema.Struct({ cleanupMs: Schema.Number }),
     output: Schema.Number,
@@ -150,18 +158,21 @@ const run = (
   }
   return Effect.runPromise(
     CodeMode.execute({
-      tools: {
-        host: {
-          echo: echoTool(trace),
-          gated: gatedTool(trace, gate),
-          open: openTool(gate),
-          pending: pendingTool(trace),
-          fail: failingTool,
-          interrupt: interruptedTool,
-          completed: completedTool(trace),
-          stubborn: stubbornTool(trace),
-        },
-      },
+      tools: [
+        Namespace.make({
+          name: "host",
+          tools: [
+            echoTool(trace),
+            gatedTool(trace, gate),
+            openTool(gate),
+            pendingTool(trace),
+            failingTool,
+            interruptedTool,
+            completedTool(trace),
+            stubbornTool(trace),
+          ],
+        }),
+      ],
       code,
       ...(options.limits ? { limits: options.limits } : {}),
     }),

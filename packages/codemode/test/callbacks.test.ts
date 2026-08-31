@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
-import { CodeMode, Tool } from "../src/index.js"
+import { CodeMode, Namespace, Tool } from "../src/index.js"
 
 // Callback acceptance is one gate shared by array methods, sort, string replacers,
 // Array.from mappers, Map/Set/URLSearchParams forEach, and promise reactions:
 // interpreter functions, coercion/URI builtins, resolver capabilities, and built-in
 // method references are callable; tools and other opaque callables get a wrap hint.
-const run = (code: string) => Effect.runPromise(CodeMode.execute({ code, tools: {} }))
+const run = (code: string) => Effect.runPromise(CodeMode.execute({ code }))
 const value = async (code: string) => {
   const result = await run(code)
   if (!result.ok) throw new Error(`expected success, got ${result.error.kind}: ${result.error.message}`)
@@ -24,12 +24,14 @@ const logsOf = async (code: string) => {
 }
 
 const echo = Tool.make({
+  name: "echo",
   description: "Echo the input",
   input: Schema.Struct({ id: Schema.Number }),
   output: Schema.Number,
   execute: (input: { id: number }) => Effect.succeed(input.id),
 })
-const withTool = (code: string) => Effect.runPromise(CodeMode.make({ tools: { host: { echo } } }).execute(code))
+const withTool = (code: string) =>
+  Effect.runPromise(CodeMode.make({ tools: [Namespace.make({ name: "host", tools: [echo] })] }).execute(code))
 const toolError = async (code: string) => {
   const result = await withTool(code)
   if (result.ok) throw new Error(`expected failure, got value ${JSON.stringify(result.value)}`)

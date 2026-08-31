@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import { HttpClient } from "effect/unstable/http"
+import type { Namespace } from "../namespace.js"
 import type { Tool, JsonSchema } from "../tool.js"
 
 /** A parsed OpenAPI 3.x document. YAML must be parsed by the host. */
@@ -58,10 +59,10 @@ export type Skipped = {
   readonly reason: string
 }
 
-export type Tools = { [name: string]: Tool<HttpClient.HttpClient> | Tools }
+export type Tools = ReadonlyArray<Tool<HttpClient.HttpClient> | Namespace<HttpClient.HttpClient>>
 
 export type Result = {
-  /** Namespaced tools; the host places them under a key in its `tools` object. */
+  /** Named tools and namespaces; the host may wrap them in another namespace. */
   readonly tools: Tools
   readonly skipped: ReadonlyArray<Skipped>
 }

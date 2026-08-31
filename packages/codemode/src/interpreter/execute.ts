@@ -11,7 +11,7 @@ import { InterpreterRuntimeError, isRecord, type ProgramNode } from "./model.js"
 import { PromiseRuntime } from "./promises.js"
 import { Interpreter } from "./runtime.js"
 
-export const executeWithLimits = <const Provided extends Record<string, unknown>>(
+export const executeWithLimits = <const Provided extends ReadonlyArray<unknown>>(
   options: ExecuteOptions<Provided>,
   limits: ResolvedExecutionLimits,
   searchIndex: ToolRuntime.DiscoveryPlan["searchIndex"],
@@ -27,7 +27,7 @@ export const executeWithLimits = <const Provided extends Record<string, unknown>
   // Allocate execution state inside suspension so reused Effects never share it.
   return Effect.suspend(() => {
     const tools = ToolRuntime.make(
-      (options.tools ?? {}) as Tools<Services<Provided>>,
+      (options.tools ?? []) as Tools<Services<Provided>>,
       limits.maxToolCalls,
       searchIndex,
       {

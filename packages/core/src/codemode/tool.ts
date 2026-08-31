@@ -1,6 +1,6 @@
 export * as CodeModeTool from "./tool.js"
 
-import { CodeMode, Tool, toolError } from "@opencode-ai/codemode"
+import { CodeMode, Namespace, Tool, toolError } from "@opencode-ai/codemode"
 import type { Content, Context, Error, Info, Metadata, Result } from "@opencode-ai/schema/tool"
 import { Effect, Ref, Schema, Semaphore } from "effect"
 import { definition, normalizedName } from "../tool/runtime.js"
@@ -148,18 +148,46 @@ function runtime(
   executeTool: (name: string, tool: Info, input: unknown) => Effect.Effect<unknown, unknown>,
   hooks?: CodeMode.ToolCallHooks,
 ) {
-  const tools: Record<string, Tool.Tool<never>> = {}
+  const root: Branch = { tools: [], namespaces: new Map() }
   for (const [name, registration] of registrations) {
     const child = definition(registration)
-    const path = qualifiedName(registration)
-    tools[path] = Tool.make({
-      description: child.description,
-      input: child.inputSchema,
-      output: child.outputSchema ?? Schema.NullOr(Schema.String),
-      execute: (input) => executeTool(name, registration, input),
-    })
+    const namespace = registration.options?.namespace
+    addPath(
+      root,
+      namespace === undefined ? [] : namespace.split("."),
+      Tool.make({
+        name: normalizedName(registration),
+        description: child.description,
+        input: child.inputSchema,
+        output: child.outputSchema ?? Schema.NullOr(Schema.String),
+        execute: (input) => executeTool(name, registration, input),
+      }),
+    )
   }
-  return CodeMode.make<typeof tools>({ tools, ...hooks })
+  return CodeMode.make({ tools: toCatalog(root), ...hooks })
+}
+
+type Branch = {
+  tools: Array<Tool.Tool<never>>
+  namespaces: Map<string, Branch>
+}
+
+function addPath(branch: Branch, segments: ReadonlyArray<string>, tool: Tool.Tool<never>) {
+  const head = segments[0]
+  if (head === undefined) {
+    branch.tools.push(tool)
+    return
+  }
+  const child = branch.namespaces.get(head) ?? { tools: [], namespaces: new Map() }
+  branch.namespaces.set(head, child)
+  addPath(child, segments.slice(1), tool)
+}
+
+function toCatalog(branch: Branch): Array<Tool.Tool<never> | Namespace.Namespace<never>> {
+  return [
+    ...branch.tools,
+    ...Array.from(branch.namespaces, ([name, child]) => Namespace.make({ name, tools: toCatalog(child) })),
+  ]
 }
 
 function qualifiedName(registration: Info) {

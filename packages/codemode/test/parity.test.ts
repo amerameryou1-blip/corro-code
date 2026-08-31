@@ -10,7 +10,7 @@ import { ToolRuntime } from "../src/tool-runtime.js"
 // Note on the result boundary: this package normalizes a bare `undefined` result to `null` when
 // it crosses out of CodeMode (results are JSON data), so tests asserting an in-CodeMode
 // `undefined` read check `=== undefined` inside the program and `null` at the boundary.
-const run = (code: string) => Effect.runPromise(CodeMode.execute({ code, tools: {} }))
+const run = (code: string) => Effect.runPromise(CodeMode.execute({ code }))
 const value = async (code: string) => {
   const result = await run(code)
   if (!result.ok) throw new Error(`expected success, got ${result.error.kind}: ${result.error.message}`)

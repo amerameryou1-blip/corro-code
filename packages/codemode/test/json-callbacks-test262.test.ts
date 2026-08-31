@@ -32,7 +32,7 @@ import { CodeMode } from "../src/index.js"
 import { invokeJsonMethod } from "../src/stdlib/json.js"
 
 const value = async (code: string) => {
-  const result = await Effect.runPromise(CodeMode.execute({ code, tools: {} }))
+  const result = await Effect.runPromise(CodeMode.execute({ code }))
   if (!result.ok) throw new Error(`expected success, got ${result.error.kind}: ${result.error.message}`)
   return result.value
 }
@@ -213,7 +213,7 @@ describe("Test262 JSON.stringify replacer adaptations", () => {
 describe("CodeMode JSON callback boundaries", () => {
   test("this remains unsupported rather than exposing callback holders", async () => {
     const result = await Effect.runPromise(
-      CodeMode.execute({ code: `return JSON.parse("1", function (key, item) { return this })`, tools: {} }),
+      CodeMode.execute({ code: `return JSON.parse("1", function (key, item) { return this })` }),
     )
     expect(result).toMatchObject({ ok: false, error: { kind: "UnsupportedSyntax" } })
   })

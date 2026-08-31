@@ -16,14 +16,14 @@
  */
 import { describe, expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
-import { CodeMode, Tool } from "../src/index.js"
+import { CodeMode, Namespace, Tool } from "../src/index.js"
 
 // Standard-library value types: Date, RegExp, Map, Set. Programs use them as ordinary JS;
 // intra-CodeMode checkpoints (Object.* helpers, spread, coercion inputs) preserve the live
 // values, while at the host boundary (final result, tool arguments, JSON.stringify) they
 // serialize exactly as JSON.stringify would: Date -> ISO string (invalid -> null),
 // URL -> href, and RegExp/Map/Set/URLSearchParams -> {}.
-const run = (code: string) => Effect.runPromise(CodeMode.execute({ code, tools: {} }))
+const run = (code: string) => Effect.runPromise(CodeMode.execute({ code }))
 const value = async (code: string) => {
   const result = await run(code)
   if (!result.ok) throw new Error(`expected success, got ${result.error.kind}: ${result.error.message}`)
@@ -326,6 +326,7 @@ describe("RegExp", () => {
 
   test("promise-returning string replacers are coerced synchronously", async () => {
     const decorate = Tool.make({
+      name: "decorate",
       description: "Decorate a string",
       input: Schema.String,
       output: Schema.String,
@@ -333,7 +334,7 @@ describe("RegExp", () => {
     })
     const result = await Effect.runPromise(
       CodeMode.execute({
-        tools: { host: { decorate } },
+        tools: [Namespace.make({ name: "host", tools: [decorate] })],
         code: `return "a1b22".replace(/\\d+/g, async (match) => await tools.host.decorate(match))`,
       }),
     )
@@ -341,7 +342,7 @@ describe("RegExp", () => {
 
     const missingAwait = await Effect.runPromise(
       CodeMode.execute({
-        tools: { host: { decorate } },
+        tools: [Namespace.make({ name: "host", tools: [decorate] })],
         code: `return "a1".replace(/\\d/, (match) => tools.host.decorate(match))`,
       }),
     )
@@ -1026,6 +1027,7 @@ describe("CodeMode values at intra-CodeMode checkpoints", () => {
 
     const observed: Array<unknown> = []
     const capture = Tool.make({
+      name: "capture",
       description: "Capture the exact input the host receives",
       input: { type: "object" },
       execute: (input) =>
@@ -1036,7 +1038,7 @@ describe("CodeMode values at intra-CodeMode checkpoints", () => {
     })
     const result = await Effect.runPromise(
       CodeMode.execute({
-        tools: { host: { capture } },
+        tools: [Namespace.make({ name: "host", tools: [capture] })],
         code: `return await tools.host.capture({ when: new Date(0), tags: new Map([["a", 1]]) })`,
       }),
     )

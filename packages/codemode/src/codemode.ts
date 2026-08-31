@@ -1,18 +1,12 @@
 import { Effect, Schema } from "effect"
 import { executeWithLimits } from "./interpreter/execute.js"
-import {
-  type Namespace,
-  type NamespaceDescription,
-  type Services,
-  type ToolDescription,
-  ToolRuntime,
-} from "./tool-runtime.js"
+import { type NamespaceDescription, type Services, type ToolDescription, ToolRuntime } from "./tool-runtime.js"
 import type { Tools } from "./tools.js"
 
 /** A tool call admitted during an execution. */
 export type { ToolCall, ToolCallEnded, ToolCallHooks, ToolCallStarted, ToolDescription } from "./tool-runtime.js"
-/** Host-provided namespace metadata, separate from executable tools. */
-export type { Namespace, NamespaceDescription } from "./tool-runtime.js"
+/** Discovered namespace paths, including optional descriptions. */
+export type { NamespaceDescription } from "./tool-runtime.js"
 /** Signature-construction helpers for host-owned catalog instructions. */
 export { searchSignature, toolExpression } from "./tool-runtime.js"
 
@@ -39,13 +33,11 @@ export type ResolvedExecutionLimits = {
 }
 
 /** Options for one CodeMode execution. */
-export type ExecuteOptions<Provided extends Record<string, unknown> = {}> = {
+export type ExecuteOptions<Provided extends ReadonlyArray<unknown> = readonly []> = {
   /** Source for one program in the supported JavaScript subset. */
   code: string
-  /** Explicit tools exposed to the program as `tools`. */
+  /** Explicit tools and namespaces exposed to the program as `tools`. */
   tools?: Provided & Tools<Services<Provided>>
-  /** Descriptions keyed by canonical dotted namespace path. */
-  namespaces?: Readonly<Record<string, Namespace>>
   /** Per-execution overrides for the default resource limits. */
   limits?: ExecutionLimits
   /** Observes decoded tool input immediately before tool execution. */
@@ -58,7 +50,7 @@ export type ExecuteOptions<Provided extends Record<string, unknown> = {}> = {
 export type DataValue = Schema.Json
 
 /** Configuration shared by `CodeMode.make` and `CodeMode.execute`. */
-export type Options<Provided extends Record<string, unknown> = {}> = Omit<ExecuteOptions<Provided>, "code">
+export type Options<Provided extends ReadonlyArray<unknown> = readonly []> = Omit<ExecuteOptions<Provided>, "code">
 
 /** Schema for a host tool input containing CodeMode source. */
 export const Input = Schema.Struct({ code: Schema.String })
@@ -137,24 +129,20 @@ const resolveExecutionLimits = (limits?: ExecutionLimits): ResolvedExecutionLimi
 })
 
 /** Executes one Effect-native CodeMode program without constructing a reusable runtime. */
-export const execute = <const Provided extends Record<string, unknown>>(
+export const execute = <const Provided extends ReadonlyArray<unknown>>(
   options: ExecuteOptions<Provided>,
 ): Effect.Effect<Result, never, Services<Provided>> => {
-  const tools = (options.tools ?? {}) as Tools<Services<Provided>>
-  return executeWithLimits(
-    options,
-    resolveExecutionLimits(options.limits),
-    ToolRuntime.searchIndex(tools, options.namespaces),
-  )
+  const tools = (options.tools ?? []) as Tools<Services<Provided>>
+  return executeWithLimits(options, resolveExecutionLimits(options.limits), ToolRuntime.searchIndex(tools))
 }
 
 /** Creates an Effect-native runtime over explicit, schema-described tools. */
-export const make = <const Provided extends Record<string, unknown> = {}>(
+export const make = <const Provided extends ReadonlyArray<unknown> = readonly []>(
   options: Options<Provided> = {} as Options<Provided>,
 ): Runtime<Services<Provided>> => {
-  const tools = (options.tools ?? {}) as Tools<Services<Provided>>
+  const tools = (options.tools ?? []) as Tools<Services<Provided>>
   const limits = resolveExecutionLimits(options.limits)
-  const prepared = ToolRuntime.prepare(tools, options.namespaces)
+  const prepared = ToolRuntime.prepare(tools)
 
   return {
     catalog: () => prepared.catalog,

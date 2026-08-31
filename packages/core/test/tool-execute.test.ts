@@ -110,15 +110,7 @@ test("foreign typed failures settle as Tool.Error at the untrusted boundary", as
   expect(error.message).toBe("transport died")
 })
 
-test("execute supports callable namespace tools", async () => {
-  const callable: Info = {
-    name: "admin",
-    description: "Administer Slack",
-    input: Schema.Struct({}),
-    output: Schema.String,
-    options: { namespace: "slack" },
-    execute: () => Effect.succeed({ output: "admin" }),
-  }
+test("execute supports nested namespace tools", async () => {
   const child: Info = {
     name: "create",
     description: "Create a Slack resource",
@@ -127,21 +119,13 @@ test("execute supports callable namespace tools", async () => {
     options: { namespace: "slack.admin" },
     execute: () => Effect.succeed({ output: "created" }),
   }
-  const codeMode = createCodeMode(
-    new Map([
-      ["slack_admin", callable],
-      ["slack_admin_create", child],
-    ]),
-  )
+  const codeMode = createCodeMode(new Map([["slack_admin_create", child]]))
   const result = await Effect.runPromise(
-    codeMode.execute({ code: "return [await tools.slack.admin({}), await tools.slack.admin.create({})]" }, context),
+    codeMode.execute({ code: "return await tools.slack.admin.create({})" }, context),
   )
 
   expect(result.metadata).toEqual({
-    toolCalls: [
-      { tool: "slack.admin", status: "completed" },
-      { tool: "slack.admin.create", status: "completed" },
-    ],
+    toolCalls: [{ tool: "slack.admin.create", status: "completed" }],
   })
-  expect(result.content).toEqual([{ type: "text", text: '[\n  "admin",\n  "created"\n]' }])
+  expect(result.content).toEqual([{ type: "text", text: "created" }])
 })

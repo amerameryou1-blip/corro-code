@@ -47,7 +47,7 @@ export const fromSpec = (options: Options): Result => {
   const used = new Set<string>()
   const namespaces = new Set<string>()
   const skipped: Array<Skipped> = []
-  const tools = Object.create(null) as Tools
+  const root: OpenApiNode = { children: new Map() }
 
   for (const [path, pathValue] of Object.entries(paths)) {
     if (!isRecord(pathValue)) continue
@@ -101,10 +101,13 @@ export const fromSpec = (options: Options): Result => {
       }
       used.add(segments.join("."))
       for (const index of segments.slice(0, -1).keys()) namespaces.add(segments.slice(0, index + 1).join("."))
+      const name = segments[segments.length - 1]
+      if (name === undefined) continue
       setTool(
-        tools,
+        root,
         segments,
         make({
+          name,
           description: operation.description ?? operation.summary ?? `${operation.method} ${path}`,
           input: inputSchema(input.fields, requestDefinitions),
           output: output.value,
@@ -114,19 +117,28 @@ export const fromSpec = (options: Options): Result => {
     }
   }
 
-  return { tools, skipped }
+  return { tools: toCatalog(root), skipped }
 }
 
-const setTool = (tools: Tools, path: ReadonlyArray<string>, tool: Tool<HttpClient.HttpClient>): void => {
+type OpenApiNode = {
+  tool?: Tool<HttpClient.HttpClient>
+  readonly children: Map<string, OpenApiNode>
+}
+
+const setTool = (node: OpenApiNode, path: ReadonlyArray<string>, tool: Tool<HttpClient.HttpClient>): void => {
   const [head, ...rest] = path
   if (head === undefined) return
+  const child = node.children.get(head) ?? { children: new Map<string, OpenApiNode>() }
+  node.children.set(head, child)
   if (rest.length === 0) {
-    tools[head] = tool
+    child.tool = tool
     return
   }
-  const child = tools[head]
-  if (child === undefined || !isRecord(child) || child._tag === "CodeModeTool") {
-    tools[head] = Object.create(null) as Tools
-  }
-  setTool(tools[head] as Tools, rest, tool)
+  setTool(child, rest, tool)
 }
+
+const toCatalog = (node: OpenApiNode): Tools =>
+  Array.from(node.children, ([name, child]) => {
+    if (child.tool !== undefined) return child.tool
+    return { _tag: "CodeModeNamespace", name, tools: toCatalog(child) }
+  })

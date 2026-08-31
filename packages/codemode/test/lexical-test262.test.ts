@@ -29,7 +29,7 @@ import { Effect } from "effect"
 import { CodeMode } from "../src/index.js"
 
 const value = async (code: string) => {
-  const result = await Effect.runPromise(CodeMode.execute({ code, tools: {} }))
+  const result = await Effect.runPromise(CodeMode.execute({ code }))
   if (!result.ok) throw new Error(`expected success, got ${result.error.kind}: ${result.error.message}`)
   return result.value
 }

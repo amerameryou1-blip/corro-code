@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
-import { CodeMode, Tool } from "../src/index.js"
+import { CodeMode, Namespace, Tool } from "../src/index.js"
 
 // Key enumeration: Object.keys and for...in share one surface over plain objects, arrays
 // (index strings), and tool references (namespace/tool names from the supplied tools), so a
@@ -8,19 +8,23 @@ import { CodeMode, Tool } from "../src/index.js"
 // motivating transcript: `Object.keys(tools)` failed with the generic plain-objects-only
 // message and `for (const key in tools)` was unsupported syntax, forcing blind guesses.
 
-const echo = (description: string) =>
+const echo = (name: string, description: string) =>
   Tool.make({
+    name,
     description,
     input: Schema.Struct({ value: Schema.String }),
     output: Schema.String,
     execute: ({ value }) => Effect.succeed(value),
   })
 
-const tools = {
-  github: { list_issues: echo("List issues"), get_issue: echo("Get one issue") },
-  memory: { search: echo("Search memory") },
-  playwright: { navigate: echo("Navigate somewhere") },
-}
+const tools = [
+  Namespace.make({
+    name: "github",
+    tools: [echo("list_issues", "List issues"), echo("get_issue", "Get one issue")],
+  }),
+  Namespace.make({ name: "memory", tools: [echo("search", "Search memory")] }),
+  Namespace.make({ name: "playwright", tools: [echo("navigate", "Navigate somewhere")] }),
+]
 
 const run = (code: string) => Effect.runPromise(CodeMode.execute({ tools, code }))
 const value = async (code: string) => {

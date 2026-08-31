@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer, Option } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
-import { CodeMode, OpenAPI, Tool } from "../src/index.js"
+import { CodeMode, Namespace, OpenAPI, Tool } from "../src/index.js"
 import { inputTypeScript, outputTypeScript } from "../src/tool-schema.js"
 
 const baseUrl = "http://localhost:4096"
@@ -25,8 +25,17 @@ const happyPathSpec = async (): Promise<Document> => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
-const toolAt = (tools: unknown, name: string) =>
-  name.split(".").reduce<unknown>((current, segment) => (isRecord(current) ? current[segment] : undefined), tools)
+const toolAt = (tools: OpenAPI.Tools, path: string) => {
+  let current: OpenAPI.Tools | undefined = tools
+  let found: OpenAPI.Tools[number] | undefined
+  for (const segment of path.split(".")) {
+    if (current === undefined) return undefined
+    found = current.find((entry) => entry.name === segment)
+    if (found === undefined) return undefined
+    current = found._tag === "CodeModeNamespace" ? found.tools : undefined
+  }
+  return found
+}
 
 const recordingClient = (respond: (request: HttpClientRequest.HttpClientRequest) => Response) => {
   const requests: Array<Recorded> = []
@@ -158,7 +167,7 @@ describe("OpenAPI.fromSpec", () => {
     expect(outputTypeScript(remove)).toBe("null")
 
     const result = await Effect.runPromise(
-      CodeMode.make({ tools: { api: api.tools } })
+      CodeMode.make({ tools: [Namespace.make({ name: "api", tools: api.tools })] })
         .execute(
           `
           const user = await tools.api.users.get({
@@ -948,7 +957,7 @@ describe("OpenAPI.fromSpec", () => {
     expect(spec.security).toStrictEqual([])
     expect(isRecord(components.securitySchemes) ? Object.keys(components.securitySchemes) : []).toStrictEqual([])
     const health = toolAt(result.tools, "v2.health.get")
-    const healthInput = isRecord(health) ? health.input : undefined
+    const healthInput = Tool.isTool(health) && isRecord(health.input) ? health.input : undefined
     expect(healthInput).toMatchObject({ type: "object", properties: {} })
     const input = isRecord(healthInput) ? healthInput : {}
     expect(Object.keys(isRecord(input.properties) ? input.properties : {})).toStrictEqual([])
@@ -957,7 +966,9 @@ describe("OpenAPI.fromSpec", () => {
   test("exposes real opencode operations through CodeMode discovery", async () => {
     const { layer } = recordingClient(() => json({}))
     const runtime = CodeMode.make({
-      tools: { opencode: OpenAPI.fromSpec({ spec: await opencodeSpec(), baseUrl }).tools },
+      tools: [
+        Namespace.make({ name: "opencode", tools: OpenAPI.fromSpec({ spec: await opencodeSpec(), baseUrl }).tools }),
+      ],
     })
     const result = await Effect.runPromise(
       runtime
@@ -988,7 +999,9 @@ describe("OpenAPI.fromSpec", () => {
       return json({ id: "ses_456" })
     })
     const runtime = CodeMode.make({
-      tools: { opencode: OpenAPI.fromSpec({ spec: await opencodeSpec(), baseUrl }).tools },
+      tools: [
+        Namespace.make({ name: "opencode", tools: OpenAPI.fromSpec({ spec: await opencodeSpec(), baseUrl }).tools }),
+      ],
     })
 
     const result = await Effect.runPromise(
@@ -1160,7 +1173,7 @@ describe("OpenAPI.fromSpec", () => {
       },
     })
 
-    expect(result.tools).toEqual({})
+    expect(result.tools).toEqual([])
     expect(result.skipped.map((item) => item.reason)).toEqual([
       "cookie parameter 'session' is not supported",
       "parameter 'query' uses unsupported allowReserved encoding",
@@ -1175,7 +1188,7 @@ describe("OpenAPI.fromSpec", () => {
       spec: singleOperation({ security: [JSON.parse('{"__proto__":[]}')] }),
     })
 
-    expect(result.tools).toEqual({})
+    expect(result.tools).toEqual([])
     expect(result.skipped[0]?.reason).toBe("security requirement references missing or malformed scheme: __proto__")
   })
 
@@ -1255,7 +1268,7 @@ describe("OpenAPI.fromSpec", () => {
     )
 
     const cookie = authenticated([{ key: [] }], { key: { type: "apiKey", in: "cookie", name: "session" } })
-    expect(cookie.tools).toEqual({})
+    expect(cookie.tools).toEqual([])
     expect(cookie.skipped[0]?.reason).toBe("cookie authentication 'key' is not supported")
 
     const alternative = OpenAPI.fromSpec({
@@ -1293,11 +1306,11 @@ describe("OpenAPI.fromSpec", () => {
     expect(client.requests[0]?.url).toBe("https://operation.example/v1/test")
 
     const invalid = OpenAPI.fromSpec({ spec, baseUrl: "https://example.com/api?tenant=one" })
-    expect(invalid.tools).toEqual({})
+    expect(invalid.tools).toEqual([])
     expect(invalid.skipped[0]?.reason).toContain("unsupported query string or fragment")
 
     const malformed = OpenAPI.fromSpec({ spec, baseUrl: "https:/example.com" })
-    expect(malformed.tools).toEqual({})
+    expect(malformed.tools).toEqual([])
     expect(malformed.skipped[0]?.reason).toContain("not an absolute HTTP(S) URL")
   })
 
@@ -1315,7 +1328,7 @@ describe("OpenAPI.fromSpec", () => {
       },
     })
 
-    expect(result.tools).toEqual({})
+    expect(result.tools).toEqual([])
     expect(result.skipped[0]?.reason).toBe("SSE operations are not supported")
   })
 
@@ -1334,7 +1347,7 @@ describe("OpenAPI.fromSpec", () => {
       },
     })
 
-    expect(result.tools).toEqual({})
+    expect(result.tools).toEqual([])
     expect(result.skipped[0]?.reason).toBe("binary responses are not supported")
   })
 
@@ -1435,7 +1448,9 @@ describe("OpenAPI.fromSpec", () => {
   test("fails missing required parameters before auth and network", async () => {
     const { requests, layer } = recordingClient(() => json({}))
     const runtime = CodeMode.make({
-      tools: { opencode: OpenAPI.fromSpec({ spec: await opencodeSpec(), baseUrl }).tools },
+      tools: [
+        Namespace.make({ name: "opencode", tools: OpenAPI.fromSpec({ spec: await opencodeSpec(), baseUrl }).tools }),
+      ],
     })
 
     const result = await Effect.runPromise(

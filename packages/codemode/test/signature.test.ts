@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
-import { CodeMode, Tool } from "../src/index.js"
+import { CodeMode, Namespace, Tool } from "../src/index.js"
 import { inputTypeScript, jsonSchemaToTypeScript, outputTypeScript } from "../src/tool-schema.js"
 
 // A raw JSON Schema tool in the shape an MCP adapter produces: render-only input schema
 // whose property descriptions and constraints must surface as JSDoc in pretty signatures.
 const listIssues = Tool.make({
+  name: "list_issues",
   description: "List issues in a repository",
   input: {
     type: "object",
@@ -24,6 +25,7 @@ const listIssues = Tool.make({
 
 // An Effect Schema tool whose field annotations must flow through the emitted JSON Schema.
 const lookupOrder = Tool.make({
+  name: "lookup",
   description: "Look up an order",
   input: Schema.Struct({
     id: Schema.String.annotate({ description: "Order identifier" }),
@@ -255,6 +257,7 @@ describe("non-identifier property names render as quoted keys", () => {
 
   test("JSON Schema input and output signatures of a tool both quote", () => {
     const tool = Tool.make({
+      name: "adapter",
       description: "Adapter tool with awkward field names",
       input: rawSchema,
       output: {
@@ -271,6 +274,7 @@ describe("non-identifier property names render as quoted keys", () => {
 
   test("Effect Schema structs with non-identifier field names quote too", () => {
     const tool = Tool.make({
+      name: "schema",
       description: "Schema tool with awkward field names",
       input: Schema.Struct({ "foo-bar": Schema.String, plain: Schema.optionalKey(Schema.Number) }),
       execute: () => Effect.succeed(null),
@@ -301,6 +305,7 @@ describe("union schemas render every alternative", () => {
 
   test("tool input and output signatures preserve numeric unions", () => {
     const tool = Tool.make({
+      name: "unions",
       description: "Tool with numeric unions",
       input: {
         type: "object",
@@ -342,7 +347,12 @@ describe("union schemas render every alternative", () => {
 })
 
 describe("JSDoc signatures in catalogs and search results", () => {
-  const runtime = CodeMode.make({ tools: { github: { list_issues: listIssues }, orders: { lookup: lookupOrder } } })
+  const runtime = CodeMode.make({
+    tools: [
+      Namespace.make({ name: "github", tools: [listIssues] }),
+      Namespace.make({ name: "orders", tools: [lookupOrder] }),
+    ],
+  })
 
   const search = async (query: string) => {
     const result = await Effect.runPromise(runtime.execute(`return search({ query: ${JSON.stringify(query)} })`))
@@ -411,6 +421,7 @@ describe("JSDoc signatures in catalogs and search results", () => {
 
 describe("non-identifier tool paths", () => {
   const resolveLibrary = Tool.make({
+    name: "resolve-library-id",
     description: "Resolve a Context7 library ID",
     input: {
       type: "object",
@@ -423,7 +434,7 @@ describe("non-identifier tool paths", () => {
     output: {},
     execute: () => Effect.succeed("/reactjs/react.dev"),
   })
-  const runtime = CodeMode.make({ tools: { context7: { "resolve-library-id": resolveLibrary } } })
+  const runtime = CodeMode.make({ tools: [Namespace.make({ name: "context7", tools: [resolveLibrary] })] })
 
   test("catalog signatures use bracket notation for dashed tool names", () => {
     expect(runtime.catalog()[0]?.signature).toBe(

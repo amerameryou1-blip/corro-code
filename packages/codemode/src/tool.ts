@@ -32,6 +32,7 @@ export type SchemaType = Schema.Decoder<unknown> | JsonSchema
 /** Executable tool exposed through CodeMode's `tools` object. */
 export type Tool<R = never> = {
   readonly _tag: "CodeModeTool"
+  readonly name: string
   readonly description: string
   readonly input: SchemaType
   readonly output: SchemaType | undefined
@@ -44,6 +45,7 @@ type ResultType<S> = S extends undefined ? void : S extends Schema.Decoder<unkno
 
 /** Options for declaring one CodeMode tool. */
 export type Options<I extends SchemaType, O extends SchemaType | undefined, R = never> = {
+  readonly name: string
   readonly description: string
   readonly input: I
   readonly output?: O
@@ -69,6 +71,7 @@ export const make = <I extends SchemaType, const O extends SchemaType | undefine
   options: Options<I, O, R>,
 ): Tool<R> => ({
   _tag: "CodeModeTool",
+  name: options.name,
   description: options.description,
   input: options.input,
   output: options.output,
