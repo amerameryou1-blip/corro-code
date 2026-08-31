@@ -9,7 +9,6 @@ import {
   LanguageModelSchema,
   ProviderOptions,
 } from "./options.js"
-import { isRecord } from "../utils/record.js"
 import { ProviderID } from "./ids.js"
 
 export const MessageRole = Schema.Literals(["system", "user", "assistant", "tool"])
@@ -57,11 +56,6 @@ export const MediaPart = Schema.Struct({
 }).annotate({ identifier: "LLM.Content.Media" })
 export type MediaPart = Schema.Schema.Type<typeof MediaPart>
 
-const isToolResultValue = (value: unknown): value is ToolResultValue =>
-  isRecord(value) &&
-  (value.type === "text" || value.type === "json" || value.type === "error" || value.type === "content") &&
-  "value" in value
-
 const toolResultValueSchema = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("json"),
@@ -81,6 +75,7 @@ const toolResultValueSchema = Schema.Union([
   }),
 ]).annotate({ identifier: "LLM.ToolResult" })
 export type ToolResultValue = Schema.Schema.Type<typeof toolResultValueSchema>
+const isToolResultValue = Schema.is(toolResultValueSchema)
 
 export const ToolResultValue = Object.assign(toolResultValueSchema, {
   is: isToolResultValue,
