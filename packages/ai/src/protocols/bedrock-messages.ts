@@ -43,6 +43,11 @@ export const protocol = Protocol.make({
           .map((value) => value.trim())
           .filter(Boolean),
       )
+      if (
+        body.context_management?.edits.length ||
+        body.messages.some((message) => message.content.some((block) => block.type === "compaction"))
+      )
+        betas.add("compact-2026-01-12")
       return {
         ...Struct.omit(body, ["model", "stream"]),
         anthropic_version: VERSION,
