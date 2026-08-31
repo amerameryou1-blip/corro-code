@@ -1,6 +1,8 @@
-import type { GenerateApi, PluginApi } from "@opencode-ai/client/effect/api"
+import type { ExperimentalApi, GenerateApi, PluginApi } from "@opencode-ai/client/effect/api"
+import type { Location } from "@opencode-ai/schema/location"
 import type { Effect, Scope } from "effect"
 import type { PluginOptions } from "../options.js"
+import type { VcsDiscovery } from "../vcs.js"
 import type { App } from "../app.js"
 import type { AgentDomain } from "./agent.js"
 import type { AISDKDomain } from "./aisdk.js"
@@ -11,6 +13,7 @@ import type { IntegrationDomain } from "./integration.js"
 import type { MCPDomain } from "./mcp.js"
 import type { PermissionDomain } from "./permission.js"
 import type { ReferenceDomain } from "./reference.js"
+import type { RpcDomain } from "./rpc.js"
 import type { SessionDomain } from "./session.js"
 import type { ShellDomain } from "./shell.js"
 import type { SkillDomain } from "./skill.js"
@@ -21,18 +24,23 @@ import type { WebSearchDomain } from "./websearch.js"
 
 export interface Context {
   readonly app: App
+  readonly location: Location.Info
   readonly options: PluginOptions
   readonly agent: AgentDomain
   readonly aisdk: AISDKDomain
   readonly catalog: CatalogDomain
   readonly command: CommandDomain
   readonly event: EventDomain
+  readonly experimental: {
+    readonly terminal: Pick<ExperimentalApi<unknown>["persistentPty"], "read">
+  }
   readonly integration: IntegrationDomain
   readonly mcp: MCPDomain
   readonly generate: GenerateApi<unknown>
   readonly permission: PermissionDomain
   readonly plugin: PluginApi<unknown>
   readonly reference: ReferenceDomain
+  readonly rpc: RpcDomain
   readonly session: SessionDomain
   readonly shell: ShellDomain
   readonly skill: SkillDomain
@@ -44,7 +52,7 @@ export interface Context {
 
 export interface Plugin<R = Scope.Scope> {
   readonly id: string
-  readonly tui?: boolean
+  readonly vcs?: VcsDiscovery
   readonly effect: (context: Context) => Effect.Effect<void, never, R>
 }
 

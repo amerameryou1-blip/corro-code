@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { Schema } from "effect"
 import {
   Agent,
   Config,
@@ -47,6 +48,7 @@ describe("public event manifest", () => {
     expect(EventManifest.Server.has("question.asked")).toBe(false)
     expect(EventManifest.Server.has("question.replied")).toBe(false)
     expect(EventManifest.Server.has("question.rejected")).toBe(false)
+    expect(EventManifest.Server.has("rpc.acme.updated")).toBe(false)
     expect(Agent.Event.Updated.durable).toBeUndefined()
     expect(EventManifest.Durable.has("agent.updated")).toBe(false)
   })
@@ -118,6 +120,7 @@ describe("public event manifest", () => {
         "session.moved.1",
         "session.renamed.1",
         "session.viewed.1",
+        "session.message.content.updated.1",
         "session.usage.recorded.1",
         "session.forked.2",
         "session.inbox.delivered.1",
@@ -134,6 +137,7 @@ describe("public event manifest", () => {
         "session.shell.started.1",
         "session.shell.ended.1",
         "session.step.started.1",
+        "session.step.streamed.1",
         "session.step.ended.1",
         "session.step.failed.1",
         "session.text.started.1",

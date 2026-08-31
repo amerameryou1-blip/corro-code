@@ -12,7 +12,7 @@ bun add @opencode-ai/plugin@beta effect
 
 Export an Effect plugin from `.opencode/plugins/` to load it automatically.
 
-```ts title=".opencode/plugins/concise.ts"
+```ts title=".opencode/plugins/concise/index.ts"
 import { Plugin } from "@opencode-ai/plugin/effect"
 import { Effect } from "effect"
 
@@ -26,7 +26,7 @@ export default Plugin.define({
 })
 ```
 
-Published packages and files outside `.opencode/plugins/` use the same `plugins` configuration as other server
+Published packages and plugin directories outside `.opencode/plugins/` use the same `plugins` configuration as other server
 plugins.
 
 ```jsonc title="opencode.jsonc"
@@ -36,18 +36,18 @@ plugins.
     "opencode-acme-effect-plugin",
     "opencode-acme-effect-plugin@1.2.0",
     "@acme/opencode-effect-plugin",
-    "./plugins/local-effect.ts",
+    "./plugins/local-effect",
     {
       "package": "@acme/opencode-effect-plugin",
-      "options": { "agent": "reviewer", "strict": true }
-    }
-  ]
+      "options": { "agent": "reviewer", "strict": true },
+    },
+  ],
 }
 ```
 
 See [Configure plugins](/plugins) for enablement, package resolution, and configuration precedence.
 
-```ts title="plugins/local-effect.ts"
+```ts title="plugins/local-effect/index.ts"
 import { Plugin } from "@opencode-ai/plugin/effect"
 import { Effect } from "effect"
 
@@ -120,6 +120,7 @@ interface Context {
   readonly mcp: MCPDomain
   readonly plugin: PluginApi<unknown>
   readonly reference: ReferenceDomain
+  readonly rpc: RpcDomain
   readonly session: SessionDomain
   readonly shell: ShellDomain
   readonly skill: SkillDomain
@@ -131,7 +132,6 @@ interface Context {
 
 interface Plugin<R = Scope.Scope> {
   readonly id: string
-  readonly tui?: boolean
   readonly effect: (context: Context) => Effect.Effect<void, never, R>
 }
 ```
@@ -144,16 +144,16 @@ Pass options with the object form in `opencode.json(c)`.
 {
   "plugins": [
     {
-      "package": "./plugins/company-effect.ts",
-      "options": { "strict": true }
-    }
-  ]
+      "package": "./plugins/company-effect",
+      "options": { "strict": true },
+    },
+  ],
 }
 ```
 
 Read options from `ctx.options`. Narrow unknown values before use.
 
-```ts title="plugins/company-effect.ts"
+```ts title="plugins/company-effect/index.ts"
 import { Plugin } from "@opencode-ai/plugin/effect"
 import { Effect } from "effect"
 
@@ -172,7 +172,7 @@ export default Plugin.define({
 Transforms synchronously edit a mutable draft. OpenCode applies transforms in plugin order, so later transforms see
 earlier changes. Yielding the registration keeps it in the plugin scope.
 
-```ts title="plugins/models-effect.ts"
+```ts title="plugins/models-effect/index.ts"
 import { Plugin } from "@opencode-ai/plugin/effect"
 import { Effect } from "effect"
 
@@ -193,7 +193,7 @@ export default Plugin.define({
 
 A later transform can enforce policy across the composed catalog.
 
-```ts title="plugins/model-budget-effect.ts"
+```ts title="plugins/model-budget-effect/index.ts"
 effect: (ctx) =>
   Effect.gen(function* () {
     const catalog = ctx.catalog
@@ -211,7 +211,7 @@ effect: (ctx) =>
 
 Call `reload` when external state used by a transform changes. Reload replays every transform in order.
 
-```ts title="plugins/models-effect.ts"
+```ts title="plugins/models-effect/index.ts"
 effect: (ctx) =>
   Effect.gen(function* () {
     const catalog = ctx.catalog
@@ -533,32 +533,43 @@ interface IntegrationDomain extends Omit<IntegrationApi<unknown>, "wellknown"> {
 
 ### MCP
 
-List servers and change connection state.
+List MCP servers and their current connection state.
 
 ```ts
 effect: (ctx) =>
   Effect.gen(function* () {
     const mcp = ctx.mcp
     const servers = yield* mcp.list().pipe(Effect.orDie)
-    yield* mcp.connect({ server: "docs" }).pipe(Effect.orDie)
-    yield* mcp.disconnect({ server: "docs" }).pipe(Effect.orDie)
     yield* Effect.logInfo("MCP servers", { count: servers.data.length })
   }),
 ```
 
-Add servers through the API, or transform and reload their configuration.
+Plugins manage MCP servers only through transforms. Use `draft.set` to add or replace a server, `draft.update` to
+change its configuration, and `draft.remove` to remove it. Inspect configuration with `draft.list` and `draft.get`.
 
 ```ts
 effect: (ctx) =>
   Effect.gen(function* () {
     const mcp = ctx.mcp
-    yield* mcp
-      .add({ server: "docs", config: { type: "remote", url: "https://mcp.example.com" } })
-      .pipe(Effect.orDie)
     yield* mcp.transform((draft) => {
+      const servers = draft.list()
+      const docs = draft.get("docs")
+      draft.set("docs", { type: "remote", url: "https://mcp.example.com" })
       draft.update("docs", (server) => (server.disabled = false))
       draft.remove("legacy")
     })
+  }),
+```
+
+Set `disabled: true` in a transform to disable a server and disconnect it, or `disabled: false` to enable it and allow
+OpenCode to connect. OpenCode reconciles server lifecycle from the transformed configuration.
+
+Call `reload()` after external state used by a transform changes to reapply transforms and reconcile the servers.
+
+```ts
+effect: (ctx) =>
+  Effect.gen(function* () {
+    const mcp = ctx.mcp
     yield* mcp.reload()
   }),
 ```
@@ -575,7 +586,7 @@ interface MCPDraft {
   remove(name: string): void
 }
 
-interface MCPDomain extends Omit<McpApi<unknown>, "resource"> {
+interface MCPDomain extends Pick<McpApi<unknown>, "list"> {
   readonly transform: Transform<MCPDraft>
   readonly reload: () => Effect.Effect<void>
 }
@@ -619,6 +630,59 @@ interface Context {
   readonly plugin: PluginApi<unknown>
 }
 ```
+
+### RPC
+
+Use the same execution-neutral [`Rpc.define` builder](/build/plugins#rpc).
+Effect clients and plugins accept Effect Schema, Standard Schema, or plain JSON
+Schema. Promise consumers accept only the portable Standard and JSON formats.
+
+```ts
+import { Plugin } from "@opencode-ai/plugin/effect"
+import { Effect } from "effect"
+import { Acme } from "./rpc.js"
+
+export default Plugin.define({
+  id: "acme-effect-plugin",
+  effect: (ctx) =>
+    Effect.gen(function* () {
+      const registration = yield* ctx.rpc.register(Acme, {
+        search: ({ query }, context) =>
+          findText(query).pipe(
+            Effect.flatMap((text) =>
+              text
+                ? Effect.succeed({ text })
+                : Effect.fail(context.error("not_found", "Result not found", { query })),
+            ),
+          ),
+      })
+      yield* registration.events.emit("updated", { itemID: "item-1", text: "ready" })
+    }).pipe(Effect.orDie),
+})
+```
+
+Effect handlers use normal interruption. Registrations belong to the plugin
+scope; `yield* registration.dispose` removes one explicitly. Later registrations
+override earlier ones at the same location, without changing in-flight handlers.
+
+`ctx.rpc(Acme)` returns a local typed subclient. Its methods return Effects and
+`events.subscribe(name)` returns a Stream. Use scoped fibers when listening
+during plugin lifetime:
+
+```ts
+const acme = ctx.rpc(Acme)
+yield *
+  acme.events.subscribe("updated").pipe(
+    Stream.runForEach((event) => Effect.logInfo(event.data.text)),
+    Effect.forkScoped,
+  )
+```
+
+There is no Effect callback-style `on` API. Subscriptions are location-bound,
+live-only, and close when Stream consumption stops. Events use the normal
+ephemeral Bus path. Method `errors` maps become typed Effect error channels. Construct one
+with `context.error(...)` and fail it with `Effect.fail`; unexpected failures and
+transport errors remain separate from the declared method errors.
 
 ### References
 
@@ -818,6 +882,10 @@ interface StorageDomain {
 Register typed tools with Effect `Schema`. The executor receives decoded input and returns an Effect containing typed
 output, display content, or metadata.
 
+The draft supports `add`, `update`, and `remove`. The transform callback is synchronous: it must not return an Effect or Promise. Load
+external data before registering or reloading. OpenCode replays active transforms in registration order on a fresh
+draft; for the same effective tool name, a later valid registration overrides an earlier one.
+
 ```ts
 effect: (ctx) =>
   Effect.gen(function* () {
@@ -839,18 +907,51 @@ effect: (ctx) =>
   }),
 ```
 
+Call `yield* ctx.tool.reload()` after changing source data captured by the callback. Reload replays active transforms
+without changing their order; it does not rerun the plugin effect.
+
+Tools have an `id` containing their effective name, and `get()` returns `undefined` when that ID is not present. Use
+`update` and `remove` with the effective tool name, including its namespace (`acme_greeting` above). Dots in
+namespaces and unsupported characters in tool names become `_`. Missing names are ignored; creating a tool requires
+`add` with a complete definition. Updates preserve the name and namespace. Assign new schemas or options to replace
+them rather than mutating nested values. Invalid updates are logged and leave the previous definition intact.
+
+```ts
+yield* ctx.tool.transform((draft) => {
+  draft.update("acme_greeting", (tool) => {
+    tool.description = "Greet the user by name"
+  })
+  draft.remove("acme_obsolete")
+})
+```
+
+Updates and removals replay in order with additions, including after MCP catalog refreshes.
+
+`transform` returns a scoped registration. Run `yield* registration.dispose` to remove its transform and rebuild
+from the remaining transforms, revealing any earlier definition it overrode. Disposal is idempotent, and closing
+the plugin scope also disposes its registrations.
+
+Each model request captures a tool snapshot. Reload and disposal affect future snapshots, not the definitions or
+executors already captured by an existing request. Executors that close over mutable plugin data still observe
+that data; capture a value inside the transform when it must remain tied to that definition.
+
 Schemas: [`Tool.Content`](/api#schema-Tool.Content), [`Tool.TextContent`](/api#schema-Tool.TextContent),
 [`Tool.FileContent`](/api#schema-Tool.FileContent).
 
 ```ts
 interface ToolDraft {
+  list(): readonly (Tool.Info & { readonly id: string })[]
+  get(id: string): (Tool.Info & { readonly id: string }) | undefined
   add<Input extends Tool.ValueSchema<any>, Output extends Tool.ValueSchema<any> | undefined>(
     tool: Tool.Info<Input, Output>,
   ): void
+  update(id: string, update: (tool: Types.Mutable<Tool.Info>) => void): void
+  remove(id: string): void
 }
 
 interface ToolDomain {
   readonly transform: Transform<ToolDraft>
+  readonly reload: () => Effect.Effect<void>
 }
 ```
 
@@ -1080,6 +1181,35 @@ effect: (ctx) =>
   }),
 ```
 
+Override the retry decision for a provider failure or replace its delay in milliseconds. The hook runs after OpenCode
+classifies the failure and proposes its policy, but before any retry is scheduled. It does not expose how OpenCode
+internally performs the next attempt.
+
+```ts
+effect: (ctx) =>
+  Effect.gen(function* () {
+    yield* ctx.session.hook("retry", (event) =>
+      Effect.sync(() => {
+        if (event.error.status === 429) {
+          event.decision = { retry: true, delay: 10_000 }
+          return
+        }
+        if (event.error.type === "provider.invalid-request" && event.attempt === 2) {
+          event.decision = { retry: true, delay: 0 }
+          return
+        }
+        if (event.attempt >= 3) event.decision = { retry: false }
+      }),
+    )
+  }),
+```
+
+The initial `decision` is OpenCode's policy, so hooks may make a normally terminal provider failure retryable or veto a
+proposed retry. Multiple hooks run in registration order and later hooks see the current decision. The built-in maximum
+attempt count remains a hard limit. `attempt` is the physical attempt being proposed; the initial request is attempt `1`,
+so the first retry is attempt `2`. Invalid delays (`NaN`, infinity, or negative values) fall back to the computed delay.
+Context-overflow recovery remains separate because it compacts the conversation instead of retrying the same request.
+
 #### Reference
 
 ```ts
@@ -1088,6 +1218,18 @@ interface SessionHooks {
   readonly "model.request": SessionModelRequest
   readonly "http.request": SessionHttpRequest
   readonly "http.response": SessionHttpResponse
+  readonly retry: SessionRetry
+}
+
+type RetryDecision = { retry: false } | { retry: true; delay: number }
+
+interface SessionRetry {
+  readonly sessionID: string
+  readonly agent: string
+  readonly model: { providerID: string; id: string; variant?: string }
+  readonly error: { type: string; message: string; status?: number }
+  readonly attempt: number
+  decision: RetryDecision
 }
 
 interface SessionHookDomain {

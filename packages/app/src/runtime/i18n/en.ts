@@ -2,6 +2,12 @@ import { DESKTOP_NATIVE_ENGLISH } from "./desktop-native"
 
 export const dict = {
   ...DESKTOP_NATIVE_ENGLISH,
+  "session.location.unavailable": "Session location unavailable",
+  "session.location.description": "Choose another directory to continue this session.",
+  "session.location.choose": "Choose directory",
+  "session.location.worktree": "Choose worktree",
+  "session.location.worktreesFailed": "Failed to load worktrees",
+  "session.location.moving": "Moving session…",
   "command.category.suggested": "Suggested",
   "command.category.view": "View",
   "command.category.project": "Project",
@@ -357,9 +363,7 @@ export const dict = {
   "dialog.server.add.button": "Add server",
   "dialog.server.add.name": "Server name (optional)",
   "dialog.server.add.namePlaceholder": "Localhost",
-  "dialog.server.add.username": "Username (optional)",
-  "dialog.server.add.usernamePlaceholder": "username",
-  "dialog.server.add.password": "Password (optional)",
+  "dialog.server.add.password": "Password",
   "dialog.server.add.passwordPlaceholder": "password",
   "dialog.server.edit.title": "Edit server",
   "dialog.server.default.title": "Default server",
@@ -447,7 +451,6 @@ export const dict = {
   "wsl.onboarding.versionMismatch": "Installed version does not match the desktop app version.",
   "wsl.onboarding.adding": "Adding...",
 
-  "server.row.noUsername": "no username",
   "server.row.incompatible":
     "This server is running OpenCode {{version}}, which isn't compatible with this app. Upgrade it to OpenCode V2 to continue.",
 
@@ -734,6 +737,7 @@ export const dict = {
   "session.new.worktree.main": "Main branch",
   "session.new.worktree.mainWithBranch": "Main branch ({{branch}})",
   "session.new.worktree.create": "Create new worktree",
+  "session.new.worktree.creating": "Creating worktree",
   "session.new.workspace.runIn": "Run session in",
   "session.new.workspace.triggerLocal": "Local",
   "session.new.workspace.local": "Local repository",
@@ -884,6 +888,7 @@ export const dict = {
 
   "settings.section.desktop": "Desktop",
   "settings.section.server": "Server",
+  "settings.backToApp": "Back to app",
   "settings.tab.general": "General",
   "settings.tab.preferences": "Preferences",
   "settings.tab.shortcuts": "Shortcuts",
@@ -892,6 +897,11 @@ export const dict = {
   "settings.tab.extensions": "Extensions",
   "settings.preferences.description": "Customize preferences and theme and default behavior",
   "settings.appearance.description": "Customize theme and fonts",
+  "settings.appearance.section.experimental": "Experimental",
+  "settings.appearance.row.tabs.title": "Tabs",
+  "settings.appearance.row.tabs.description": "Choose how session tabs are arranged",
+  "settings.appearance.row.tabs.horizontal": "Horizontal",
+  "settings.appearance.row.tabs.vertical": "Vertical",
   "settings.notifications.description": "Choose when to receive notifications and hear sounds",
   "settings.shortcuts.description": "Customize shortcuts for common actions",
   "settings.servers.description": "Manage server connections",
@@ -977,6 +987,11 @@ export const dict = {
   "settings.general.row.followUpBehavior.steer": "Steer",
   "settings.general.row.reasoningSummaries.title": "Show reasoning summaries",
   "settings.general.row.reasoningSummaries.description": "Display model reasoning summaries in the timeline",
+  "settings.general.row.reasoningMode.title": "Model reasoning",
+  "settings.general.row.reasoningMode.description": "Choose how model reasoning is displayed in the timeline",
+  "settings.general.row.reasoningMode.hidden": "Hidden",
+  "settings.general.row.reasoningMode.compact": "Compact",
+  "settings.general.row.reasoningMode.full": "Full",
   "settings.general.row.shellToolPartsExpanded.title": "Expand shell tool parts",
   "settings.general.row.shellToolPartsExpanded.description":
     "Show shell tool parts expanded by default in the timeline",
