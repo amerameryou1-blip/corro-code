@@ -40,10 +40,10 @@ const it = testEffect(
       LocationServiceMap.node,
     ]),
     [
-      [Bus.node, Bus.configured({ persist: true })],
-      [Global.node, tempGlobalLayer],
+      Bus.node.replace(Bus.configured({ persist: true })),
+      Global.node.replace(tempGlobalLayer),
       // These tests move directories explicitly; native watchers can hold them open on Windows.
-      [Watcher.node, Watcher.configured({ enabled: false })],
+      Watcher.node.replace(Watcher.configured({ enabled: false })),
     ],
   ),
 )
