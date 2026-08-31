@@ -458,11 +458,9 @@ const layer = Layer.effect(
             )
           }),
         )
-        const source = yield* fs.stat(current.location.directory).pipe(Effect.orElseSucceed(() => undefined))
         const unavailable =
           !(yield* execution.isActive(input.sessionID)) &&
-          (!source ||
-            source.type !== "Directory" ||
+          (!(yield* fs.isDir(current.location.directory)) ||
             !(yield* locations.contextEffect(current.location).pipe(
               Effect.scoped,
               Effect.as(true),
