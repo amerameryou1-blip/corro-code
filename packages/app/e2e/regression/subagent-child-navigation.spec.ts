@@ -52,6 +52,19 @@ test("stops the viewed running subagent with Ctrl+D", async ({ page }) => {
   await interrupted
 })
 
+test("stops the viewed running subagent from the disabled composer", async ({ page }) => {
+  await setup(page, undefined, { [childID]: { type: "running" } })
+  await openChildFromParent(page)
+  await expectSessionTitle(page, taskDescription)
+
+  const interrupted = page.waitForRequest(
+    (request) => request.method() === "POST" && new URL(request.url()).pathname === `/api/session/${childID}/interrupt`,
+  )
+  await page.getByRole("button", { name: "Stop subagent", exact: true }).click()
+
+  await interrupted
+})
+
 test("shows parent lineage while the child timeline loads", async ({ page }) => {
   await setup(page)
   const requested = Promise.withResolvers<void>()
