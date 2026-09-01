@@ -746,14 +746,14 @@ export const fromRequestWithAdapter = Effect.fn("OpenResponses.fromRequestWithAd
   adapter: ProviderAdapter,
 ) {
   const generation = request.generation
+  const flattened = adapter.toolNamespaceHistory === true ? undefined : ProviderShared.flattenToolRequest(request)
   const tools =
-    adapter.toolNamespaceHistory === true
-      ? yield* ProviderShared.requireFlatTools(adapter.name, request.tools)
-      : yield* ProviderShared.requireFlatToolRequest(adapter.name, request)
+    flattened === undefined ? yield* ProviderShared.requireFlatTools(adapter.name, request.tools) : flattened.tools
+  const input = flattened?.request ?? request
   const toolSchemaCompatibility = request.model.compatibility?.toolSchema
   return {
     model: request.model.id,
-    input: yield* lowerMessages(request, adapter),
+    input: yield* lowerMessages(input, adapter),
     tools:
       tools.length === 0
         ? undefined

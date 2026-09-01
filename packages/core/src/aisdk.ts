@@ -328,8 +328,8 @@ function modelFromLanguage(info: Info, language: LanguageModelV3) {
     body: {
       schema: Schema.Unknown,
       from: Effect.fn("AISDK.fromRequest")(function* (request) {
-        const tools = yield* ProviderShared.requireFlatToolRequest("AI SDK", request)
-        return callOptions(request, packageName, info.modelID ?? info.id, optionKey, tools)
+        const flattened = ProviderShared.flattenToolRequest(request)
+        return callOptions(flattened.request, packageName, info.modelID ?? info.id, optionKey, flattened.tools)
       }),
     },
     with: () => route,
