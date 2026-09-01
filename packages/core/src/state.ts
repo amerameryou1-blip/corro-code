@@ -74,13 +74,14 @@ export interface Options<State, DraftApi> {
 }
 
 export interface Interface<State, DraftApi> extends Transformable<DraftApi> {
+  /** Returns the last published value without rebuilding or waiting. */
   readonly get: () => State
   /**
-   * Materializes registrations and disposals deferred by an active batch so
-   * subsequent reads observe them. No-op when nothing is pending; never waits
-   * out the reload debounce.
+   * Resolves completed registration changes, joining an in-progress rebuild or
+   * materializing batched changes before returning the published value. Does not
+   * wait for future registrations or a scheduled reload's debounce.
    */
-  readonly flush: () => Effect.Effect<void>
+  readonly resolve: () => Effect.Effect<State>
 }
 
 export function create<State, DraftApi>(options: Options<State, DraftApi>): Interface<State, DraftApi> {
@@ -96,11 +97,11 @@ export function create<State, DraftApi>(options: Options<State, DraftApi>): Inte
 
   const commit = Effect.fn("State.commit")(function* (next: State) {
     state = next
+    dirty = false
     if (options.finalize) yield* options.finalize(options.draft(next))
   })
 
   const materialize = Effect.fnUntraced(function* () {
-    dirty = false
     if (closed) return
     const next = options.initial()
     const api = options.draft(next)
@@ -195,12 +196,16 @@ export function create<State, DraftApi>(options: Options<State, DraftApi>): Inte
       )
     }),
     reload,
-    flush: Effect.fnUntraced(function* () {
-      if (!dirty) return
-      // Flushing from inside the deferring batch replaces its queued rebuild.
-      const batch = yield* CurrentBatch
-      batch?.reloads.delete(materializeReload)
-      yield* materializeReload()
-    }),
+    resolve: Effect.fnUntraced(
+      function* () {
+        const batch = yield* CurrentBatch
+        if (dirty) yield* materialize()
+        // Resolution replaces this batch's queued rebuild only after publication succeeds.
+        batch?.reloads.delete(materializeReload)
+        return state
+      },
+      // Wait interruptibly for the owner, then finish publication and notification together.
+      (effect) => semaphore.withPermit(Effect.uninterruptible(effect)),
+    ),
   }
 }
