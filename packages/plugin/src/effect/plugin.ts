@@ -8,6 +8,7 @@ import type { AISDKDomain } from "./aisdk.js"
 import type { CatalogDomain } from "./catalog.js"
 import type { CommandDomain } from "./command.js"
 import type { EventDomain } from "./event.js"
+import type { InstructionDomain } from "./instructions.js"
 import type { IntegrationDomain } from "./integration.js"
 import type { MCPDomain } from "./mcp.js"
 import type { PermissionDomain } from "./permission.js"
@@ -31,6 +32,7 @@ export interface Context {
   readonly command: CommandDomain
   readonly event: EventDomain
   readonly experimental: {
+    readonly instructions: InstructionDomain
     readonly terminal: Pick<ExperimentalApi<unknown>["persistentPty"], "read">
   }
   readonly integration: IntegrationDomain
