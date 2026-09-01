@@ -54,11 +54,7 @@ function managedService(options: EnsureOptions) {
   const reconnectOptions = { ...options, version: undefined }
   return {
     reconnect: () => Service.ensure(reconnectOptions),
-    restart: () =>
-      Effect.gen(function* () {
-        yield* Service.stop(options)
-        yield* Service.ensure(reconnectOptions)
-      }),
+    restart: () => Service.replace(reconnectOptions).pipe(Effect.asVoid),
   }
 }
 

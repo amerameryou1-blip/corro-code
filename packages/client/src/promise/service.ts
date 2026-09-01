@@ -1,7 +1,7 @@
 import { readFile, rm } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import type { DiscoverOptions, Endpoint, Info, EnsureOptions, StopOptions } from "../service.js"
+import type { DiscoverOptions, Endpoint, Info, EnsureOptions, EnsureReason, StopOptions } from "../service.js"
 import {
   contenderFailure,
   contenderFinished,
@@ -31,7 +31,17 @@ export async function discover(options: DiscoverOptions = {}) {
 
 /** Ensure a healthy, compatible local service is running. */
 export async function ensure(options: EnsureOptions = {}): Promise<Endpoint> {
+  return ensureService(options, false)
+}
+
+/** Replace the registered local service while preserving persistent terminals. */
+export async function replace(options: EnsureOptions = {}): Promise<Endpoint> {
+  return ensureService(options, true)
+}
+
+async function ensureService(options: EnsureOptions, forceReplacement: boolean): Promise<Endpoint> {
   const timing = ensureTiming(options)
+  const replacement = forceReplacement ? await read(options.file) : undefined
   const deadline = Date.now() + timing.promiseTimeout
   const contenders = new Set<ServiceContender>()
   let timeouts: { readonly info: Info; readonly count: number } | undefined
@@ -39,7 +49,7 @@ export async function ensure(options: EnsureOptions = {}): Promise<Endpoint> {
   let lastSpawn = 0
   let spawnDelay = timing.spawnDelay
 
-  const announce = (reason: "missing" | "version-mismatch", previousVersion?: string) => {
+  const announce = (reason: EnsureReason, previousVersion?: string) => {
     if (announced) return
     announced = true
     options.onStart?.(reason, previousVersion)
@@ -77,13 +87,15 @@ export async function ensure(options: EnsureOptions = {}): Promise<Endpoint> {
         spawnDelay = timing.spawnDelay
         const service = registration.service
         const compatible = !service.legacy && matchesVersion(service.version, options)
-        if (compatible && service.state === "ready") {
+        const replacing = replacement !== undefined && same(replacement, service.info)
+        if (!replacing && compatible && service.state === "ready") {
           await PtyHandoff.complete(options.file ?? fallback(), service.info)
           return service.endpoint
         }
-        if (compatible && service.state === "failed") throw new Error("Background service failed to start")
-        if (!compatible) {
-          announce("version-mismatch", service.version)
+        if (!replacing && compatible && service.state === "failed")
+          throw new Error("Background service failed to start")
+        if (replacing || !compatible) {
+          announce(replacing ? "replacement" : "version-mismatch", service.version)
           if (!service.legacy && service.state === "ready")
             await PtyHandoff.prepare(options.file ?? fallback(), service.info, timing.requestTimeout)
           else {
@@ -252,4 +264,4 @@ function delay(milliseconds: number) {
 }
 
 /** Promise-based local service lifecycle operations. */
-export const Service = { discover, ensure, stop, headers }
+export const Service = { discover, ensure, replace, stop, headers }

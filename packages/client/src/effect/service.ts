@@ -2,7 +2,7 @@ import { ServiceStatus } from "@opencode-ai/protocol/groups/health"
 import { Effect, FileSystem, Option, Schedule, Schema } from "effect"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import type { DiscoverOptions, Endpoint, EnsureOptions, StopOptions } from "../service.js"
+import type { DiscoverOptions, Endpoint, EnsureOptions, EnsureReason, StopOptions } from "../service.js"
 import {
   contenderFailure,
   contenderFinished,
@@ -51,13 +51,23 @@ export const incumbent = Effect.fn("service.incumbent")(function* (
 // becomes discoverable. A contender is never killed merely for slow startup.
 /** Ensure a healthy, compatible local service is running. */
 export const ensure = Effect.fn("service.ensure")(function* (options: EnsureOptions = {}) {
+  return yield* ensureService(options, false)
+})
+
+/** Replace the registered local service while preserving persistent terminals. */
+export const replace = Effect.fn("service.replace")(function* (options: EnsureOptions = {}) {
+  return yield* ensureService(options, true)
+})
+
+const ensureService = Effect.fnUntraced(function* (options: EnsureOptions, forceReplacement: boolean) {
   const timing = ensureTiming(options)
+  const replacement = forceReplacement ? yield* read(options.file) : undefined
   const contenders = new Set<ServiceContender>()
   let timeouts: { readonly info: Info; readonly count: number } | undefined
   let announced = false
   let lastSpawn = 0
   let spawnDelay = timing.spawnDelay
-  const announce = (reason: "missing" | "version-mismatch", previousVersion?: string) =>
+  const announce = (reason: EnsureReason, previousVersion?: string) =>
     Effect.sync(() => {
       if (announced) return
       announced = true
@@ -95,14 +105,15 @@ export const ensure = Effect.fn("service.ensure")(function* (options: EnsureOpti
     if (service !== undefined) {
       spawnDelay = timing.spawnDelay
       const compatible = !service.legacy && matchesVersion(service.version, options)
-      if (compatible && service.state === "ready") {
+      const replacing = replacement !== undefined && same(replacement, service.info)
+      if (!replacing && compatible && service.state === "ready") {
         yield* Effect.tryPromise(() => PtyHandoff.complete(options.file ?? fallback(), service.info))
         return Option.some(service)
       }
-      if (compatible && service.state === "failed")
+      if (!replacing && compatible && service.state === "failed")
         return yield* Effect.fail(new Error("Background service failed to start"))
-      if (compatible) return Option.none<LocalService>()
-      yield* announce("version-mismatch", service.version)
+      if (!replacing && compatible) return Option.none<LocalService>()
+      yield* announce(replacing ? "replacement" : "version-mismatch", service.version)
       if (!service.legacy && service.state === "ready")
         yield* Effect.tryPromise(() =>
           PtyHandoff.prepare(options.file ?? fallback(), service.info, timing.requestTimeout),
@@ -294,4 +305,4 @@ const terminate = Effect.fnUntraced(function* (info: Info, options: { readonly f
 })
 
 /** Effect-based local service lifecycle operations. */
-export const Service = { discover, incumbent, ensure, stop, headers, Info }
+export const Service = { discover, incumbent, ensure, replace, stop, headers, Info }
