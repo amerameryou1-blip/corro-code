@@ -1026,7 +1026,7 @@ const onOutputItemAdded = (state: ParserState, event: Event): StepResult => {
       tools: ToolStream.start(state.tools, id, {
         id: item.call_id,
         name: item.name ?? "",
-        ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+        namespace: item.namespace,
         input: item.arguments ?? "",
         providerMetadata: metadata,
       }),
@@ -1036,7 +1036,7 @@ const onOutputItemAdded = (state: ParserState, event: Event): StepResult => {
       LLMEvent.toolInputStart({
         id: item.call_id,
         name: item.name ?? "",
-        ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+        namespace: item.namespace,
         providerMetadata: metadata,
       }),
     ],
@@ -1163,7 +1163,7 @@ const onOutputItemDone = Effect.fn("OpenResponses.onOutputItemDone")(function* (
           })
         : ToolStream.start(state.tools, id, {
             ...pending,
-            ...(pending.namespace === undefined && item.namespace !== undefined ? { namespace: item.namespace } : {}),
+            namespace: pending.namespace ?? item.namespace,
           })
     const result =
       item.arguments === undefined
@@ -1179,7 +1179,7 @@ const onOutputItemDone = Effect.fn("OpenResponses.onOutputItemDone")(function* (
             LLMEvent.toolInputStart({
               id: callID,
               name: item.name,
-              ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+              namespace: item.namespace,
               providerMetadata: metadata,
             }),
             ...finished,

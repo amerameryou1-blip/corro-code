@@ -347,7 +347,7 @@ describe("Open Responses basic-item lifecycles", () => {
         )
         const providerMetadata = id === undefined ? undefined : { "openai-compatible": { itemId: id } }
         expect(events.filter((event) => event.type.startsWith("tool-"))).toEqual([
-          { type: "tool-input-start", id: "call_1", name: "lookup", providerMetadata },
+          { type: "tool-input-start", id: "call_1", name: "lookup", namespace: undefined, providerMetadata },
           { type: "tool-input-end", id: "call_1", name: "lookup", providerMetadata },
           { type: "tool-call", id: "call_1", name: "lookup", input: { query: "weather" }, providerMetadata },
         ])
@@ -383,11 +383,19 @@ describe("Open Responses basic-item lifecycles", () => {
             type: "tool-input-delta",
             id: "call_1",
             name: "lookup",
+            namespace: undefined,
             text: '{"query":"weather"}',
             input: { query: "weather" },
           },
-          { type: "tool-input-end", id: "call_1", name: "lookup", providerMetadata },
-          { type: "tool-call", id: "call_1", name: "lookup", input: { query: "weather" }, providerMetadata },
+          { type: "tool-input-end", id: "call_1", name: "lookup", namespace: undefined, providerMetadata },
+          {
+            type: "tool-call",
+            id: "call_1",
+            name: "lookup",
+            namespace: undefined,
+            input: { query: "weather" },
+            providerMetadata,
+          },
         ])
       }),
     )

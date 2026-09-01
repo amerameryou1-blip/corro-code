@@ -2233,8 +2233,8 @@ describe("OpenAI Responses route", () => {
         expect.objectContaining({ type: "tool-input-end", name: "lookup", namespace: "crm" }),
         expect.objectContaining({ type: "tool-call", name: "lookup", namespace: "crm", input: { id: "123" } }),
       ])
-      expect(toolEvents[0]).not.toHaveProperty("namespace")
-      expect(toolEvents[1]).not.toHaveProperty("namespace")
+      expect(toolEvents[0]?.namespace).toBeUndefined()
+      expect(toolEvents[1]?.namespace).toBeUndefined()
       expect(response.message.content).toEqual([
         expect.objectContaining({ type: "tool-call", name: "lookup", namespace: "crm", input: { id: "123" } }),
       ])
