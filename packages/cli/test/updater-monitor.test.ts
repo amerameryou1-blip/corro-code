@@ -1,57 +1,23 @@
-import { NodeServices } from "@effect/platform-node"
-import { Global } from "@opencode-ai/util/global"
-import { AppProcess } from "@opencode-ai/util/process"
 import { expect } from "bun:test"
-import { Deferred, Effect, FileSystem, Option, Stream } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process"
-import path from "node:path"
+import { Deferred, Effect, Layer, Option } from "effect"
 import { testEffect } from "../../core/test/lib/effect"
 import { Updater } from "../src/services/updater"
 
-const it = testEffect(NodeServices.layer)
+const it = testEffect(Layer.empty)
 
 it.live("installs and restarts after the final Session settles", () =>
   Effect.gen(function* () {
     const fixture = yield* Effect.acquireRelease(Effect.sync(makeServer), (server) => Effect.sync(() => server.stop()))
-    const fs = yield* FileSystem.FileSystem
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-    const root = yield* fs.makeTempDirectoryScoped({ prefix: "opencode-updater-monitor-" })
     const installed = yield* Deferred.make<string>()
     const restarted = yield* Deferred.make<void>()
-    const updater = yield* Updater.Service.pipe(
-      Effect.provide(
-        Updater.layerWith({
-          current: { version: "1.0.0", channel: "beta", local: false },
-          fetch: async () => Response.json({ version: "1.1.0" }),
-          install: (version) => Deferred.succeed(installed, version).pipe(Effect.as(true)),
-          restart: () => Deferred.succeed(restarted, undefined).pipe(Effect.asVoid),
-        }),
-      ),
-      Effect.provideService(
-        Global.Service,
-        Global.make({
-          home: path.join(root, "home"),
-          data: path.join(root, "data"),
-          cache: path.join(root, "cache"),
-          config: path.join(root, "config"),
-          state: path.join(root, "state"),
-          tmp: path.join(root, "tmp"),
-          bin: path.join(root, "bin"),
-          log: path.join(root, "log"),
-          repos: path.join(root, "repos"),
-        }),
-      ),
-      Effect.provideService(
-        AppProcess.Service,
-        AppProcess.Service.of({
-          ...spawner,
-          run: () => Effect.die("Unexpected process command"),
-          runStream: () => Stream.die("Unexpected streaming process command"),
-        }),
-      ),
-    )
-
-    yield* updater.monitor({ url: fixture.url, password: "test", managed: true }).pipe(Effect.forkScoped)
+    yield* Updater.monitorServer({
+      url: fixture.url,
+      password: "test",
+      managed: true,
+      inspect: () => Effect.succeed({ action: "upgrade", version: "1.1.0" }),
+      install: (version) => Deferred.succeed(installed, version).pipe(Effect.as(true)),
+      restart: () => Deferred.succeed(restarted, undefined).pipe(Effect.asVoid),
+    }).pipe(Effect.forkScoped)
     yield* wait(fixture.activeRead, () => "Updater did not check active Sessions")
     yield* wait(fixture.eventOpened, () => "Updater did not open the server event stream")
     expect(Option.isNone(yield* Deferred.poll(installed))).toBe(true)
