@@ -154,6 +154,10 @@ describe("SessionStore", () => {
         "msg_a",
         "msg_y",
       ])
+      expect((yield* store.messages({ sessionID, type: "synthetic", limit: 1 }))[0]?.id).toBe(
+        SessionMessage.ID.make("msg_y"),
+      )
+      expect(yield* store.messages({ sessionID, type: "assistant", limit: 1 })).toEqual([])
       const pages: { order: "asc" | "desc"; direction: "next" | "previous"; ids: string[] }[] = [
         { order: "asc", direction: "next", ids: ["msg_w", "msg_a"] },
         { order: "asc", direction: "previous", ids: ["msg_b", "msg_x"] },
