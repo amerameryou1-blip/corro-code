@@ -1,7 +1,7 @@
 import { Message, ToolCallPart, ToolResultPart, type ContentPart, type ProviderMetadata } from "@opencode-ai/ai"
+import type { Model } from "@opencode-ai/schema/model"
 import { Option, Schema } from "effect"
 import { fileURLToPath } from "url"
-import type { Model } from "../../model.js"
 import { SessionMessage } from "../message.js"
 import type { FileAttachment } from "@opencode-ai/schema/prompt"
 
@@ -67,7 +67,7 @@ const directoryAttachment = (file: FileAttachment): ContentPart => ({
 const attachmentContent = (file: FileAttachment): ContentPart[] => {
   if (file.mime === "text/plain") return [textAttachment(file)]
   if (file.mime === "application/x-directory") return [directoryAttachment(file)]
-  if (imageMimes.has(file.mime)) {
+  if (imageMimes.has(file.mime) || file.mime === "application/pdf") {
     const location = attachmentLocation(file)
     return [...(location === undefined ? [] : [Message.text(`Attached file: ${location}`)]), media(file)]
   }
@@ -93,7 +93,7 @@ const userAttachmentContent = (files: readonly FileAttachment[]) => {
   })
 }
 
-const decodeToolInput = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
+const decodeToolInput = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 const providerMetadata = (
   provider: string,
@@ -152,9 +152,12 @@ const assistant = (message: SessionMessage.Assistant, model: Model.Ref, provider
         {
           type: "text",
           text: item.text,
-          providerMetadata: sameProvider ? providerMetadata(providerMetadataKey, item.state) : undefined,
+          // Text can carry provider-bound state (e.g. Gemini thought signatures),
+          // which is only replayable against the model that produced it.
+          providerMetadata: reuseProviderMetadata ? providerMetadata(providerMetadataKey, item.state) : undefined,
         },
       ]
+    // Let the destination adapter handle readable reasoning after a model/provider switch.
     if (item.type === "reasoning")
       return reuseProviderMetadata
         ? [
@@ -165,8 +168,11 @@ const assistant = (message: SessionMessage.Assistant, model: Model.Ref, provider
             },
           ]
         : item.text.length > 0
-          ? [{ type: "text", text: item.text }]
+          ? [{ type: message.error === undefined ? "reasoning" : "text", text: item.text }]
           : []
+    // Call-side metadata is model-scoped proof of generation (Gemini thought
+    // signatures, OpenAI encrypted reasoning): only the producing model may
+    // replay it.
     const reuseToolProviderMetadata =
       reuseProviderMetadata ||
       (sameModel && item.executed === true && (item.state.status === "completed" || item.state.status === "error"))
@@ -175,13 +181,17 @@ const assistant = (message: SessionMessage.Assistant, model: Model.Ref, provider
       reuseToolProviderMetadata ? providerMetadata(providerMetadataKey, item.providerState) : undefined,
     )
     if (item.executed !== true) return [call]
-    // Hosted result payloads are provider-format state, not model state:
-    // replay must survive a model switch within the same provider.
+    // Hosted tools (e.g. google_search) run inside the provider, so their
+    // result payload (`providerResultState`) is provider-format data rather
+    // than model-scoped proof: it stays replayable across models of the same
+    // provider. After a model switch, echo only that payload — never fall
+    // back to `providerState`, whose call-side values are bound to the old
+    // model.
     const result = toolResult(
       item,
       reuseToolProviderMetadata
         ? providerMetadata(providerMetadataKey, item.providerResultState ?? item.providerState)
-        : sameProvider && item.executed === true && item.providerResultState !== undefined
+        : sameProvider && item.providerResultState !== undefined
           ? providerMetadata(providerMetadataKey, item.providerResultState)
           : undefined,
     )
@@ -227,7 +237,7 @@ function toLLMMessage(message: SessionMessage.Info, model: Model.Ref, providerMe
       ]
     case "user":
       const content = [
-        ...(message.skills ?? []).map((skill) => Message.text(skill.text)),
+        ...(message.skills ?? []).flatMap((skill) => (skill.text === undefined ? [] : [Message.text(skill.text)])),
         ...(message.text === "" ? [] : [Message.text(message.text)]),
         ...userAttachmentContent(message.files ?? []),
       ]
@@ -250,6 +260,8 @@ function toLLMMessage(message: SessionMessage.Info, model: Model.Ref, providerMe
     case "system":
       return [Message.system(message.text)]
     case "shell":
+      // Background shell results enter context once, through their completion inbox item.
+      if (message.metadata?.background === true) return []
       return [
         Message.make({
           id: message.id,

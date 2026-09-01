@@ -1,66 +1,126 @@
 import { describe, expect } from "bun:test"
 import path from "path"
-import { Effect } from "effect"
-import { Event } from "@opencode-ai/schema/project-directories"
+import { mkdir, rm } from "fs/promises"
+import { Effect, Layer, LayerMap } from "effect"
+import { Worktree } from "@opencode-ai/schema/worktree"
 import { Bus } from "@opencode-ai/core/bus"
 import { Database } from "@opencode-ai/core/database/database"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { Location } from "@opencode-ai/core/location"
+import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
+import type { LocationServices } from "@opencode-ai/core/location-services"
 import { Project } from "@opencode-ai/core/project"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { Session } from "@opencode-ai/core/session"
 import { SessionEvent } from "@opencode-ai/core/session/event"
 import { SessionExecution } from "@opencode-ai/core/session/execution"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
+import { SessionRunner } from "@opencode-ai/core/session/runner/index"
 import { SessionStore } from "@opencode-ai/core/session/store"
 import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { tmpdir } from "./fixture/tmpdir"
+import { tmpdirScoped } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
-import { globalProjectLayer } from "./lib/project"
+import { globalProjectNode } from "./lib/project"
 
 const it = testEffect(
   AppNodeBuilder.build(
     LayerNode.group([Database.node, Bus.node, SessionProjector.node, SessionStore.node, Session.node]),
+    [Project.node.replace(globalProjectNode), SessionExecution.node.replace(SessionExecution.noopLayer)],
+  ),
+)
+const itWithActiveExecution = testEffect(
+  AppNodeBuilder.build(
+    LayerNode.group([
+      Database.node,
+      Bus.node,
+      SessionProjector.node,
+      SessionStore.node,
+      SessionExecution.node,
+      Session.node,
+    ]),
     [
-      [Project.node, globalProjectLayer],
-      [SessionExecution.node, SessionExecution.noopLayer],
+      Project.node.replace(globalProjectNode),
+      LocationServiceMap.node.replace(
+        Layer.effect(
+          LocationServiceMap.Service,
+          LayerMap.make(
+            (ref: Location.Ref) =>
+              Layer.merge(
+                LayerNode.compile(Location.boundNode(ref), {
+                  replacements: [Project.node.replace(globalProjectNode)],
+                }),
+                Layer.succeed(SessionRunner.Service, { drain: () => Effect.never }),
+              ) as unknown as Layer.Layer<LocationServices>,
+          ),
+        ),
+      ),
+    ],
+  ),
+)
+const unavailableLocations = Layer.effect(
+  LocationServiceMap.Service,
+  LayerMap.make(
+    () => Layer.effectDiscard(Effect.fail(new Error("broken location"))) as unknown as Layer.Layer<LocationServices>,
+  ),
+)
+const itWithUnavailableDestination = testEffect(
+  AppNodeBuilder.build(
+    LayerNode.group([Database.node, Bus.node, SessionProjector.node, SessionStore.node, Session.node]),
+    [
+      Project.node.replace(globalProjectNode),
+      SessionExecution.node.replace(SessionExecution.noopLayer),
+      LocationServiceMap.node.replace(unavailableLocations),
     ],
   ),
 )
 
 describe("Session.move", () => {
-  it.effect("enqueues one move when the source directory no longer exists", () =>
-    Effect.acquireRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ).pipe(
+  itWithUnavailableDestination.effect("rejects an unavailable destination before admitting the move", () =>
+    tmpdirScoped().pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          const session = yield* Session.Service
+          const source = AbsolutePath.make(path.join(tmp.path, "source"))
+          const destination = AbsolutePath.make(path.join(tmp.path, "destination"))
+          yield* Effect.promise(() => Promise.all([mkdir(source), mkdir(destination)]))
+          const created = yield* session.create({ location: Location.Ref.make({ directory: source }) })
+
+          const error = yield* session.move({ sessionID: created.id, directory: destination }).pipe(Effect.flip)
+
+          expect(error).toEqual(new Session.DestinationUnavailableError({ directory: destination }))
+          expect((yield* session.get(created.id)).location.directory).toBe(source)
+          expect(yield* session.inbox(created.id)).toEqual([])
+        }),
+      ),
+    ),
+  )
+
+  it.effect("applies a move immediately when the source directory no longer exists", () =>
+    tmpdirScoped().pipe(
       Effect.flatMap((tmp) =>
         Effect.gen(function* () {
           const session = yield* Session.Service
           const destination = AbsolutePath.make(tmp.path)
+          const source = path.join(tmp.path, "source")
+          yield* Effect.promise(() => mkdir(source))
           const created = yield* session.create({
-            location: Location.Ref.make({ directory: AbsolutePath.make(path.join(tmp.path, "deleted")) }),
+            location: Location.Ref.make({ directory: AbsolutePath.make(source) }),
           })
 
           yield* session.move({ sessionID: created.id, directory: destination })
+          expect((yield* session.get(created.id)).location.directory).toBe(AbsolutePath.make(source))
+          expect(yield* session.inbox(created.id)).toHaveLength(1)
 
-          expect((yield* session.get(created.id)).location.directory).toBe(
-            AbsolutePath.make(path.join(tmp.path, "deleted")),
-          )
-          expect(yield* session.inbox(created.id)).toMatchObject([
-            {
-              type: "move",
-              delivery: "steer",
-              payload: {
-                location: { directory: destination },
-                projectID: Project.ID.global,
-              },
-            },
-          ])
+          yield* Effect.promise(() => rm(source, { recursive: true }))
+          yield* session.move({ sessionID: created.id, directory: destination })
+
+          expect((yield* session.get(created.id)).location.directory).toBe(destination)
+          expect(yield* session.inbox(created.id)).toEqual([])
 
           yield* session.move({ sessionID: created.id, directory: destination })
-          expect(yield* session.inbox(created.id)).toHaveLength(2)
+          expect(yield* session.inbox(created.id)).toHaveLength(1)
 
+          yield* Effect.promise(() => mkdir(path.join(tmp.path, "other")))
           const steered = yield* session.create({
             location: Location.Ref.make({ directory: AbsolutePath.make(path.join(tmp.path, "other")) }),
           })
@@ -71,11 +131,43 @@ describe("Session.move", () => {
     ),
   )
 
+  itWithActiveExecution.live("defers an active move when the source directory no longer exists", () =>
+    tmpdirScoped().pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          const session = yield* Session.Service
+          const execution = yield* SessionExecution.Service
+          const source = AbsolutePath.make(path.join(tmp.path, "source"))
+          const destination = AbsolutePath.make(tmp.path)
+          yield* Effect.promise(() => mkdir(source))
+          const created = yield* session.create({ location: Location.Ref.make({ directory: source }) })
+
+          // Hold real execution open so the move cannot be consumed before admission is checked.
+          yield* execution.wake(created.id)
+          expect(yield* execution.isActive(created.id)).toBe(true)
+          yield* Effect.promise(() => rm(source, { recursive: true }))
+
+          yield* session.move({ sessionID: created.id, directory: destination })
+
+          expect((yield* session.get(created.id)).location.directory).toBe(source)
+          expect(yield* session.inbox(created.id)).toMatchObject([
+            {
+              type: "move",
+              delivery: "steer",
+              payload: { location: { directory: destination } },
+            },
+          ])
+          expect(yield* execution.isActive(created.id)).toBe(true)
+
+          yield* execution.interrupt(created.id)
+          yield* execution.awaitIdle(created.id)
+        }),
+      ),
+    ),
+  )
+
   it.effect("keeps a moved session out of its former directory's new identity", () =>
-    Effect.acquireRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ).pipe(
+    tmpdirScoped().pipe(
       Effect.flatMap((tmp) =>
         Effect.gen(function* () {
           const session = yield* Session.Service
@@ -92,7 +184,7 @@ describe("Session.move", () => {
             projectID: Project.ID.global,
           })
           // The former directory becomes a project after the session left it.
-          yield* bus.publish(Event.Resolved, {
+          yield* bus.publish(Worktree.Event.Resolved, {
             projectID: Project.ID.make("adopting"),
             directory: previous,
             previous: Project.ID.global,

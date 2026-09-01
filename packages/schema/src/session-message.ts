@@ -195,6 +195,11 @@ export const AssistantContent = Schema.Union([AssistantText, AssistantReasoning,
 )
 export type AssistantContent = AssistantText | AssistantReasoning | AssistantTool
 
+export const AssistantContentEncoded = Schema.toEncoded(AssistantContent).annotate({
+  identifier: "Session.Message.AssistantContent.Encoded",
+})
+export type AssistantContentEncoded = typeof AssistantContentEncoded.Type
+
 export interface AssistantRetry extends Schema.Schema.Type<typeof AssistantRetry> {}
 export const AssistantRetry = Schema.Struct({
   attempt: PositiveInt,
@@ -215,12 +220,16 @@ export const Assistant = Schema.Struct({
     files: Schema.Array(RelativePath).pipe(optional),
   }).pipe(optional),
   finish: FinishReason.pipe(optional),
+  rawFinish: Schema.String.pipe(optional),
+  providerState: ProviderState.pipe(optional),
   cost: Money.USD.pipe(optional),
   tokens: TokenUsage.Info.pipe(optional),
   error: SessionError.Error.pipe(optional),
   retry: AssistantRetry.pipe(optional),
   time: Schema.Struct({
     created: DateTimeUtcFromMillis,
+    /** When the provider response body ended, before tool settlement. */
+    streamed: DateTimeUtcFromMillis.pipe(optional),
     completed: DateTimeUtcFromMillis.pipe(optional),
   }),
 }).annotate({ identifier: "Session.Message.Assistant" })

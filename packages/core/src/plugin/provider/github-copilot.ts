@@ -37,7 +37,7 @@ const User = Schema.Struct({
   ),
 })
 const decodeUser = Schema.decodeUnknownOption(User)
-const JsonBody = Schema.UnknownFromJsonString
+const JsonBody = Schema.fromJsonString(Schema.Unknown)
 const decodeBody = Schema.decodeUnknownOption(JsonBody)
 
 const oauth = (app: App.Info) =>
@@ -108,7 +108,7 @@ const oauth = (app: App.Info) =>
                   },
                 ).pipe(
                   Effect.map((user) => Option.getOrUndefined(decodeUser(user))?.endpoints?.api?.replace(/\/+$/, "")),
-                  Effect.catch(() => Effect.succeed(undefined)),
+                  Effect.orElseSucceed(() => undefined),
                   Effect.map((apiEndpoint) =>
                     Credential.OAuth.make({
                       type: "oauth",
@@ -146,7 +146,7 @@ const oauth = (app: App.Info) =>
   }) satisfies IntegrationOAuthMethodRegistration
 
 export const GithubCopilotPlugin = define({
-  id: "opencode.provider.github-copilot",
+  id: "opencode.provider.github.copilot",
   effect: Effect.fn(function* (ctx) {
     const catalog = yield* Catalog.Service
     const bus = yield* Bus.Service
@@ -159,7 +159,7 @@ export const GithubCopilotPlugin = define({
     const load = Effect.fn("GithubCopilotPlugin.load")(function* () {
       const connection = yield* ctx.integration.connection.active("github-copilot")
       const credential = connection
-        ? yield* ctx.integration.connection.resolve(connection).pipe(Effect.catch(() => Effect.succeed(undefined)))
+        ? yield* ctx.integration.connection.resolve(connection).pipe(Effect.orElseSucceed(() => undefined))
         : undefined
       if (credential?.type !== "oauth") {
         loaded.baseURL = undefined
@@ -207,7 +207,7 @@ export const GithubCopilotPlugin = define({
       } else {
         for (const id of item.models.keys()) {
           evt.model.update(item.provider.id, id, (model) => {
-            model.package = "@ai-sdk/github-copilot"
+            model.package = Provider.aisdk("@ai-sdk/github-copilot")
             if (loaded.baseURL) model.settings = Provider.mergeOverlay(model.settings, { baseURL: loaded.baseURL })
           })
         }
@@ -221,7 +221,7 @@ export const GithubCopilotPlugin = define({
       }
     })
     const refresh = () => loading.withPermit(load().pipe(Effect.andThen(ctx.catalog.reload())))
-    yield* bus.subscribe(Integration.Event.ConnectionUpdated).pipe(
+    yield* bus.subscribe(Credential.Event.Switched).pipe(
       Stream.filter((event) => event.data.integrationID === Integration.ID.make("github-copilot")),
       Stream.runForEach(refresh),
       Effect.forkScoped({ startImmediately: true }),
@@ -241,19 +241,22 @@ export const GithubCopilotPlugin = define({
         evt.sdk = mod.createOpenaiCompatible(evt.options)
       }),
     )
-    yield* ctx.session.hook("http.request", (evt) =>
-      Effect.gen(function* () {
-        if (evt.model.providerID !== Provider.ID.githubCopilot) return
-        if (evt.agent === Agent.ID.make("title"))
-          evt.request.headers.set("X-Interaction-Type", "conversation-background")
-        if (evt.agent === Agent.ID.make("compaction"))
-          evt.request.headers.set("X-Interaction-Type", "conversation-compaction")
-        const token = evt.request.headers.get("x-api-key")
-        if (!token) return
-        const text = yield* Effect.promise(() => evt.request.clone().text())
-        const body = Option.getOrUndefined(decodeBody(text))
-        applyHeaders(evt.request.headers, token, ctx.app, requestMetadata(evt.request.url, body), true)
-      }),
+    yield* ctx.session.hook(
+      "http.request",
+      (evt) =>
+        Effect.gen(function* () {
+          if (evt.model.providerID !== Provider.ID.githubCopilot) return
+          if (evt.agent === Agent.ID.make("title"))
+            evt.request.headers.set("X-Interaction-Type", "conversation-background")
+          if (evt.agent === Agent.ID.make("compaction"))
+            evt.request.headers.set("X-Interaction-Type", "conversation-compaction")
+          const token = evt.request.headers.get("x-api-key")
+          if (!token) return
+          const text = yield* Effect.promise(() => evt.request.clone().text())
+          const body = Option.getOrUndefined(decodeBody(text))
+          applyHeaders(evt.request.headers, token, ctx.app, requestMetadata(evt.request.url, body), true)
+        }),
+      { providerID: Provider.ID.githubCopilot },
     )
     yield* ctx.aisdk.hook(
       "language",

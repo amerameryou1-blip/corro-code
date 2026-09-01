@@ -1,9 +1,6 @@
 import { describe, expect } from "bun:test"
 import path from "path"
-import { Effect, Layer, Stream } from "effect"
-import { Config } from "@opencode-ai/core/config"
-import { Document, Info } from "@opencode-ai/schema/config"
-import { ConfigToolOutput } from "@opencode-ai/schema/config/tool-output"
+import { Effect } from "effect"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/util/effect/layer-node"
 import { ToolOutput } from "@opencode-ai/core/tool-output"
@@ -15,24 +12,19 @@ import { it } from "./lib/effect"
 
 const withStore = <A, E, R>(
   body: (output: ToolOutput.Interface, fs: FSUtil.Interface, root: string) => Effect.Effect<A, E, R>,
-  info = new Info(),
+  limits?: { maxLines?: number; maxBytes?: number },
 ) =>
   Effect.acquireUseRelease(
     Effect.promise(() => tmpdir()),
     (tmp) => {
-      const config = Layer.succeed(
-        Config.Service,
-        Config.Service.of({
-          entries: () => Effect.succeed([new Document({ type: "document", info })]),
-          changes: () => Stream.empty,
-        }),
-      )
       const layer = AppNodeBuilder.build(LayerNode.group([ToolOutput.node, FSUtil.node]), [
-        [Config.node, config],
-        [Global.node, Global.layerWith({ data: tmp.path })],
+        Global.node.replace(Global.layerWith({ data: tmp.path })),
       ])
       return Effect.gen(function* () {
-        return yield* body(yield* ToolOutput.Service, yield* FSUtil.Service, tmp.path)
+        const output = yield* ToolOutput.Service
+        const fs = yield* FSUtil.Service
+        if (limits) yield* output.transform((draft) => draft.configure(limits))
+        return yield* body(output, fs, tmp.path)
       }).pipe(Effect.provide(layer))
     },
     (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
@@ -56,7 +48,7 @@ describe("ToolOutput", () => {
             { type: "text", text: `... 1 line truncated; full content saved to ${outputPath} ...` },
           ])
         }),
-      new Info({ tool_output: new ConfigToolOutput.Info({ max_lines: 2, max_bytes: 1_000 }) }),
+      { maxLines: 2, maxBytes: 1_000 },
     ),
   )
 
@@ -73,7 +65,7 @@ describe("ToolOutput", () => {
             },
           ])
         }),
-      new Info({ tool_output: new ConfigToolOutput.Info({ max_lines: 100, max_bytes: 5 }) }),
+      { maxLines: 100, maxBytes: 5 },
     ),
   )
 
@@ -92,7 +84,7 @@ describe("ToolOutput", () => {
             { type: "text", text: expect.stringMatching(/^\.\.\. 1 line truncated; full content saved to /) },
           ])
         }),
-      new Info({ tool_output: new ConfigToolOutput.Info({ max_lines: 2, max_bytes: 1_000 }) }),
+      { maxLines: 2, maxBytes: 1_000 },
     ),
   )
 
@@ -125,7 +117,7 @@ describe("ToolOutput", () => {
             metadata: { truncated: false },
           })
         }),
-      new Info({ tool_output: new ConfigToolOutput.Info({ max_lines: 2, max_bytes: 1_000 }) }),
+      { maxLines: 2, maxBytes: 1_000 },
     ),
   )
 
@@ -139,19 +131,20 @@ describe("ToolOutput", () => {
             { type: "text", text: expect.stringMatching(/^\.\.\. 1 byte truncated; full content saved to /) },
           ])
         }),
-      new Info({ tool_output: new ConfigToolOutput.Info({ max_lines: 2, max_bytes: 3 }) }),
+      { maxLines: 2, maxBytes: 3 },
     ),
   )
 
-  it.live("removes expired managed files", () =>
+  it.live("uses file modification time when IDs wrap", () =>
     withStore((output, fs, root) =>
       Effect.gen(function* () {
         const directory = path.join(root, ToolOutput.DIRECTORY)
-        const old = path.join(directory, Identifier.create("tool", "ascending", Date.now() - 8 * 24 * 60 * 60 * 1_000))
-        const recent = path.join(directory, Identifier.ascending("tool"))
+        const old = path.join(directory, Identifier.create("tool", "ascending", 2 ** 36 - 1))
+        const recent = path.join(directory, Identifier.create("tool", "ascending", 2 ** 36 + 1))
         yield* fs.ensureDir(directory)
         yield* fs.writeFileString(old, "old")
         yield* fs.writeFileString(recent, "recent")
+        yield* fs.utimes(old, new Date(), new Date(Date.now() - 8 * 24 * 60 * 60 * 1_000))
         yield* output.cleanup()
         expect(yield* fs.exists(old)).toBe(false)
         expect(yield* fs.exists(recent)).toBe(true)

@@ -1,9 +1,11 @@
 import { Project } from "@opencode-ai/schema/project"
-import { Schema } from "effect"
+import { Schema, Struct } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { LocationQuery, locationQueryOpenApi } from "./location.js"
+import { ProjectNotFoundError } from "../errors.js"
 
 const root = "/api/project"
+const UpdatePayload = Schema.Struct(Struct.omit(Project.UpdateInput.fields, ["projectID"]))
 
 export const ProjectGroup = HttpApiGroup.make("server.project")
   .add(
@@ -14,6 +16,20 @@ export const ProjectGroup = HttpApiGroup.make("server.project")
         identifier: "v2.project.list",
         summary: "List projects",
         description: "List known projects.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.patch("project.update", `${root}/:projectID`, {
+      params: { projectID: Project.ID },
+      payload: UpdatePayload,
+      success: Project.Info,
+      error: ProjectNotFoundError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.project.update",
+        summary: "Update project",
+        description: "Update project display metadata and workspace commands.",
       }),
     ),
   )
@@ -31,24 +47,9 @@ export const ProjectGroup = HttpApiGroup.make("server.project")
         }),
       ),
   )
-  .add(
-    HttpApiEndpoint.get("project.directories", `${root}/:projectID/directories`, {
-      params: { projectID: Project.ID },
-      query: LocationQuery,
-      success: Project.Directories,
-    })
-      .annotateMerge(locationQueryOpenApi)
-      .annotateMerge(
-        OpenApi.annotations({
-          identifier: "v2.project.directories",
-          summary: "List project directories",
-          description: "List known local absolute directories for a project.",
-        }),
-      ),
-  )
   .annotateMerge(
     OpenApi.annotations({
       title: "project",
-      description: "Location-scoped project routes.",
+      description: "Project routes.",
     }),
   )

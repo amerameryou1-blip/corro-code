@@ -1,5 +1,4 @@
 import { describe, expect } from "bun:test"
-import { Money } from "@opencode-ai/schema/money"
 import { Effect, Fiber, Layer, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { Catalog } from "@opencode-ai/core/catalog"
@@ -26,7 +25,7 @@ const locationLayer = Layer.succeed(
 )
 const catalogLayer = AppNodeBuilder.build(
   LayerNode.group([Catalog.node, Bus.node, Credential.node, Integration.node]),
-  [[Location.node, locationLayer]],
+  [Location.node.replace(locationLayer)],
 )
 const it = testEffect(catalogLayer)
 
@@ -49,7 +48,7 @@ describe("Catalog", () => {
   it.effect("derives availability from active credentials without changing provider state", () => {
     const integrationID = Integration.ID.make("test")
     const localCatalogLayer = Layer.fresh(
-      AppNodeBuilder.build(LayerNode.group([Catalog.node, Credential.node]), [[Location.node, locationLayer]]),
+      AppNodeBuilder.build(LayerNode.group([Catalog.node, Credential.node]), [Location.node.replace(locationLayer)]),
     )
 
     return Effect.gen(function* () {
@@ -79,13 +78,14 @@ describe("Catalog", () => {
     const providerID = Provider.ID.make("remote")
     const localCatalogLayer = Layer.fresh(
       AppNodeBuilder.build(LayerNode.group([Catalog.node, Credential.node, Integration.node]), [
-        [Location.node, locationLayer],
+        Location.node.replace(locationLayer),
       ]),
     )
 
     return Effect.gen(function* () {
       const catalog = yield* Catalog.Service
-      yield* (yield* Integration.Service).transform((editor) => editor.update(integrationID, () => {}))
+      const integrations = yield* Integration.Service
+      yield* integrations.transform((editor) => editor.update(integrationID, () => {}))
       yield* catalog.transform((editor) =>
         editor.provider.update(providerID, (provider) => {
           provider.integrationID = integrationID
@@ -93,11 +93,42 @@ describe("Catalog", () => {
       )
       expect(yield* catalog.provider.available()).toEqual([])
 
-      yield* (yield* Credential.Service).create({
+      const credentials = yield* Credential.Service
+      yield* credentials.create({
         integrationID,
         value: Credential.Key.make({ type: "key", key: "secret" }),
       })
 
+      expect((yield* catalog.provider.available()).map((provider) => provider.id)).toEqual([providerID])
+    }).pipe(Effect.provide(localCatalogLayer))
+  })
+
+  it.effect("makes an explicitly enabled provider available without a connection", () => {
+    const integrationID = Integration.ID.make("gateway")
+    const providerID = Provider.ID.make("remote")
+    const localCatalogLayer = Layer.fresh(
+      AppNodeBuilder.build(LayerNode.group([Catalog.node, Credential.node, Integration.node]), [
+        Location.node.replace(locationLayer),
+      ]),
+    )
+
+    return Effect.gen(function* () {
+      const catalog = yield* Catalog.Service
+      const integrations = yield* Integration.Service
+      yield* integrations.transform((editor) => editor.update(integrationID, () => {}))
+      yield* catalog.transform((editor) =>
+        editor.provider.update(providerID, (provider) => {
+          provider.integrationID = integrationID
+          provider.settings = { baseURL: "https://gateway.example.com/v1" }
+        }),
+      )
+      expect(yield* catalog.provider.available()).toEqual([])
+
+      yield* catalog.transform((editor) =>
+        editor.provider.update(providerID, (provider) => {
+          provider.activation = "enabled"
+        }),
+      )
       expect((yield* catalog.provider.available()).map((provider) => provider.id)).toEqual([providerID])
     }).pipe(Effect.provide(localCatalogLayer))
   })
@@ -278,7 +309,7 @@ describe("Catalog", () => {
       const fallbackModel = Model.ID.make("fallback")
       yield* catalog.transform((catalog) => {
         catalog.provider.update(disabledProvider, (provider) => {
-          provider.disabled = true
+          provider.activation = "disabled"
         })
         catalog.model.update(disabledProvider, disabledModel, () => {})
         catalog.provider.update(enabledProvider, () => {})
@@ -293,45 +324,50 @@ describe("Catalog", () => {
     }),
   )
 
-  it.effect("small model prefers small keyword candidates before cost scoring", () =>
+  it.effect("small model uses the newest release in the first matching family", () =>
     Effect.gen(function* () {
       const catalog = yield* Catalog.Service
       const providerID = Provider.ID.make("test")
       yield* catalog.transform((catalog) => {
         catalog.provider.update(providerID, () => {})
-        catalog.model.update(providerID, Model.ID.make("cheap-large"), (model) => {
+        catalog.model.update(providerID, Model.ID.make("newer-flash"), (model) => {
+          model.family = Model.Family.make("gemini-flash")
           model.capabilities.input = ["text"]
           model.capabilities.output = ["text"]
-          model.cost = [
-            {
-              input: Money.USDPerMillionTokens.make(1),
-              output: Money.USDPerMillionTokens.make(1),
-              cache: {
-                read: Money.USDPerMillionTokens.zero,
-                write: Money.USDPerMillionTokens.zero,
-              },
-            },
-          ]
-          model.time.released = Date.now()
+          model.time.released = 3000
         })
-        catalog.model.update(providerID, Model.ID.make("expensive-mini"), (model) => {
+        catalog.model.update(providerID, Model.ID.make("older-luna"), (model) => {
+          model.family = Model.Family.make("gpt-luna")
           model.capabilities.input = ["text"]
           model.capabilities.output = ["text"]
-          model.cost = [
-            {
-              input: Money.USDPerMillionTokens.make(10),
-              output: Money.USDPerMillionTokens.make(10),
-              cache: {
-                read: Money.USDPerMillionTokens.zero,
-                write: Money.USDPerMillionTokens.zero,
-              },
-            },
-          ]
-          model.time.released = Date.now()
+          model.time.released = 1000
+        })
+        catalog.model.update(providerID, Model.ID.make("newer-luna"), (model) => {
+          model.family = Model.Family.make("gpt-luna")
+          model.capabilities.input = ["text"]
+          model.capabilities.output = ["text"]
+          model.time.released = 2000
         })
       })
 
-      expect((yield* catalog.model.small(providerID))?.id).toMatch("expensive-mini")
+      expect((yield* catalog.model.small(providerID))?.id).toBe(Model.ID.make("newer-luna"))
+    }),
+  )
+
+  it.effect("small model returns undefined without a matching family", () =>
+    Effect.gen(function* () {
+      const catalog = yield* Catalog.Service
+      const providerID = Provider.ID.make("test")
+      yield* catalog.transform((catalog) => {
+        catalog.provider.update(providerID, () => {})
+        catalog.model.update(providerID, Model.ID.make("large"), (model) => {
+          model.family = Model.Family.make("gpt")
+          model.capabilities.input = ["text"]
+          model.capabilities.output = ["text"]
+        })
+      })
+
+      expect(yield* catalog.model.small(providerID)).toBeUndefined()
     }),
   )
 })

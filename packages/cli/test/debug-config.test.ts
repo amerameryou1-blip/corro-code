@@ -10,9 +10,10 @@ describe("debug config command", () => {
 
     expect(debug.exitCode).toBe(0)
     expect(debug.stdout).toContain("config")
-    expect(debug.stdout).toContain("Show resolved configuration")
+    expect(debug.stdout).toContain("List configuration sources")
     expect(config.exitCode).toBe(0)
     expect(config.stdout).toContain("opencode debug config [flags]")
+    expect(config.stdout).toContain("List configuration sources")
   })
 
   test("prints config entries from the invoking directory without reordering permissions", async () => {
@@ -30,15 +31,16 @@ describe("debug config command", () => {
           ],
         },
       },
-      { type: "file", path: path.join(project, "opencode.json") },
     ]
     let requested: URL | undefined
+    let healthProbes = 0
     const authorization: Array<string | null> = []
     const server = Bun.serve({
       port: 0,
       fetch(request) {
         const url = new URL(request.url)
         if (url.pathname === "/api/health") {
+          healthProbes += 1
           return Response.json({ healthy: true, version: OPENCODE_VERSION, pid: process.pid })
         }
         requested = url
@@ -60,6 +62,7 @@ describe("debug config command", () => {
       expect(requested?.pathname).toBe("/api/config")
       expect(requested?.searchParams.get("location[directory]")).toBe(project)
       expect(authorization).toEqual([`Basic ${btoa("opencode:secret")}`])
+      expect(healthProbes).toBe(1)
     } finally {
       server.stop(true)
       await fs.rm(root, { recursive: true, force: true })

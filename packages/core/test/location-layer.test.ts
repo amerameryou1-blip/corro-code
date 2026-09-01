@@ -3,28 +3,47 @@ import path from "path"
 import { describe, expect } from "bun:test"
 import { Config } from "@opencode-ai/schema/config"
 import { Money } from "@opencode-ai/schema/money"
-import { DateTime, Deferred, Effect, Equal, Fiber, Hash, RcMap, Schema, Stream } from "effect"
+import {
+  DateTime,
+  Deferred,
+  Duration,
+  Effect,
+  Equal,
+  Fiber,
+  Hash,
+  Layer,
+  LayerMap,
+  Option,
+  RcMap,
+  Schema,
+  Stream,
+} from "effect"
+import { TestClock } from "effect/testing"
 import { Plugin as EffectPlugin } from "@opencode-ai/plugin/effect"
 import { Agent } from "@opencode-ai/core/agent"
 import { Catalog } from "@opencode-ai/core/catalog"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/util/effect/layer-node"
 import { Global } from "@opencode-ai/util/global"
-import { LocationServiceMap } from "@opencode-ai/core/location-services"
+import { LocationServiceMap, type LocationServices } from "@opencode-ai/core/location-services"
+import { LocationActivity } from "@opencode-ai/core/location-activity"
 import { Location } from "@opencode-ai/core/location"
 import { Plugin } from "@opencode-ai/core/plugin"
 import { SdkPlugins } from "@opencode-ai/core/plugin/sdk"
 import { PluginSupervisor } from "@opencode-ai/core/plugin/supervisor"
 import { Model } from "@opencode-ai/core/model"
+import { Mcp } from "@opencode-ai/core/mcp/index"
 import { Project } from "@opencode-ai/core/project"
 import { Provider } from "@opencode-ai/core/provider"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { Session } from "@opencode-ai/core/session"
+import { Workspace } from "@opencode-ai/core/workspace"
+import { SessionEvent } from "@opencode-ai/core/session/event"
 import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
 import { tmpdir } from "./fixture/tmpdir"
 import { tempGlobalLayer } from "./fixture/global"
 import { testEffect } from "./lib/effect"
-import { toolDefinitions, waitForTool } from "./lib/tool"
+import { toolDefinitions } from "./lib/tool"
 import { Database } from "../src/database/database"
 import { Bus } from "../src/bus"
 import { Reference } from "../src/reference"
@@ -32,16 +51,135 @@ import { Tool } from "../src/tool"
 
 const it = testEffect(
   AppNodeBuilder.build(LayerNode.group([Database.node, Bus.node, LocationServiceMap.node]), [
-    [Global.node, tempGlobalLayer],
+    Global.node.replace(tempGlobalLayer),
   ]),
 )
 const itWithSdk = testEffect(
   AppNodeBuilder.build(LayerNode.group([Database.node, Bus.node, SdkPlugins.node, LocationServiceMap.node]), [
-    [Global.node, tempGlobalLayer],
+    Global.node.replace(tempGlobalLayer),
+  ]),
+)
+const activityLocations = Layer.effect(
+  LocationServiceMap.Service,
+  LayerMap.make(
+    (ref) =>
+      // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
+      Layer.succeed(
+        Location.Service,
+        Location.Service.of({
+          directory: ref.directory,
+          workspaceID: ref.workspaceID,
+          project: { id: Project.ID.global, directory: ref.directory, canonical: ref.directory },
+        }),
+      ) as unknown as Layer.Layer<LocationServices>,
+    { idleTimeToLive: Duration.infinity },
+  ),
+)
+const itWithActivity = testEffect(
+  AppNodeBuilder.build(LayerNode.group([Database.node, Bus.node, LocationServiceMap.node, LocationActivity.node]), [
+    LocationServiceMap.node.replace(activityLocations),
   ]),
 )
 
 describe("LocationServiceMap", () => {
+  itWithActivity.effect("does not refresh lifetime from inferred Session routing", () =>
+    Effect.gen(function* () {
+      const locations = yield* LocationServiceMap.Service
+      const bus = yield* Bus.Service
+      const ref = Location.Ref.make({ directory: AbsolutePath.make("/project") })
+      const sessionID = Session.ID.make("ses_routing_activity")
+      yield* Location.Service.pipe(Effect.provide(locations.get(ref)), Effect.scoped)
+      yield* bus.publish(SessionEvent.Created, {
+        sessionID,
+        location: ref,
+        projectID: Project.ID.global,
+        slug: "routing",
+        version: "test",
+      })
+      yield* TestClock.adjust("59 minutes")
+      const event = yield* bus.publish(SessionEvent.Execution.Succeeded, { sessionID })
+      expect(event).not.toHaveProperty("location")
+      yield* TestClock.adjust("2 minutes")
+      expect(Array.from(yield* RcMap.keys(locations.rcMap))).toEqual([])
+    }),
+  )
+
+  itWithActivity.effect("refreshes lifetime from Session events only", () =>
+    Effect.gen(function* () {
+      const locations = yield* LocationServiceMap.Service
+      const bus = yield* Bus.Service
+      const ref = Location.Ref.make({ directory: AbsolutePath.make("/project") })
+      const sessionID = Session.ID.make("ses_location_activity")
+      const read = Location.Service.pipe(Effect.provide(locations.get(ref)), Effect.scoped)
+
+      yield* read
+      yield* TestClock.adjust("59 minutes")
+      yield* bus.publish(Catalog.Event.Updated, {}, { location: ref })
+      yield* TestClock.adjust("2 minutes")
+      expect(Array.from(yield* RcMap.keys(locations.rcMap))).toEqual([])
+
+      yield* read
+      yield* bus.publish(SessionEvent.Execution.Started, { sessionID }, { location: ref })
+      yield* TestClock.adjust("59 minutes")
+      yield* bus.publish(SessionEvent.Execution.Succeeded, { sessionID }, { location: ref })
+      yield* TestClock.adjust("1 minute")
+      expect(Array.from(yield* RcMap.keys(locations.rcMap))).toEqual([ref])
+      yield* TestClock.adjust("59 minutes")
+      expect(Array.from(yield* RcMap.keys(locations.rcMap))).toEqual([])
+    }),
+  )
+
+  it.live("retries a location after its missing directory is recreated", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          const locations = yield* LocationServiceMap.Service
+          const directory = path.join(dir.path, "recreated")
+          const ref = Location.Ref.make({ directory: AbsolutePath.make(directory) })
+
+          const first = yield* Location.Service.pipe(Effect.provide(locations.get(ref)), Effect.scoped, Effect.exit)
+          expect(first._tag).toBe("Failure")
+
+          yield* Effect.promise(() => fs.mkdir(directory))
+          const location = yield* Location.Service.pipe(Effect.provide(locations.get(ref)), Effect.scoped)
+          expect(location.directory).toBe(ref.directory)
+        }),
+      ),
+    ),
+  )
+
+  it.live("keeps a workspace location admitted when its directory does not exist locally", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          const locations = yield* LocationServiceMap.Service
+          const directory = AbsolutePath.make(path.join(dir.path, "workspace-only"))
+          const workspaceRef = Location.Ref.make({ directory, workspaceID: Workspace.ID.make("wrk_liveness") })
+          const localRef = Location.Ref.make({ directory })
+
+          // The directory only exists inside the workspace, so neither liveness
+          // nor boot may consult the local filesystem: the full location graph
+          // must construct and the entry must survive release instead of being
+          // evicted by a zero idle time-to-live.
+          const location = yield* Location.Service.pipe(Effect.provide(locations.get(workspaceRef)), Effect.scoped)
+          expect(location.directory).toBe(directory)
+          expect(Array.from(yield* RcMap.keys(locations.rcMap))).toEqual([workspaceRef])
+
+          // A local ref with the same missing directory keeps the existing
+          // behavior: dropped as soon as it goes idle so a retry can rebuild it.
+          yield* Location.Service.pipe(Effect.provide(locations.get(localRef)), Effect.scoped, Effect.exit)
+          expect(Array.from(yield* RcMap.keys(locations.rcMap))).toEqual([workspaceRef])
+        }),
+      ),
+    ),
+  )
+
   itWithSdk.live("preserves embedded SDK plugins after Location eviction", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
@@ -209,7 +347,7 @@ describe("LocationServiceMap", () => {
           yield* Effect.promise(() =>
             fs.writeFile(
               file,
-              JSON.stringify({ plugins: [path.join(import.meta.dir, "plugin/fixtures/config-effect-plugin.ts")] }),
+              JSON.stringify({ plugins: [path.join(import.meta.dir, "plugin/fixtures/config-effect")] }),
             ),
           )
           yield* Fiber.join(updated)
@@ -380,7 +518,8 @@ describe("LocationServiceMap", () => {
           )
           const plugins = yield* Effect.gen(function* () {
             const plugins = yield* Plugin.Service
-            yield* (yield* PluginSupervisor.Service).flush
+            const supervisor = yield* PluginSupervisor.Service
+            yield* supervisor.flush
             return yield* plugins.list()
           }).pipe(
             Effect.scoped,
@@ -422,15 +561,22 @@ describe("LocationServiceMap", () => {
               fs.writeFile(
                 file,
                 JSON.stringify({
-                  plugins: ["-*", path.join(import.meta.dir, "plugin/fixtures/failing-plugin.ts")],
+                  plugins: ["-*", path.join(import.meta.dir, "plugin/fixtures/failing")],
                 }),
               ),
             )
             for (let attempt = 0; attempt < 100; attempt++) {
-              if ((yield* registry.list()).length === 0) break
+              if ((yield* registry.list()).some((plugin) => plugin.state.status === "failed")) break
               yield* Effect.sleep("20 millis")
             }
-            expect(yield* registry.list()).toEqual([])
+            expect(yield* registry.list()).toEqual([
+              {
+                id: Plugin.ID.make("failing-plugin"),
+                source: { type: "local", path: path.join(import.meta.dir, "plugin/fixtures/failing/index.ts") },
+                state: { status: "failed", error: expect.stringContaining("plugin failed") },
+                features: { server: true },
+              },
+            ])
 
             yield* Effect.promise(() => fs.writeFile(file, JSON.stringify({ plugins: ["-*", "opencode.agent"] })))
             for (let attempt = 0; attempt < 100; attempt++) {
@@ -510,7 +656,7 @@ describe("LocationServiceMap", () => {
     ),
   )
 
-  it.live("normalizes ref key shapes to one cached location graph", () =>
+  it.live("normalizes equivalent refs to one cached location graph", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
       (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
@@ -520,19 +666,30 @@ describe("LocationServiceMap", () => {
           Effect.gen(function* () {
             const locations = yield* LocationServiceMap.Service
             const directory = AbsolutePath.make(dir.path)
-            const absent = Location.Ref.make({ directory })
+            const alternate = AbsolutePath.make(directory.replaceAll("\\", "/"))
+            const absent = Location.Ref.make({ directory: alternate })
             const present = Location.Ref.make({ directory, workspaceID: undefined })
             // The two shapes are not structurally Equal: own-key sets differ.
             expect(Object.keys(absent)).toEqual(["directory"])
             expect(Object.keys(present)).toEqual(["directory", "workspaceID"])
             expect(Equal.equals(absent, present)).toBe(false)
+            if (process.platform === "win32") expect(absent.directory).not.toBe(present.directory)
+
+            expect(yield* locations.contextEffectOption(absent)).toEqual(Option.none())
+            expect(Array.from(yield* RcMap.keys(locations.rcMap))).toHaveLength(0)
 
             const first = yield* locations.contextEffect(absent)
             expect(yield* locations.contextEffect(present)).toBe(first)
-            expect(Array.from(yield* RcMap.keys(locations.rcMap))).toHaveLength(1)
+            expect(Option.getOrThrow(yield* locations.contextEffectOption(absent))).toBe(first)
+            expect(Option.getOrThrow(yield* locations.contextEffectOption(present))).toBe(first)
+            expect(Array.from(yield* RcMap.keys(locations.rcMap))).toEqual([
+              Location.Ref.make({ directory, workspaceID: undefined }),
+            ])
 
             // Invalidating with the shape opposite to the one that booted must evict.
             yield* locations.invalidate(present)
+            expect(yield* locations.contextEffectOption(absent)).toEqual(Option.none())
+            expect(yield* locations.contextEffectOption(present)).toEqual(Option.none())
             expect(Array.from(yield* RcMap.keys(locations.rcMap))).toHaveLength(0)
           }),
         ),
@@ -552,25 +709,9 @@ describe("LocationServiceMap", () => {
               yield* Reference.Service
               const catalog = yield* Catalog.Service
               yield* catalog.transform((editor) => editor.provider.update(providerID, () => {}))
+              const supervisor = yield* PluginSupervisor.Service
+              yield* supervisor.flush
               const registry = yield* Tool.Service
-              // Tool plugins register during the forked PluginSupervisor boot; wait for
-              // every expected tool rather than relying on batch ordering.
-              yield* Effect.forEach(
-                [
-                  "edit",
-                  "glob",
-                  "grep",
-                  "question",
-                  "read",
-                  "shell",
-                  "skill",
-                  "subagent",
-                  "webfetch",
-                  "websearch",
-                  "write",
-                ],
-                (name) => waitForTool(registry, name),
-              )
               return {
                 providers: yield* catalog.provider.all(),
                 tools: yield* toolDefinitions(registry),
@@ -648,8 +789,10 @@ describe("LocationServiceMap", () => {
               }),
             ),
           )
-          const failure = yield* SessionRunnerModel.Service.use((models) =>
-            models.resolve(
+          const failure = yield* Effect.gen(function* () {
+            const catalog = yield* Catalog.Service
+            const models = yield* SessionRunnerModel.Service
+            return yield* models.resolve(
               Session.Info.make({
                 id: Session.ID.make("ses_unavailable_model"),
                 projectID: Project.ID.global,
@@ -663,8 +806,9 @@ describe("LocationServiceMap", () => {
                 time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
                 location,
               }),
-            ),
-          ).pipe(Effect.provide(LocationServiceMap.Service.get(location)), Effect.flip)
+              catalog.model.available,
+            )
+          }).pipe(Effect.provide(LocationServiceMap.Service.get(location)), Effect.flip)
 
           expect(failure).toMatchObject({
             _tag: "SessionRunnerModel.ModelUnavailableError",
@@ -688,8 +832,10 @@ describe("LocationServiceMap", () => {
             ["azure-cognitive-services", "azure"],
             ["google-vertex-anthropic", "google-vertex"],
           ] as const) {
-            const failure = yield* SessionRunnerModel.Service.use((models) =>
-              models.resolve(
+            const failure = yield* Effect.gen(function* () {
+              const catalog = yield* Catalog.Service
+              const models = yield* SessionRunnerModel.Service
+              return yield* models.resolve(
                 Session.Info.make({
                   id: Session.ID.make(`ses_removed_${providerID}`),
                   projectID: Project.ID.global,
@@ -703,8 +849,9 @@ describe("LocationServiceMap", () => {
                   time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
                   location,
                 }),
-              ),
-            ).pipe(Effect.provide(LocationServiceMap.Service.get(location)), Effect.flip)
+                catalog.model.available,
+              )
+            }).pipe(Effect.provide(LocationServiceMap.Service.get(location)), Effect.flip)
 
             expect(failure).toMatchObject({
               _tag: "SessionRunnerModel.ModelUnavailableError",
@@ -756,6 +903,7 @@ describe("LocationServiceMap", () => {
                 time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
                 location,
               }),
+              catalog.model.available,
             )
           }).pipe(Effect.provide(LocationServiceMap.Service.get(location)))
 
@@ -792,9 +940,10 @@ describe("LocationServiceMap", () => {
                 })
                 .pipe(Effect.asVoid),
           })
-          yield* plugins.activate([{ ...reviewer, version: "1" }])
+          yield* plugins.activate([{ ...reviewer, revision: "1" }])
 
-          expect(yield* (yield* Agent.Service).get(Agent.ID.make("reviewer"))).toMatchObject({
+          const agents = yield* Agent.Service
+          expect(yield* agents.get(Agent.ID.make("reviewer"))).toMatchObject({
             description: "Reviews code",
             mode: "subagent",
           })
@@ -802,6 +951,63 @@ describe("LocationServiceMap", () => {
           Effect.scoped,
           Effect.provide(LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(dir.path) }))),
         ),
+      ),
+    ),
+  )
+
+  itWithSdk.live("lets public plugins mutate configured and runtime MCP servers", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          const url = "https://example.com/mcp"
+          yield* Effect.promise(() =>
+            fs.writeFile(
+              path.join(dir.path, "opencode.json"),
+              JSON.stringify({ mcp: { servers: { example: { type: "remote", url, disabled: true } } } }),
+            ),
+          )
+          const observed: Record<string, boolean | undefined> = {}
+          const sdk = yield* SdkPlugins.Service
+          yield* sdk.register(
+            EffectPlugin.define({
+              id: "mcp-codemode-policy",
+              effect: (ctx) =>
+                ctx.mcp
+                  .transform((mcp) => {
+                    for (const [name, server] of mcp.list()) {
+                      if (server.type !== "remote" || new URL(server.url).hostname !== "example.com") continue
+                      mcp.update(name, (current) => {
+                        current.codemode = false
+                        observed[name] = current.codemode
+                      })
+                    }
+                  })
+                  .pipe(Effect.asVoid),
+            }),
+          )
+
+          yield* Effect.gen(function* () {
+            const supervisor = yield* PluginSupervisor.Service
+            const mcp = yield* Mcp.Service
+            yield* supervisor.flush
+            expect(observed.example).toBe(false)
+            yield* mcp.add("dynamic", {
+              type: "remote",
+              url: "https://example.com/dynamic",
+              disabled: true,
+            })
+            expect(observed.dynamic).toBe(false)
+            expect((yield* mcp.servers()).map((server) => String(server.name))).toEqual(["dynamic", "example"])
+          }).pipe(
+            Effect.scoped,
+            Effect.provide(
+              LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(dir.path) })),
+            ),
+          )
+        }),
       ),
     ),
   )

@@ -1,12 +1,12 @@
 import { define } from "@opencode-ai/plugin/effect/plugin"
 import { Integration } from "@opencode-ai/schema/integration"
+import { Provider } from "@opencode-ai/schema/provider"
 import { Effect, Stream } from "effect"
 import { Bus } from "../bus.js"
 import { ModelsDev } from "../models-dev.js"
-import { Provider } from "../provider.js"
 
 export const ModelsDevPlugin = define({
-  id: "opencode.models-dev",
+  id: "opencode.models.dev",
   effect: Effect.fn(function* (ctx) {
     const modelsDev = yield* ModelsDev.Service
     const bus = yield* Bus.Service
@@ -37,7 +37,7 @@ export const ModelsDevPlugin = define({
         })
         for (const model of provider.models) {
           if (model.status === "deprecated") continue
-          catalog.model.update(provider.info.id, model.id, (draft) => Object.assign(draft, model))
+          catalog.model.update(provider.info.id, model.id, (draft) => Object.assign(draft, structuredClone(model)))
         }
       }
     })
@@ -55,8 +55,13 @@ export const ModelsDevPlugin = define({
 })
 
 function environmentNames(provider: ModelsDev.Snapshot) {
-  if (provider.info.id !== Provider.ID.azure) return [...provider.environment]
-  return [...provider.environment.filter((name) => name.endsWith("_API_KEY")), "AZURE_COGNITIVE_SERVICES_API_KEY"]
+  if (provider.info.id === Provider.ID.azure)
+    return [...provider.environment.filter((name) => name.endsWith("_API_KEY")), "AZURE_COGNITIVE_SERVICES_API_KEY"]
+  // models.dev advertises project, location, and the ADC credentials file path for
+  // Vertex. Those configure Google auth rather than carrying a key, so only the
+  // Express Mode key may become a credential; GoogleVertexPlugin handles activation.
+  if (provider.info.id === Provider.ID.googleVertex) return ["GOOGLE_VERTEX_API_KEY"]
+  return [...provider.environment]
 }
 
 function snapshots(data: readonly ModelsDev.Snapshot[]) {

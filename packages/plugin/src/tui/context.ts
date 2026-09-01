@@ -1,7 +1,9 @@
 import type {
   AgentInfo,
   CommandInfo,
+  FormCancelInput,
   FormInfo,
+  FormReplyInput,
   IntegrationInfo,
   LocationRef,
   McpResource,
@@ -56,10 +58,12 @@ interface LocationCollection<Value> {
   invalidate(location?: LocationRef): void
 }
 
+type OpenCodeEventMap = { [Type in OpenCodeEvent["type"]]: Extract<OpenCodeEvent, { type: Type }> }
+
 export interface Data {
   readonly on: <Type extends OpenCodeEvent["type"]>(
     type: Type,
-    handler: (event: Extract<OpenCodeEvent, { type: Type }>) => void,
+    handler: (event: OpenCodeEventMap[Type]) => void,
   ) => () => void
   readonly listen: (handler: (event: { details: OpenCodeEvent }) => void) => () => void
   readonly session: {
@@ -91,6 +95,8 @@ export interface Data {
       list(sessionID: string, location?: LocationRef): Array<FormInfo & { readonly location?: LocationRef }> | undefined
       sync(sessionID: string, location?: LocationRef): Promise<void>
       invalidate(sessionID: string, location?: LocationRef): void
+      reply(input: FormReplyInput, location?: LocationRef): Promise<void>
+      cancel(input: FormCancelInput, location?: LocationRef): Promise<void>
     }
   }
   readonly project: {
@@ -171,7 +177,7 @@ export interface SlotMap {
   readonly "prompt.footer.file": PromptFooterInput
   readonly "session.composer.top": { readonly sessionID: string }
   readonly "sidebar.content": { readonly sessionID: string }
-  readonly "sidebar.footer": Readonly<Record<string, never>>
+  readonly "sidebar.footer": { readonly sessionID: string }
 }
 export type SlotPath = keyof SlotMap
 
@@ -472,6 +478,7 @@ export interface Context {
   readonly data: Data
   readonly attention: Attention
   readonly theme: ResolvedTheme
+  readonly themeMode: "dark" | "light"
   readonly markdown: {
     registerCodeBlockRenderer(language: string, render: MarkdownCodeBlockRenderer): () => void
   }

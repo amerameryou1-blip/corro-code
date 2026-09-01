@@ -42,6 +42,9 @@ import m39 from "./migration/20260805200742_import_legacy_credentials.js"
 import m40 from "./migration/20260808023530_workspace_domain.js"
 import m41 from "./migration/20260811161259_execution_claim_attempts.js"
 import m42 from "./migration/20260812181746_session_inbox.js"
+import m43 from "./migration/20260812213948_worktree.js"
+import m44 from "./migration/20260819222447_session_viewed_state.js"
+import m45 from "./migration/20260823191254_nullable_workspace_binding.js"
 
 export const migrations = [
   m00,
@@ -87,4 +90,7 @@ export const migrations = [
   m40,
   m41,
   m42,
+  m43,
+  m44,
+  m45,
 ] satisfies DatabaseMigration.Migration[]

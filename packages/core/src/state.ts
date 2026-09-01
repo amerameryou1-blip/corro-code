@@ -15,6 +15,10 @@ export interface Registration {
   readonly dispose: Effect.Effect<void>
 }
 
+/**
+ * Registers and applies a scoped transform. Closing the owning Scope removes
+ * the transform and reloads the materialized state.
+ */
 export type Transform<DraftApi> = (
   transform: TransformCallback<DraftApi>,
 ) => Effect.Effect<Registration, never, Scope.Scope>
@@ -28,6 +32,7 @@ export interface Transformable<DraftApi> {
 
 type Batch = {
   active: boolean
+  readonly flush: boolean
   readonly reloads: Set<Reload>
 }
 
@@ -36,14 +41,15 @@ const CurrentBatch = Context.Reference<Batch | undefined>("@opencode/State/Curre
 })
 const reloadDebounce = 500
 
-export function batch<A, E, R>(effect: Effect.Effect<A, E, R>) {
+/** flush: false is terminal teardown: states whose transforms are removed stop rebuilding, including pending reloads. */
+export function batch<A, E, R>(effect: Effect.Effect<A, E, R>, options: { readonly flush?: boolean } = {}) {
   return Effect.gen(function* () {
     const current = yield* CurrentBatch
-    if (current?.active) return yield* effect
-    const batch: Batch = { active: true, reloads: new Set() }
+    if (current?.active && options.flush !== false) return yield* effect
+    const batch: Batch = { active: true, flush: options.flush !== false, reloads: new Set() }
     const exit = yield* effect.pipe(Effect.provideService(CurrentBatch, batch), Effect.exit)
     batch.active = false
-    yield* Effect.forEach(batch.reloads, (reload) => reload(), { discard: true })
+    if (batch.flush) yield* Effect.forEach(batch.reloads, (reload) => reload(), { discard: true })
     return yield* exit
   })
 }
@@ -69,10 +75,6 @@ export interface Options<State, DraftApi> {
 
 export interface Interface<State, DraftApi> extends Transformable<DraftApi> {
   readonly get: () => State
-  /**
-   * Registers and applies a scoped transform. Closing the owning Scope removes
-   * the transform and reloads the materialized state.
-   */
 }
 
 export function create<State, DraftApi>(options: Options<State, DraftApi>): Interface<State, DraftApi> {
@@ -81,6 +83,7 @@ export function create<State, DraftApi>(options: Options<State, DraftApi>): Inte
   let generation = 0
   let requestedAt = 0
   let running = false
+  let closed = false
   let waiters: { generation: number; done: Deferred.Deferred<void> }[] = []
   const semaphore = Semaphore.makeUnsafe(1)
 
@@ -89,18 +92,15 @@ export function create<State, DraftApi>(options: Options<State, DraftApi>): Inte
     if (options.finalize) yield* options.finalize(options.draft(next))
   })
 
-  const apply = (transform: TransformCallback<DraftApi>, draft: DraftApi) =>
-    Effect.sync(() => {
-      transform(draft)
-    })
-
   const materialize = Effect.fnUntraced(function* () {
+    if (closed) return
     const next = options.initial()
     const api = options.draft(next)
-    for (const transform of transforms)
-      yield* apply(transform.run, api).pipe(
-        Effect.withSpan("State.reload.update", { attributes: { state: options.name ?? "anonymous" } }),
-      )
+    for (const transform of transforms) {
+      yield* Effect.sync(() => {
+        transform.run(api)
+      })
+    }
     yield* commit(next)
   })
 
@@ -126,6 +126,7 @@ export function create<State, DraftApi>(options: Options<State, DraftApi>): Inte
     })
 
   const reload = Effect.fnUntraced(function* () {
+    if (closed) return
     const done = Deferred.makeUnsafe<void>()
     const clock = yield* Clock.Clock
     generation++
@@ -135,10 +136,10 @@ export function create<State, DraftApi>(options: Options<State, DraftApi>): Inte
       running = true
       yield* rebuild().pipe(Effect.forkDetach)
     }
-    return yield* Deferred.await(done)
+    yield* Deferred.await(done)
   })
 
-  const result: Interface<State, DraftApi> = {
+  return {
     get: () => state,
     transform: Effect.fn("State.transform")(function* (update) {
       yield* Effect.annotateCurrentSpan("state", options.name ?? "anonymous")
@@ -156,6 +157,11 @@ export function create<State, DraftApi>(options: Options<State, DraftApi>): Inte
                 return Effect.gen(function* () {
                   const batch = yield* CurrentBatch
                   if (batch?.active) {
+                    // Detached debounced reloads must also stay quiet after teardown.
+                    if (!batch.flush) {
+                      closed = true
+                      return
+                    }
                     batch.reloads.add(materializeReload)
                     return
                   }
@@ -179,5 +185,4 @@ export function create<State, DraftApi>(options: Options<State, DraftApi>): Inte
     }),
     reload,
   }
-  return result
 }

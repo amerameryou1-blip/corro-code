@@ -7,10 +7,17 @@ import path from "path"
 import type { Node } from "web-tree-sitter"
 import { shellParserWasm } from "#shell-parser-wasm"
 import { ShellSelect } from "./select.js"
+import { lazy } from "../util/lazy.js"
+import { Wildcard } from "../util/wildcard.js"
 
 type Part = { type: string; text: string }
 const CWD = new Set(["cd", "chdir", "popd", "pushd", "push-location", "set-location"])
 const POWERSHELL_PATH_FLAGS = new Set(["-literalpath", "-path"])
+
+export type Result = {
+  commands: Array<{ resource: string; save: string }>
+  directories: string[]
+}
 
 const ARITY: Record<string, number> = {
   cat: 1,
@@ -151,8 +158,19 @@ const ARITY: Record<string, number> = {
   "yarn dlx": 3,
   "yarn run": 3,
 }
+const PREFIX_LENGTH = Math.max(...Object.values(ARITY))
 
-export const scan = Effect.fn("ShellParse.scan")(function* (command: string, shell: string, cwd: string) {
+export const scan = Effect.fnUntraced(function* (
+  command: string,
+  shell: string,
+  cwd: string,
+  options?: { portable?: boolean },
+) {
+  if (options?.portable) return yield* scanPortable(command, shell, cwd)
+  return yield* scanLegacy(command, shell, cwd)
+})
+
+const scanLegacy = Effect.fnUntraced(function* (command: string, shell: string, cwd: string) {
   const parsers = yield* Effect.promise(load)
   const powershell = ShellSelect.ps(shell)
   const tree = (powershell ? parsers.ps : parsers.bash).parse(command)
@@ -184,6 +202,66 @@ export const scan = Effect.fn("ShellParse.scan")(function* (command: string, she
       ),
     (tree) => Effect.sync(() => tree.delete()),
   )
+})
+
+export const scanPortable = Effect.fnUntraced(function* (command: string, shell: string, cwd: string) {
+  const { ShellScan } = yield* Effect.tryPromise({
+    try: () => import("./scan.js"),
+    catch: (cause) => new Error(`Portable shell scanner failed to load: ${cause}`, { cause }),
+  })
+  const powershell = ShellSelect.ps(shell)
+  const result = powershell ? ShellScan.scanPowerShell(command) : ShellScan.scan(command)
+  if (result.kind === "opaque")
+    return yield* Effect.fail(new Error(`Portable shell scanner cannot analyze command: ${result.reason}`))
+
+  const output: Result = { commands: [], directories: [] }
+  for (const item of result.commands) {
+    // The legacy command walk skips declarations, not the substitutions within them.
+    if (item.declaration) continue
+    const words = item.redirectWordCount === undefined ? item.rawWords : item.rawWords.slice(0, item.redirectWordCount)
+    // The shipped PowerShell grammar treats bare statement-head foreach prefixes as control flow.
+    if (powershell && item.statementHead && /^foreach(?:-|$)/i.test(words[0] ?? "")) continue
+    const name = powershell ? words[0]?.toLowerCase() : words[0]
+    if (CWD.has(name)) {
+      output.directories.push(
+        ...directoryArgs(
+          words.flatMap((text): Part[] => {
+            const parameter = powershell ? /^(-(?:literalpath|path)):(.*)$/i.exec(text) : undefined
+            if (parameter)
+              return [
+                { type: "command_parameter", text: parameter[1] },
+                { type: "word", text: parameter[2] },
+              ]
+            return [{ type: powershell && text.startsWith("-") ? "command_parameter" : "word", text }]
+          }),
+          powershell,
+          cwd,
+          shell,
+        ),
+      )
+      continue
+    }
+    const selected = prefix(words.slice(0, PREFIX_LENGTH))
+    const conventional = `${selected.join(" ")} *`
+    const end = item.wordEnds?.[selected.length - 1]
+    // Keep existing grants stable unless normalized spacing loses the original source boundary.
+    const save =
+      !powershell || end === undefined || Wildcard.match(item.resource, conventional)
+        ? conventional
+        : (() => {
+            const boundary =
+              item.wordEnds?.find(
+                (value) => value >= end && (value >= item.resource.length || /\s/.test(item.resource[value])),
+              ) ?? end
+            const separator = /^\s+(?:`(?:\r\n|\r|\n)\s*)?/.exec(item.resource.slice(boundary))?.[0]
+            return `${item.resource.slice(0, boundary)}${separator ?? " "}*`
+          })()
+    output.commands.push({
+      resource: item.resource,
+      save,
+    })
+  }
+  return output
 })
 
 function parts(node: Node) {
@@ -252,7 +330,9 @@ function expandKnownDirectory(value: string) {
   // Unknown shell expressions cannot be resolved safely during permission analysis.
   if (value.includes("$") || value.includes("`") || value.startsWith("(")) return
   if (value === "~") return os.homedir()
-  if (value.startsWith("~/") || value.startsWith("~\\")) return path.join(os.homedir(), value.slice(2))
+  if (value.startsWith("~/") || (process.platform === "win32" && value.startsWith("~\\"))) {
+    return path.join(os.homedir(), value.slice(2))
+  }
   return value
 }
 
@@ -276,10 +356,7 @@ function resolve(asset: string) {
   return fileURLToPath(new URL(asset, import.meta.url))
 }
 
-const load = (() => {
-  let loading: ReturnType<typeof initialize> | undefined
-  return () => (loading ??= initialize())
-})()
+const load = lazy(initialize)
 
 async function initialize() {
   const { Parser, Language } = await import("web-tree-sitter")

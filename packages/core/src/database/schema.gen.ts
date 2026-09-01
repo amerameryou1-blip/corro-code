@@ -209,6 +209,9 @@ const schema: Omit<DatabaseMigration.Migration, "id"> = {
           \`model\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,
+          \`time_idle\` integer,
+          \`time_viewed\` integer,
+          \`idle_outcome\` text,
           \`time_compacting\` integer,
           \`time_archived\` integer,
           \`time_suspended\` integer,
@@ -220,9 +223,19 @@ const schema: Omit<DatabaseMigration.Migration, "id"> = {
         CREATE TABLE \`workspace\` (
           \`id\` text PRIMARY KEY,
           \`provider\` text NOT NULL,
-          \`binding\` text NOT NULL,
+          \`binding\` text,
           \`created_at\` integer NOT NULL,
           \`last_used_at\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`worktree\` (
+          \`project_id\` text NOT NULL,
+          \`directory\` text NOT NULL,
+          \`strategy\` text,
+          \`time_created\` integer NOT NULL,
+          CONSTRAINT \`worktree_pk\` PRIMARY KEY(\`project_id\`, \`directory\`),
+          CONSTRAINT \`fk_worktree_project_id_project_id_fk\` FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON DELETE CASCADE
         );
       `)
       yield* tx.run(`CREATE UNIQUE INDEX \`event_aggregate_seq_idx\` ON \`event\` (\`aggregate_id\`,\`seq\`);`)

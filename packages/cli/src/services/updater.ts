@@ -5,21 +5,21 @@ import { Context, Duration, Effect, FileSystem, Layer } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { parse, type ParseError } from "jsonc-parser"
 import path from "node:path"
-import semver from "semver"
+import { action, parseReleaseVersion, type Policy } from "./updater-action"
 
 declare const OPENCODE_CLI_NAME: string | undefined
 
-export type Policy = boolean | "notify"
-export type Action = "none" | "upgrade"
-type Method = "npm" | "pnpm" | "bun" | "yarn"
+export const methods = ["curl", "npm", "pnpm", "bun", "yarn"] as const
+export type Method = (typeof methods)[number]
 
 const packageName =
-  typeof OPENCODE_CLI_NAME === "string" && OPENCODE_CLI_NAME === "opencode2-node"
-    ? OPENCODE_CLI_NAME
-    : "@opencode-ai/cli"
+  typeof OPENCODE_CLI_NAME === "string" && OPENCODE_CLI_NAME === "opencode2-node" ? "opencode-node" : "@opencode-ai/cli"
 
 export interface Interface {
   readonly check: () => Effect.Effect<void>
+  readonly method: () => Effect.Effect<Method | undefined>
+  readonly latest: () => Effect.Effect<string, Error>
+  readonly upgrade: (method: Method, version: string) => Effect.Effect<void, Error>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/cli/Updater") {}
@@ -34,14 +34,6 @@ export function decodePolicy(text: string): Policy | undefined {
   if (typeof value === "boolean" || value === "notify") return value
 }
 
-export function action(current: string, latest: string, policy: Policy): Action {
-  if (policy === false) return "none"
-  if (!semver.valid(current) || !semver.valid(latest) || semver.eq(latest, current)) return "none"
-  // Major upgrades are never installed automatically.
-  if (semver.major(latest) !== semver.major(current)) return "none"
-  return "upgrade"
-}
-
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -54,7 +46,7 @@ export const layer = Layer.effect(
       const values = yield* Effect.forEach(["config.json", "opencode.json", "opencode.jsonc"], (name) =>
         fs.readFileString(path.join(global.config, name)).pipe(
           Effect.map(decodePolicy),
-          Effect.catch(() => Effect.succeed(undefined)),
+          Effect.orElseSucceed(() => undefined),
         ),
       )
       return values.findLast((value) => value !== undefined) ?? true
@@ -73,11 +65,19 @@ export const layer = Layer.effect(
             stdout: result.stdout.toString("utf8"),
             stderr: result.stderr.toString("utf8"),
           })),
-          Effect.catch(() => Effect.succeed({ code: 1, stdout: "", stderr: "" })),
+          Effect.orElseSucceed(() => ({ code: 1, stdout: "", stderr: "" })),
         )
     })
 
     const method = Effect.fnUntraced(function* () {
+      const binary = path.join(
+        global.home,
+        ".opencode",
+        "bin",
+        process.platform === "win32" ? "opencode2.exe" : "opencode2",
+      )
+      if (path.resolve(process.execPath) === path.resolve(binary)) return "curl"
+
       const checks: ReadonlyArray<{ method: Method; command: string[] }> = [
         { method: "npm", command: ["npm", "list", "-g", "--depth=0", packageName] },
         { method: "pnpm", command: ["pnpm", "list", "-g", "--depth=0", packageName] },
@@ -112,23 +112,37 @@ export const layer = Layer.effect(
       return data.version
     })
 
-    const upgrade = Effect.fnUntraced(function* (method: Method, version: string) {
+    const upgrade = Effect.fnUntraced(function* (method: Method, input: string) {
+      if (!parseReleaseVersion(input)) return yield* Effect.fail(new Error(`Invalid version: ${input}`))
+      const version = input.trim().replace(/^v/, "")
       const target = `${packageName}@${version}`
-      const commands: Record<Exclude<Method, "bun">, string[]> = {
+      const commands: Record<Exclude<Method, "bun" | "curl">, string[]> = {
         npm: ["npm", "install", "--global", target],
-        pnpm: ["pnpm", "install", "--global", target],
+        pnpm: ["pnpm", "add", "--global", `--allow-build=${packageName}`, target],
         yarn: ["yarn", "global", "add", target],
       }
-      const result = yield* method === "bun"
-        ? Effect.scoped(
-            Effect.gen(function* () {
-              // Bun does not prune old versions from its shared package cache.
-              yield* fs.makeDirectory(global.cache, { recursive: true })
-              const cache = yield* fs.makeTempDirectoryScoped({ directory: global.cache, prefix: "update-" })
-              return yield* run(["bun", "install", "--global", "--cache-dir", cache, target], "5 minutes")
-            }),
-          )
-        : run(commands[method], "5 minutes")
+      const result = yield* Effect.scoped(
+        Effect.gen(function* () {
+          if (method === "bun") {
+            // Bun does not prune old versions from its shared package cache.
+            yield* fs.makeDirectory(global.cache, { recursive: true })
+            const cache = yield* fs.makeTempDirectoryScoped({ directory: global.cache, prefix: "update-" })
+            return yield* run(["bun", "install", "--global", "--trust", "--cache-dir", cache, target], "5 minutes")
+          }
+          if (method === "curl") {
+            yield* fs.makeDirectory(global.cache, { recursive: true })
+            const directory = yield* fs.makeTempDirectoryScoped({ directory: global.cache, prefix: "update-" })
+            const installer = path.join(directory, "install")
+            const download = yield* run(
+              ["curl", "-fsSL", "-o", installer, "https://opencode.ai/v2/install"],
+              "5 minutes",
+            )
+            if (download.code !== 0) return download
+            return yield* run(["bash", installer, "--version", version, "--no-modify-path"], "5 minutes")
+          }
+          return yield* run(commands[method], "5 minutes")
+        }),
+      ).pipe(Effect.mapError((cause) => new Error(`Failed to update with ${method}`, { cause })))
       if (result.code === 0) return
       return yield* Effect.fail(new Error(result.stderr.trim() || `Failed to update with ${method}`))
     })
@@ -152,6 +166,8 @@ export const layer = Layer.effect(
           })
           const next = action(OPENCODE_VERSION, version, policy)
           if (next === "none") return yield* Effect.logInfo("update check done", { action: "up-to-date" })
+          if (next === "notify")
+            return yield* Effect.logInfo("OpenCode update available", { current: OPENCODE_VERSION, latest: version })
           const detected = yield* method()
           if (!detected) return yield* Effect.logWarning("automatic update skipped: installation method not found")
           yield* upgrade(detected, version)
@@ -161,8 +177,9 @@ export const layer = Layer.effect(
       Effect.catchCause((cause) => Effect.logWarning("automatic update failed", { cause })),
     )
 
-    return Service.of({ check })
+    return Service.of({ check, method, latest, upgrade })
   }),
 )
 
 export * as Updater from "./updater"
+export { action, type Action, type Policy } from "./updater-action"

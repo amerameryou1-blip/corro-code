@@ -2,9 +2,9 @@ export * as PermissionSaved from "./saved.js"
 
 import { eq } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
+import { Project } from "@opencode-ai/schema/project"
 import { Database } from "../database/database.js"
 import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
-import { Project } from "../project.js"
 import { PermissionTable } from "./sql.js"
 import { PermissionSaved } from "@opencode-ai/schema/permission-saved"
 
@@ -37,9 +37,9 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Pe
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const { db } = yield* Database.Service
+    const db = (yield* Database.Service).db
 
-    const list = Effect.fn("PermissionSaved.list")(function* (input?: ListInput) {
+    const list = Effect.fnUntraced(function* (input?: ListInput) {
       const rows = yield* db
         .select()
         .from(PermissionTable)

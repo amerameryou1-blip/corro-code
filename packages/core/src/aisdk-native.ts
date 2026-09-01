@@ -14,11 +14,22 @@ export interface MapInput {
   readonly packageName: string | undefined
   readonly settings: Readonly<Record<string, unknown>>
   readonly modelID: string
+  readonly providerID: string
 }
 
 export function map(input: MapInput): Mapping | undefined {
   const baseSettings = mapBaseSettings(input.settings)
   switch (input.packageName) {
+    case "@ai-sdk/anthropic":
+      return {
+        package: "@opencode-ai/ai/providers/anthropic",
+        settings: {
+          ...baseSettings,
+          ...mapAPIKey(input.settings),
+          ...(typeof input.settings.authToken === "string" ? { authToken: input.settings.authToken } : {}),
+          ...mapProviderOptions(input.settings, ["apiKey", "authToken", "baseURL"]),
+        },
+      }
     case "@ai-sdk/amazon-bedrock":
       return {
         package: "@opencode-ai/ai/providers/amazon-bedrock",
@@ -42,6 +53,19 @@ export function map(input: MapInput): Mapping | undefined {
           ...mapOpenAIOptions(input.settings),
         },
       }
+    case "@ai-sdk/cerebras":
+    case "@ai-sdk/deepinfra":
+    case "@ai-sdk/groq":
+    case "@ai-sdk/togetherai":
+      return {
+        package: `@opencode-ai/ai/providers/${input.packageName.slice("@ai-sdk/".length)}`,
+        settings: {
+          ...baseSettings,
+          ...mapAPIKey(input.settings),
+          ...mapProviderOptions(input.settings, ["apiKey", "baseURL", "fetch", "headers", "name"]),
+        },
+        ...(isStringRecord(input.settings.headers) ? { headers: input.settings.headers } : {}),
+      }
     case "@ai-sdk/google":
       return {
         package: "@opencode-ai/ai/providers/google",
@@ -50,6 +74,19 @@ export function map(input: MapInput): Mapping | undefined {
           ...mapAPIKey(input.settings),
           ...mapGoogleOptions(input.settings),
         },
+      }
+    case "@ai-sdk/google-vertex":
+      return {
+        package: "@opencode-ai/ai/providers/google-vertex",
+        settings: {
+          ...baseSettings,
+          ...(typeof input.settings.accessToken === "string" ? { accessToken: input.settings.accessToken } : {}),
+          ...mapAPIKey(input.settings),
+          ...(typeof input.settings.location === "string" ? { location: input.settings.location } : {}),
+          ...(typeof input.settings.project === "string" ? { project: input.settings.project } : {}),
+          ...mapGoogleOptions(input.settings),
+        },
+        ...(isStringRecord(input.settings.headers) ? { headers: input.settings.headers } : {}),
       }
     case "@ai-sdk/google-vertex/anthropic":
       return {
@@ -62,15 +99,47 @@ export function map(input: MapInput): Mapping | undefined {
           ...(isRecord(input.settings.thinking) || typeof input.settings.effort === "string"
             ? {
                 providerOptions: {
-                  anthropic: {
-                    ...(isRecord(input.settings.thinking) ? { thinking: input.settings.thinking } : {}),
-                    ...(typeof input.settings.effort === "string" ? { effort: input.settings.effort } : {}),
-                  },
+                  ...(isRecord(input.settings.thinking) ? { thinking: input.settings.thinking } : {}),
+                  ...(typeof input.settings.effort === "string" ? { effort: input.settings.effort } : {}),
                 },
               }
             : {}),
         },
         ...(isStringRecord(input.settings.headers) ? { headers: input.settings.headers } : {}),
+      }
+    case "@ai-sdk/mistral":
+      return {
+        package: "@opencode-ai/ai/providers/mistral",
+        settings: {
+          ...baseSettings,
+          ...mapAPIKey(input.settings),
+          ...mapMistralOptions(input.settings),
+        },
+        ...(isStringRecord(input.settings.headers) ? { headers: input.settings.headers } : {}),
+        ...(isRecord(input.settings.extraBody) ? { body: input.settings.extraBody } : {}),
+      }
+    case "@ai-sdk/openai":
+      return {
+        package: "@opencode-ai/ai/providers/openai",
+        settings: {
+          ...baseSettings,
+          ...mapAPIKey(input.settings),
+          ...(typeof input.settings.organization === "string" ? { organization: input.settings.organization } : {}),
+          ...(typeof input.settings.project === "string" ? { project: input.settings.project } : {}),
+          ...(isStringRecord(input.settings.queryParams) ? { queryParams: input.settings.queryParams } : {}),
+          ...mapProviderOptions(input.settings, ["apiKey", "baseURL", "organization", "project", "queryParams"]),
+        },
+      }
+    case "@ai-sdk/openai-compatible":
+      if (typeof input.settings.baseURL !== "string") return
+      return {
+        package: "@opencode-ai/ai/providers/openai-compatible",
+        settings: {
+          ...baseSettings,
+          ...mapAPIKey(input.settings),
+          provider: input.providerID,
+          ...mapProviderOptions(input.settings, ["apiKey", "baseURL"]),
+        },
       }
     case "@openrouter/ai-sdk-provider":
       return mapOpenRouter(input.settings, baseSettings)
@@ -84,6 +153,12 @@ export function map(input: MapInput): Mapping | undefined {
         },
       }
   }
+}
+
+function mapProviderOptions(settings: Readonly<Record<string, unknown>>, excluded: ReadonlyArray<string>) {
+  const options = Object.fromEntries(Object.entries(settings).filter(([name]) => !excluded.includes(name)))
+  if (Object.keys(options).length === 0) return {}
+  return { providerOptions: options }
 }
 
 function mapBedrockMantle(input: MapInput, baseSettings: Readonly<Record<string, unknown>>): Mapping | undefined {
@@ -216,7 +291,21 @@ function mapOpenAIOptions(settings: Readonly<Record<string, unknown>>) {
     ...(typeof settings.serviceTier === "string" ? { serviceTier: settings.serviceTier } : {}),
   }
   if (Object.keys(options).length === 0) return {}
-  return { providerOptions: { openai: options } }
+  return { providerOptions: options }
+}
+
+function mapMistralOptions(settings: Readonly<Record<string, unknown>>) {
+  const options = {
+    ...(typeof settings.safePrompt === "boolean" ? { safePrompt: settings.safePrompt } : {}),
+    ...(typeof settings.documentImageLimit === "number" ? { documentImageLimit: settings.documentImageLimit } : {}),
+    ...(typeof settings.documentPageLimit === "number" ? { documentPageLimit: settings.documentPageLimit } : {}),
+    ...(typeof settings.parallelToolCalls === "boolean" ? { parallelToolCalls: settings.parallelToolCalls } : {}),
+    ...(typeof settings.promptCacheKey === "string" ? { promptCacheKey: settings.promptCacheKey } : {}),
+    ...(typeof settings.reasoningEffort === "string" ? { reasoningEffort: settings.reasoningEffort } : {}),
+    ...(settings.promptMode === "reasoning" ? { promptMode: settings.promptMode } : {}),
+  }
+  if (Object.keys(options).length === 0) return {}
+  return { providerOptions: options }
 }
 
 function mapBaseSettings(settings: Readonly<Record<string, unknown>>) {
@@ -240,12 +329,13 @@ function mapGoogleOptions(settings: Readonly<Record<string, unknown>>) {
   }
   const options = {
     ...(typeof settings.cachedContent === "string" ? { cachedContent: settings.cachedContent } : {}),
+    ...(isStringRecord(settings.labels) ? { labels: settings.labels } : {}),
     ...(Array.isArray(settings.safetySettings) ? { safetySettings: settings.safetySettings } : {}),
     ...(typeof settings.serviceTier === "string" ? { serviceTier: settings.serviceTier } : {}),
     ...(Object.keys(thinkingConfig).length > 0 ? { thinkingConfig } : {}),
   }
   if (Object.keys(options).length === 0) return {}
-  return { providerOptions: { gemini: options } }
+  return { providerOptions: options }
 }
 
 function mapOpenRouter(
@@ -276,28 +366,21 @@ function mapOpenRouter(
 }
 
 function mapOpenRouterOptions(settings: Readonly<Record<string, unknown>>) {
-  const options = Object.fromEntries(
-    Object.entries(settings).filter(
-      ([key]) =>
-        ![
-          "apiKey",
-          "api_keys",
-          "appName",
-          "appUrl",
-          "authToken",
-          "baseURL",
-          "chunkTimeout",
-          "compatibility",
-          "extraBody",
-          "fetch",
-          "headers",
-          "promptCacheKey",
-          "timeout",
-        ].includes(key),
-    ),
-  )
-  if (Object.keys(options).length === 0) return {}
-  return { providerOptions: { openrouter: options } }
+  return mapProviderOptions(settings, [
+    "apiKey",
+    "api_keys",
+    "appName",
+    "appUrl",
+    "authToken",
+    "baseURL",
+    "chunkTimeout",
+    "compatibility",
+    "extraBody",
+    "fetch",
+    "headers",
+    "promptCacheKey",
+    "timeout",
+  ])
 }
 
 function isStringRecord(value: unknown): value is Readonly<Record<string, string>> {
@@ -310,5 +393,5 @@ function mapXAIOptions(settings: Readonly<Record<string, unknown>>) {
     ...(typeof settings.store === "boolean" ? { store: settings.store } : {}),
   }
   if (Object.keys(options).length === 0) return {}
-  return { providerOptions: { xai: options } }
+  return { providerOptions: options }
 }

@@ -65,7 +65,7 @@ export interface Admission {
   readonly blobs: Readonly<Record<string, Schema.Json>>
 }
 
-export class InitializationBlocked extends Schema.TaggedErrorClass<InitializationBlocked>()(
+export class InitializationBlocked extends Schema.TaggedError<InitializationBlocked>()(
   "Instructions.InitializationBlocked",
   { keys: Schema.Array(Key) },
 ) {
@@ -74,7 +74,7 @@ export class InitializationBlocked extends Schema.TaggedErrorClass<Initializatio
   }
 }
 
-export class DuplicateKeyError extends Schema.TaggedErrorClass<DuplicateKeyError>()("Instructions.DuplicateKeyError", {
+export class DuplicateKeyError extends Schema.TaggedError<DuplicateKeyError>()("Instructions.DuplicateKeyError", {
   key: Key,
 }) {
   override get message() {
@@ -193,18 +193,6 @@ export function renderUpdate(
 
 export function hash(value: Schema.Json) {
   return Hash.make(createHash("sha256").update(canonical(value)).digest("hex"))
-}
-
-export function applyDelta(
-  values: Readonly<Record<string, Schema.Json>>,
-  delta: Readonly<Record<string, Option.Option<Schema.Json>>>,
-): Readonly<Record<string, Schema.Json>> {
-  const result: Record<string, Schema.Json> = { ...values }
-  for (const [key, value] of Object.entries(delta)) {
-    if (Option.isNone(value)) delete result[key]
-    else result[key] = value.value
-  }
-  return result
 }
 
 export function applyHashDelta(values: Values, delta: Delta): Values {

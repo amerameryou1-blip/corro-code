@@ -13,7 +13,7 @@ const projectLayer = Layer.succeed(
   Project.Service,
   Project.Service.of({
     list: () => Effect.succeed([]),
-    directories: () => Effect.succeed([]),
+    update: () => Effect.die("not implemented"),
     resolve: () =>
       Effect.succeed({
         id: Project.ID.make("project"),
@@ -23,7 +23,7 @@ const projectLayer = Layer.succeed(
       }),
   }),
 )
-const it = testEffect(AppNodeBuilder.build(Location.boundNode(ref), [[Project.node, projectLayer]]))
+const it = testEffect(AppNodeBuilder.build(Location.boundNode(ref), [Project.node.replace(projectLayer)]))
 
 describe("Location", () => {
   it.effect("resolves the current project and vcs information", () =>

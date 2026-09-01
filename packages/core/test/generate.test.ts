@@ -15,13 +15,13 @@ import { testEffect } from "./lib/effect"
 
 const selected = Info.make({
   ...Info.default(Provider.ID.make("test-provider"), ID.make("gemini")),
-  package: Provider.aisdk("@ai-sdk/mistral"),
+  package: Provider.aisdk("@ai-sdk/cohere"),
 })
 const runtime = LanguageModel.make({ id: "gemini", provider: "test-provider", route: OpenAIChat.route })
 
 const catalog = Layer.mock(Catalog.Service, {
   provider: {
-    get: () => Effect.succeed(undefined),
+    get: () => Effect.undefined,
     all: () => Effect.die("unused"),
     available: () => Effect.die("unused"),
   },
@@ -35,9 +35,10 @@ const catalog = Layer.mock(Catalog.Service, {
 })
 const integrations = Layer.mock(Integration.Service, {
   connection: {
-    active: () => Effect.succeed(undefined),
+    active: () => Effect.undefined,
     resolve: () => Effect.die("unused"),
     key: () => Effect.die("unused"),
+    activate: () => Effect.die("unused"),
     update: () => Effect.die("unused"),
     remove: () => Effect.die("unused"),
   },
@@ -55,7 +56,6 @@ const integrations = Layer.mock(Integration.Service, {
 })
 const npm = Layer.mock(Npm.Service, {
   add: () => Effect.die("unused"),
-  install: () => Effect.die("unused"),
   which: () => Effect.die("unused"),
 })
 const aisdk = Layer.mock(AISDK.Service, {
@@ -65,7 +65,7 @@ const aisdk = Layer.mock(AISDK.Service, {
   },
   model: () => Effect.succeed(runtime),
 })
-const client = TestLLM.clientLayer.pipe(Layer.provide(TestLLM.layer({ fallback: TestLLM.text("OK", "generate") })))
+const client = TestLLM.testLayer({ fallback: TestLLM.text("OK", "generate") })
 
 const resolver = ModelResolver.layer.pipe(Layer.provide(Layer.mergeAll(catalog, integrations, npm, aisdk)))
 const it = testEffect(Generate.layer.pipe(Layer.provide(Layer.merge(resolver, client))))
@@ -93,6 +93,7 @@ resolverIt.effect("resolves dynamic models with their catalog metadata", () =>
       ref: Ref.make({ providerID: selected.providerID, id: selected.id }),
       capabilities: selected.capabilities,
       cost: selected.cost,
+      limit: selected.limit,
     })
   }),
 )

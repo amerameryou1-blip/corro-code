@@ -23,16 +23,16 @@ describe("session tab marquee", () => {
     scope.dispose()
   })
 
-  test("keeps the leading fade through a natural loop boundary", () => {
+  test("stops after one cycle", () => {
     jest.useFakeTimers()
     const scope = createRoot((dispose) => ({ marquee: createMarquee(() => false), dispose }))
 
     scope.marquee.enter("first", "opencode", 6)
-    jest.advanceTimersByTime(1_600)
+    jest.advanceTimersByTime(1_400)
 
     expect(scope.marquee.active()).toBe("first")
     expect(scope.marquee.offset()).toBe(0)
-    expect(scope.marquee.leading()).toBe(1)
+    expect(scope.marquee.leading()).toBe(0)
     scope.dispose()
   })
 

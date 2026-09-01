@@ -1,4 +1,4 @@
-export const dict: Record<string, string> = {
+const source = {
   "ui.sessionReview.title": "Session changes",
   "ui.sessionReview.title.git": "Git changes",
   "ui.sessionReview.title.branch": "Branch changes",
@@ -108,6 +108,9 @@ export const dict: Record<string, string> = {
   "ui.messagePart.context.search.other": "{{count}} searches",
   "ui.messagePart.context.list.one": "{{count}} list",
   "ui.messagePart.context.list.other": "{{count}} lists",
+  "ui.messagePart.context.match.one": "({{count}} match)",
+  "ui.messagePart.context.match.other": "({{count}} matches)",
+  "ui.messagePart.tools.used": "Used {{tools}}",
 
   "ui.list.loading": "Loading",
   "ui.list.empty": "No results",
@@ -132,6 +135,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.label": "Prompt",
   "ui.promptInput.placeholder.shell": "Enter shell command...",
   "ui.promptInput.placeholder.normal": "Ask anything, {{slash}} for commands, {{at}} for context...",
+  "ui.promptInput.placeholder.followUp": "Add follow-up, {{slash}} for commands, {{at}} for context...",
   "ui.promptInput.add": "Add images and files",
   "ui.promptInput.attachments": "Images and files",
   "ui.promptInput.context": "Context",
@@ -141,6 +145,9 @@ export const dict: Record<string, string> = {
   "ui.promptInput.chooseVariant": "Choose model variant",
   "ui.promptInput.send": "Send",
   "ui.promptInput.stop": "Stop",
+  "ui.promptInput.steer": "Steer",
+  "ui.promptInput.queue": "Queue",
+  "ui.promptInput.steerHint": "Send without interrupting",
 
   "ui.tabs.close": "Close tab",
 
@@ -153,6 +160,10 @@ export const dict: Record<string, string> = {
 
   "ui.tool.read": "Read",
   "ui.tool.loaded": "Loaded",
+  "ui.tool.loadedFile": "Loaded {{path}}",
+  "ui.tool.loadedSkill": "Loaded {{name}} skill",
+  "ui.tool.loadedSkills.one": "Loaded {{name}} skill",
+  "ui.tool.loadedSkills.other": "Loaded {{name}} skills",
   "ui.tool.list": "List",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
@@ -161,11 +172,17 @@ export const dict: Record<string, string> = {
   "ui.tool.websearch": "Web Search",
   "ui.tool.websearch.provider": "{{provider}} Web Search",
   "ui.tool.shell": "Shell",
+  "ui.tool.shell.writingCommand": "Writing command...",
+  "ui.tool.shell.exit": "Command exited with code {{code}}",
+  "ui.tool.shell.timeout": "Command timed out",
+  "ui.tool.shell.cancelled": "Command cancelled",
+  "ui.tool.execute": "Execute",
   "ui.tool.patch": "Patch",
   "ui.tool.questions": "Questions",
   "ui.tool.questions.numbered": "Questions {{number}}",
   "ui.tool.agent": "{{type}} Agent",
   "ui.tool.agent.default": "Agent",
+  "ui.tool.agent.delegating": "Delegating agent...",
   "ui.tool.skill": "Skill",
 
   "ui.basicTool.called": "Called `{{tool}}`",
@@ -188,6 +205,8 @@ export const dict: Record<string, string> = {
   "ui.common.next": "Next",
   "ui.common.submit": "Submit",
   "ui.common.showMore": "Show more",
+  "ui.common.moreCount.one": "+{{count}} more",
+  "ui.common.moreCount.other": "+{{count}} more",
 
   "ui.permission.deny": "Deny",
   "ui.permission.allowAlways": "Allow always",
@@ -201,9 +220,18 @@ export const dict: Record<string, string> = {
   "ui.message.revertMessage": "Revert message",
   "ui.message.copyResponse": "Copy response",
   "ui.message.copied": "Copied",
+  "ui.message.thought": "Thought",
   "ui.message.duration.seconds": "{{count}}s",
   "ui.message.duration.minutesSeconds": "{{minutes}}m {{seconds}}s",
   "ui.message.interrupted": "Interrupted",
+  "ui.sessionTimeline.notice.model": "Model",
+  "ui.sessionTimeline.notice.modelSwitched": "Switched to {{model}}",
+  "ui.sessionTimeline.notice.movedTo": "Moved to",
+  "ui.sessionTimeline.notice.movedTooltip": "Session working directory changed",
+  "ui.sessionTimeline.notice.failed": "{{actor}} failed",
+  "ui.sessionTimeline.notice.cancelled": "{{actor}} cancelled",
+  "ui.sessionTimeline.notice.finished": "{{actor}} finished",
+  "ui.sessionTimeline.notice.instructionsUpdated": "Instructions updated",
   "ui.message.queued": "Queued",
   "ui.message.attachment.alt": "attachment",
 
@@ -218,4 +246,13 @@ export const dict: Record<string, string> = {
   "ui.question.multiHint": "Select all answers that apply",
   "ui.question.singleHint": "Select one answer",
   "ui.question.custom.placeholder": "Type your answer...",
-}
+} satisfies Record<string, string>
+
+export type Key = keyof typeof source
+export type PluralCategory = "zero" | "one" | "two" | "few" | "many" | "other"
+export type PluralKey = {
+  [Entry in Key]: Entry extends `${infer Base}.other` ? (`${Base}.one` extends Key ? Base : never) : never
+}[Key]
+export type PluralLookupKey = `${PluralKey}.${PluralCategory}`
+export type LocaleKey = Key | PluralLookupKey
+export const dict: typeof source & Record<string, string> = source

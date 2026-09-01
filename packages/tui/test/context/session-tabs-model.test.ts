@@ -11,13 +11,22 @@ import {
   reopenSessionTab,
   seedSessionTabMotion,
   sessionTabComplete,
+  sessionTabDetail,
   sessionTabOverflowWidth,
-  sessionTabShortcutLabel,
+  sessionTabNumberLabel,
 } from "../../src/context/session-tabs-model"
 
 describe("session tabs", () => {
-  test("labels direct shortcut tabs and marks unbound tabs with a dot", () => {
-    expect(Array.from({ length: 12 }, (_, index) => sessionTabShortcutLabel(index))).toEqual([
+  test("appends the branch to the project detail", () => {
+    expect(sessionTabDetail("opencode", "feature/sidebar", "main", true)).toBe("opencode ⎇ feature/sidebar")
+    expect(sessionTabDetail("opencode", "feature/sidebar", undefined, true)).toBe("opencode ⎇ feature/sidebar")
+    expect(sessionTabDetail("opencode", "feature/sidebar", "main", false)).toBe("opencode")
+    expect(sessionTabDetail("opencode", "main", "main", true)).toBe("opencode")
+    expect(sessionTabDetail("opencode", undefined, "main", true)).toBe("opencode")
+  })
+
+  test("labels tabs by ordinal", () => {
+    expect(Array.from({ length: 12 }, (_, index) => sessionTabNumberLabel(index))).toEqual([
       "1",
       "2",
       "3",
@@ -27,9 +36,9 @@ describe("session tabs", () => {
       "7",
       "8",
       "9",
-      "0",
-      "·",
-      "·",
+      "10",
+      "11",
+      "12",
     ])
   })
 

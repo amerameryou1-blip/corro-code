@@ -81,7 +81,7 @@ describe("ConfigNormalize", () => {
 
   test("preserves arbitrary JSON-round-tripped native configuration", () => {
     FastCheck.assert(
-      FastCheck.property(Schema.toArbitrary(Info), (info) => {
+      FastCheck.property(Schema.toArbitrary(Info)(FastCheck), (info) => {
         const source = JSON.parse(JSON.stringify(Schema.encodeSync(Info)(info)))
         const result = normalized(source)
         expect(Schema.decodeUnknownSync(Info)(result.encoded)).toEqual(
@@ -150,6 +150,16 @@ describe("ConfigNormalize", () => {
   })
 
   test("migrates the legacy small model to the title agent", () => {
+    const result = normalized({ small_model: "anthropic/claude-haiku-4-5" })
+    expect(result.encoded.agents).toEqual({
+      title: {
+        model: { providerID: "anthropic", model: "claude-haiku-4-5" },
+      },
+    })
+    expect(result.diagnostics).toEqual([])
+  })
+
+  test("merges the legacy small model with the title agent", () => {
     const result = normalized({
       small_model: "anthropic/claude-haiku-4-5",
       agent: { title: { prompt: "Custom title prompt" } },
@@ -352,6 +362,20 @@ describe("ConfigNormalize", () => {
     ])
   })
 
+  test("normalizes MCP timeout fields in schema order with per-leaf recovery", () => {
+    const result = normalized({ mcp: { timeout: { execution: 3000, startup: "invalid", catalog: 2000 } } })
+
+    expect(result.encoded.mcp).toEqual({ timeout: { catalog: 2000, execution: 3000 } })
+    expect(result.diagnostics.map((item) => [item.kind, item.path])).toEqual([
+      ["invalid", ["mcp", "timeout", "startup"]],
+    ])
+    expect(normalized({ mcp: { timeout: {} } }).encoded.mcp).toBeUndefined()
+
+    const unknown = normalized({ mcp: { timeout: { unknown: 1000 } } })
+    expect(unknown.encoded.mcp).toBeUndefined()
+    expect(unknown.diagnostics.map((item) => [item.kind, item.path])).toEqual([["invalid", ["mcp", "timeout"]]])
+  })
+
   test("merges bounded compaction leaves and omits unsupported leaves", () => {
     const result = normalized({
       compaction: {
@@ -393,11 +417,13 @@ describe("ConfigNormalize", () => {
         enabled_providers: ["anthropic"],
         disabled_providers: ["openai"],
         experimental: {
+          portable_shell_scanner: true,
           subagent_depth: 0,
           policies: [{ action: "provider.use", resource: "custom", effect: "allow" }],
         },
       }).encoded.experimental,
     ).toEqual({
+      portable_shell_scanner: true,
       subagent_depth: 0,
       policies: [
         { action: "provider.use", resource: "*", effect: "deny" },

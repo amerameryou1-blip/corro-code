@@ -1,7 +1,20 @@
 import { Schema } from "effect"
-import { ContentBlockID, FinishReason, ProviderMetadata, ToolCallID } from "./ids.js"
-import { Message, ToolCallPart, ToolOutput, ToolResultPart, ToolResultValue, type ContentPart } from "./messages.js"
+import { LLM } from "@opencode-ai/schema/llm"
+import { ContentBlockID, ToolCallID } from "./ids.js"
+import {
+  Message,
+  ProviderMetadata,
+  ToolCallPart,
+  ToolOutput,
+  ToolResultPart,
+  ToolResultValue,
+  type ContentPart,
+} from "./messages.js"
 import { ProviderFailureClassification } from "./errors.js"
+
+export const FinishReason = LLM.FinishReason
+export type FinishReason = Schema.Schema.Type<typeof FinishReason>
+export { ProviderMetadata } from "./messages.js"
 
 /**
  * Token usage reported by an LLM provider.
@@ -99,6 +112,8 @@ export type TextDelta = Schema.Schema.Type<typeof TextDelta>
 export const TextEnd = Schema.Struct({
   type: Schema.tag("text-end"),
   id: ContentBlockID,
+  /** Authoritative complete value; replaces accumulated deltas when present. */
+  text: Schema.optional(Schema.String),
   providerMetadata: Schema.optional(ProviderMetadata),
 }).annotate({ identifier: "LLM.Event.TextEnd" })
 export type TextEnd = Schema.Schema.Type<typeof TextEnd>
@@ -121,6 +136,8 @@ export type ReasoningDelta = Schema.Schema.Type<typeof ReasoningDelta>
 export const ReasoningEnd = Schema.Struct({
   type: Schema.tag("reasoning-end"),
   id: ContentBlockID,
+  /** Authoritative complete value; replaces accumulated deltas when present. */
+  text: Schema.optional(Schema.String),
   providerMetadata: Schema.optional(ProviderMetadata),
 }).annotate({ identifier: "LLM.Event.ReasoningEnd" })
 export type ReasoningEnd = Schema.Schema.Type<typeof ReasoningEnd>
@@ -139,6 +156,8 @@ export const ToolInputDelta = Schema.Struct({
   id: ToolCallID,
   name: Schema.String,
   text: Schema.String,
+  /** Best-effort parse of all input fragments received through this delta. */
+  input: Schema.optional(Schema.Unknown),
 }).annotate({ identifier: "LLM.Event.ToolInputDelta" })
 export type ToolInputDelta = Schema.Schema.Type<typeof ToolInputDelta>
 
@@ -313,17 +332,32 @@ export const LLMEvent = Object.assign(llmEventTagged, {
 })
 export type LLMEvent = Schema.Schema.Type<typeof llmEventTagged>
 
+/** Joins deltas per fragment, letting an authoritative end value replace that fragment's accumulated deltas. */
+const joinFragments = <Delta extends { id: string; text: string }, End extends { id: string; text?: string }>(
+  events: ReadonlyArray<LLMEvent>,
+  isDelta: (event: LLMEvent) => event is Extract<LLMEvent, Delta>,
+  isEnd: (event: LLMEvent) => event is Extract<LLMEvent, End>,
+) => {
+  const order: string[] = []
+  const parts = new Map<string, string>()
+  for (const event of events) {
+    if (isDelta(event)) {
+      if (!parts.has(event.id)) order.push(event.id)
+      parts.set(event.id, (parts.get(event.id) ?? "") + event.text)
+    }
+    if (isEnd(event) && event.text !== undefined) {
+      if (!parts.has(event.id)) order.push(event.id)
+      parts.set(event.id, event.text)
+    }
+  }
+  return order.map((id) => parts.get(id)).join("")
+}
+
 const responseText = (events: ReadonlyArray<LLMEvent>) =>
-  events
-    .filter(LLMEvent.is.textDelta)
-    .map((event) => event.text)
-    .join("")
+  joinFragments(events, LLMEvent.is.textDelta, LLMEvent.is.textEnd)
 
 const responseReasoning = (events: ReadonlyArray<LLMEvent>) =>
-  events
-    .filter(LLMEvent.is.reasoningDelta)
-    .map((event) => event.text)
-    .join("")
+  joinFragments(events, LLMEvent.is.reasoningDelta, LLMEvent.is.reasoningEnd)
 
 const responseUsage = (events: ReadonlyArray<LLMEvent>) =>
   events.reduce<Usage | undefined>(
@@ -430,10 +464,11 @@ const reduceTextDelta = (state: ResponseState, event: TextDelta): ResponseState 
 const reduceTextEnd = (state: ResponseState, event: TextEnd): ResponseState => {
   const current = state.textParts[event.id]
   if (!current) return state
+  const text = event.text ?? current.text
   const providerMetadata = event.providerMetadata ?? current.providerMetadata
   return {
-    ...replaceContent(state, current.contentIndex, textContent(current.text, providerMetadata)),
-    textParts: { ...state.textParts, [event.id]: { ...current, providerMetadata } },
+    ...replaceContent(state, current.contentIndex, textContent(text, providerMetadata)),
+    textParts: { ...state.textParts, [event.id]: { ...current, text, providerMetadata } },
   }
 }
 
@@ -463,10 +498,11 @@ const reduceReasoningDelta = (state: ResponseState, event: ReasoningDelta): Resp
 const reduceReasoningEnd = (state: ResponseState, event: ReasoningEnd): ResponseState => {
   const current = state.reasoningParts[event.id]
   if (!current) return state
+  const text = event.text ?? current.text
   const providerMetadata = event.providerMetadata ?? current.providerMetadata
   return {
-    ...replaceContent(state, current.contentIndex, reasoningContent(current.text, providerMetadata)),
-    reasoningParts: { ...state.reasoningParts, [event.id]: { ...current, providerMetadata } },
+    ...replaceContent(state, current.contentIndex, reasoningContent(text, providerMetadata)),
+    reasoningParts: { ...state.reasoningParts, [event.id]: { ...current, text, providerMetadata } },
   }
 }
 
@@ -564,12 +600,12 @@ export class LLMResponse extends Schema.Class<LLMResponse>("LLM.Response")({
   usage: Schema.optional(Usage),
   finishReason: FinishReasonDetails,
 }) {
-  /** Concatenated assistant text assembled from streamed `text-delta` events. */
+  /** Concatenated assistant text; each fragment's `text-end` value replaces its accumulated deltas when present. */
   get text() {
     return responseText(this.events)
   }
 
-  /** Concatenated reasoning text assembled from streamed `reasoning-delta` events. */
+  /** Concatenated reasoning text; each fragment's `reasoning-end` value replaces its accumulated deltas when present. */
   get reasoning() {
     return responseReasoning(this.events)
   }

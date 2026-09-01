@@ -6,6 +6,8 @@ import { SplitBorder } from "../../../ui/border"
 import { Keymap } from "../../../context/keymap"
 import { SubagentsTab } from "./subagents-tab"
 import { ShellTab } from "./shell-tab"
+import { TerminalsTab } from "./terminals-tab"
+import { useConfig } from "../../../config"
 
 export interface ComposerHint {
   label: string
@@ -36,10 +38,12 @@ export type ComposerProps = {
   open: boolean
   defaultTab?: string
   onClose?: () => void
+  visibleTerminalID?: string
 }
 
 export function Composer(props: ComposerProps) {
   const theme = useTheme("elevated")
+  const config = useConfig().data
 
   const [store, setStore] = createStore({
     tabs: {} as Record<string, Tab>,
@@ -94,10 +98,12 @@ export function Composer(props: ComposerProps) {
   Keymap.createLayer(() => ({
     mode: "composer",
     enabled: () => props.open,
+    priority: 1,
     commands: [
       { bind: "left", title: "Previous tab", group: "Composer", run: () => switchTab(-1) },
       { bind: "right", title: "Next tab", group: "Composer", run: () => switchTab(1) },
       { bind: "escape", title: "Close composer", group: "Composer", run: close },
+      { bind: "ctrl+c", title: "Close composer", group: "Composer", run: close },
     ],
   }))
 
@@ -146,6 +152,9 @@ export function Composer(props: ComposerProps) {
             </box>
             <SubagentsTab sessionID={props.sessionID} />
             <ShellTab sessionID={props.sessionID} />
+            <Show when={config.session.terminal}>
+              <TerminalsTab sessionID={props.sessionID} visibleTerminalID={props.visibleTerminalID} />
+            </Show>
             <box flexDirection="row" gap={2} paddingLeft={1} flexShrink={0}>
               <For each={footerHints()}>
                 {(hint) => (

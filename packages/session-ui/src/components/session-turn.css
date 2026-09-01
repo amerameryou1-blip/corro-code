@@ -43,11 +43,15 @@
     align-self: stretch;
   }
 
+  [data-slot="session-turn-thinking-row"] {
+    width: 100%;
+    margin-top: 12px;
+  }
+
   [data-slot="session-turn-thinking"] {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 12px;
     width: 100%;
     min-width: 0;
     color: var(--text-weak);
@@ -122,9 +126,12 @@
     font-weight: var(--font-weight-regular);
     line-height: var(--line-height-large);
     cursor: pointer;
-    opacity: 0;
     transition: opacity 0.15s ease;
     margin-left: 4px;
+
+    @media (hover: hover) {
+      opacity: 0;
+    }
   }
 
   [data-component="session-turn-diffs-group"]:hover [data-slot="session-turn-diffs-toggle"] {
@@ -225,16 +232,6 @@
 
   [data-slot="session-turn-diff-view"]::-webkit-scrollbar {
     display: none;
-  }
-}
-
-body:not([data-new-layout]) [data-component="session-turn"] {
-  .error-card {
-    color: var(--text-on-critical-base);
-  }
-
-  [data-slot="session-turn-diffs-header"] {
-    background-color: var(--background-stronger);
   }
 }
 

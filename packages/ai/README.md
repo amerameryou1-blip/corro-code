@@ -214,22 +214,40 @@ the requests sent by code under test:
 import { Effect } from "effect"
 import { TestLLM } from "@opencode-ai/ai/testing"
 
-const testLLM = TestLLM.layer({
-  fallback: TestLLM.text("Hello from the test model", "text-1"),
-})
-
-// TestLLM.clientLayer provides LLMClient.Service and consumes TestLLM.Service.
 const programWithTestClient = Effect.gen(function* () {
+  const test = yield* TestLLM.Test
+  yield* test.push(TestLLM.text("Hello from the test model", "text-1"))
   const result = yield* program
-  const test = yield* TestLLM.Service
-  console.log(test.requests)
+  console.log(yield* test.requests())
   return result
-}).pipe(Effect.provide(TestLLM.clientLayer), Effect.provide(testLLM))
+}).pipe(Effect.provide(TestLLM.testLayer()))
 ```
 
-`TestLLM.push(...)` scripts one-shot responses, `TestLLM.always(...)` changes the fallback, and
-`TestLLM.wait(...)` lets concurrent tests wait until a request has arrived. Every received canonical request is
-available on the yielded `TestLLM.Service`.
+`testLayer()` provides the same object under `LLMClient.Service` and `TestLLM.Test`. Production consumes the
+normal client; tests use the additional controls. Each layer build has fresh state.
+
+- `test.push(...)` queues one-shot responses in execution order. Each argument is one response.
+- `test.always(response)` installs a repeatable fallback. The layer's `fallback` option sets its initial value.
+- `test.serve(request => response)` installs a request-dependent fallback. `always` and `serve` replace each
+  other without changing queued replies; queued replies take precedence.
+- `test.requests()` returns an array snapshot. `transformRequest` changes only the recorded observation;
+  `serve` receives the original canonical request.
+- `test.wait(count)` waits for request arrivals, not output or completion, and supports concurrent waiters.
+- `test.gate()` returns a scoped gate with countable `started` notifications and a `release` Effect. Release
+  unblocks all requests captured by that gate; closing its scope also releases it. Effect-aware test runners
+  already provide Scope.
+
+Constructing `stream()` or `generate()` does not record a request, invoke a responder, or consume a script.
+Each execution does. An exhausted queue without a fallback defects immediately rather than waiting for a
+future reply.
+
+Responses remain canonical event arrays or arbitrary `Stream<LLMEvent, AIError>` values. The client consumes
+supplied streams directly, preserving failure identity, finalizers, incomplete output, and post-finish tails;
+it does not repair or truncate them.
+
+The published legacy `Service`, `layer`, `clientLayer`, and module-level controls remain available as adapters
+over the same implementation, including the legacy live `requests` array. New tests should use `Test` and
+`testLayer`.
 
 ## Caching
 
@@ -237,11 +255,11 @@ Prompt caching is **on by default**. Every `LLMRequest` resolves to `cache: "aut
 
 ### Auto placement
 
-`"auto"` places up to four breakpoints — the last tool definition, the first system part, the last system part when distinct, and the final message boundary. These expose successively larger reusable prefixes for tools, the base agent, project instructions, and the active conversation. The rolling final-message boundary is the load-bearing detail in tool loops: it advances on every request so the previous cache entry stays within Anthropic's 20-block lookback.
+`"auto"` places up to four breakpoints — the last tool definition, the first system part, the last system part when distinct, and the final message boundary. These expose successively larger reusable prefixes for tools, the base agent, project instructions, and the active conversation. The rolling final-message boundary advances on every request so recent conversation prefixes remain reusable during tool loops.
 
 Tools precede every system and conversation block in the provider prefix, so tool definitions must remain byte-stable and deterministically ordered for downstream breakpoints to remain reusable.
 
-The math justifies the default: Anthropic's 5-minute cache write is 1.25× base, read is 0.1×, so a single reuse within 5 minutes already wins. One-shot completions below the per-model minimum-cacheable-token threshold silently no-op on the wire, so the worst case is harmless.
+Requests below a provider's minimum cacheable size simply do not produce a reusable cache entry.
 
 ### Opting out
 
@@ -285,6 +303,7 @@ LLM.request({
 | ----------------------- | ------------------------------------------------------------------------- |
 | Anthropic Messages      | emits up to 4 `cache_control` markers (4-breakpoint cap enforced)         |
 | Bedrock Converse        | emits up to 4 `cachePoint` blocks (4-breakpoint cap enforced)             |
+| OpenRouter              | emits up to 4 `cache_control` markers                                     |
 | OpenAI Chat / Responses | no-op (implicit caching above 1024 tokens)                                |
 | Gemini                  | no-op (implicit caching on 2.5+; explicit `CachedContent` is out-of-band) |
 
@@ -308,16 +327,14 @@ Included providers: OpenAI, Anthropic, Google (Gemini), Google Vertex Gemini and
 
 ### Package-like entrypoints
 
-Native catalog integrations load provider behavior through package-like entrypoints. These are export paths from the same `@opencode-ai/ai` npm package, not independently published packages. Each entrypoint exports the same `model(modelID, settings)` contract, and `settings` contains serializable provider configuration plus common `headers`, `body`, and `limits` overlays.
+Native catalog integrations load provider behavior through package-like entrypoints. These are export paths from the same `@opencode-ai/ai` npm package, not independently published packages. Each entrypoint exports the same `model(modelID, settings)` contract, and `settings` contains serializable provider configuration plus common `headers` and `body` overlays.
 
 ```ts
 import { model } from "@opencode-ai/ai/providers/openai/responses"
 
 const selected = model("gpt-5", {
   apiKey: process.env.OPENAI_API_KEY,
-  transport: "websocket",
   headers: { "x-application": "opencode" },
-  limits: { context: 200_000, output: 64_000 },
 })
 ```
 
@@ -332,7 +349,7 @@ OpenAI Chat and OpenAI Responses are separate semantic entrypoints:
 - `@opencode-ai/ai/providers/google-vertex/responses`
 - `@opencode-ai/ai/providers/google-vertex/messages`
 
-Responses HTTP versus WebSocket is a scoped `transport` setting on the OpenAI Responses entrypoint, not another entrypoint. Azure follows the same Chat/Responses split at `providers/azure/chat` and `providers/azure/responses`. Generic OpenAI-compatible Chat remains at `providers/openai-compatible`; the Responses adapter at `providers/openai-compatible/responses` uses the provider-neutral Open Responses protocol. OpenAI Responses extends that baseline with OpenAI tools, event variants, metadata, defaults, and transports. Generic Anthropic Messages-compatible providers use `providers/anthropic-compatible`, which the named Anthropic provider composes. Google Gemini and Amazon Bedrock expose their single native API through their existing provider paths.
+OpenAI Responses has one semantic route and uses HTTP by default. Advanced callers may supply a per-call WebSocket channel executor through `StreamOptions`; transport policy does not change provider settings, model identity, or route identity. The provider-neutral Open Responses implementation owns the reusable WebSocket request and event contract, while each provider opts in with its own handshake and connection policy. Azure follows the same Chat/Responses split at `providers/azure/chat` and `providers/azure/responses`. Generic OpenAI-compatible Chat remains at `providers/openai-compatible`; the Responses adapter at `providers/openai-compatible/responses` uses the provider-neutral Open Responses protocol. OpenAI Responses extends that baseline with OpenAI tools, event variants, metadata, and defaults. Generic Anthropic Messages-compatible providers use `providers/anthropic-compatible`, which the named Anthropic provider composes. Google Gemini and Amazon Bedrock expose their single native API through their existing provider paths.
 
 Vertex Gemini, Vertex Chat, Vertex Responses, and Vertex Messages are separate API entrypoints. All accept `project`, `location`, and an optional `accessToken`; when no explicit token or auth override is supplied they lazily use Google Application Default Credentials. Vertex Gemini instead selects express mode when `apiKey` or `GOOGLE_VERTEX_API_KEY` is present. Vertex Chat targets MaaS models through the OpenAI-compatible Chat Completions endpoint, while Vertex Responses targets Grok models and defaults `store` to `false` as required by Vertex. `providers/google-vertex` remains the default alias for `providers/google-vertex/gemini`.
 
@@ -372,10 +389,22 @@ Request options in order of stability:
 
 1. **`generation`** — portable knobs (`maxTokens`, `temperature`, `topP`, `topK`, penalties, seed, stop).
 2. **`promptCacheKey`** — stable cache affinity lowered by every protocol that supports it.
-3. **`providerOptions: { <provider>: {...} }`** — typed-at-the-facade provider-specific knobs (OpenAI `store`, Anthropic `thinking`, Gemini `thinkingConfig`, OpenRouter routing).
+3. **`providerOptions: { ... }`** — flat options inferred from the selected model (OpenAI `store`, Anthropic `thinking`, Gemini `thinkingConfig`, OpenRouter routing).
 4. **`http: { body, headers, query }`** — last-resort serializable overlays merged into the final HTTP request. Reach for this only when a stable typed path doesn't yet exist.
 
 Route/provider defaults are overridden by request-level values for each axis.
+
+The selected model supplies the provider-specific option type, so per-request overrides stay flat while the canonical runtime request remains provider-neutral:
+
+```ts
+LLM.request({
+  model,
+  prompt,
+  providerOptions: {
+    reasoningEffort: "low",
+  },
+})
+```
 
 ## Routes
 
@@ -388,6 +417,5 @@ This package is built on Effect. Public methods return `Effect` or `Stream`; pro
 ## See also
 
 - `AGENTS.md` — architecture, route construction, contributor guide
-- `STATUS.md` — native provider parity status and AI SDK migration gaps
 - `example/tutorial.ts` — runnable end-to-end walkthrough
 - `test/provider/*.test.ts` — fixture-first protocol tests; `*.recorded.test.ts` files cover live cassettes

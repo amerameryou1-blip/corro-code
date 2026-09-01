@@ -1,13 +1,12 @@
 import { describe, expect } from "bun:test"
-import { Effect, Exit, Scope } from "effect"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Bus } from "@opencode-ai/core/bus"
+import { Effect, Exit, Fiber, Scope } from "effect"
+import { TestClock } from "effect/testing"
 import { KV } from "@opencode-ai/core/kv"
 import { WebSearch } from "@opencode-ai/core/websearch"
 import { testEffect } from "./lib/effect"
+import { TestWebSearch } from "./lib/websearch"
 
-const it = testEffect(AppNodeBuilder.build(LayerNode.group([WebSearch.node, Bus.node, KV.node])))
+const it = testEffect(TestWebSearch.layer)
 
 const register = (id: string) =>
   Effect.gen(function* () {
@@ -36,11 +35,28 @@ const register = (id: string) =>
   })
 
 describe("WebSearch", () => {
+  it.effect("shares the normal and test interfaces without installing live providers", () =>
+    Effect.gen(function* () {
+      const websearch = yield* WebSearch.Service
+      const test = yield* TestWebSearch.Service
+
+      expect(websearch).toBe(test)
+      expect(yield* websearch.providers()).toEqual([])
+      expect(test.queries).toEqual([])
+      expect((yield* websearch.query({ query: "unconfigured" }).pipe(Effect.flip))._tag).toBe(
+        "WebSearch.ProviderRequired",
+      )
+      yield* test.wait(1)
+      expect(test.queries).toEqual([{ query: "unconfigured" }])
+    }),
+  )
+
   it.effect("executes an explicit provider without changing the default", () =>
     Effect.gen(function* () {
       yield* register("exa")
       const parallel = yield* register("parallel")
       const websearch = yield* WebSearch.Service
+      const test = yield* TestWebSearch.Service
 
       expect(yield* websearch.query({ query: "effect", providerID: parallel.providerID })).toEqual(
         new WebSearch.Response({
@@ -57,6 +73,7 @@ describe("WebSearch", () => {
       )
       expect((yield* websearch.query({ query: "default" }).pipe(Effect.flip))._tag).toBe("WebSearch.ProviderRequired")
       expect(parallel.calls).toEqual([{ query: "effect" }])
+      expect(test.queries).toEqual([{ query: "effect", providerID: parallel.providerID }, { query: "default" }])
     }),
   )
 
@@ -81,16 +98,56 @@ describe("WebSearch", () => {
     }),
   )
 
-  it.effect("uses the provider stored in KV", () =>
+  it.effect("reloads active transforms from their current source", () =>
     Effect.gen(function* () {
-      yield* register("exa")
+      const exa = yield* register("exa")
+      const parallel = yield* register("parallel")
+      const websearch = yield* WebSearch.Service
+      const source = { providerID: exa.providerID }
+      yield* websearch.transform((draft) => draft.default.set(source.providerID))
+
+      expect((yield* websearch.default())?.id).toBe(exa.providerID)
+      source.providerID = parallel.providerID
+      const reload = yield* websearch.reload().pipe(Effect.forkChild({ startImmediately: true }))
+      yield* TestClock.adjust("500 millis")
+      yield* Fiber.join(reload)
+      expect((yield* websearch.default())?.id).toBe(parallel.providerID)
+    }),
+  )
+
+  it.effect("persists the selected provider in KV", () =>
+    Effect.gen(function* () {
       const parallel = yield* register("parallel")
       const websearch = yield* WebSearch.Service
       const kv = yield* KV.Service
-      yield* kv.set("websearch:provider", parallel.providerID)
 
-      expect((yield* websearch.query({ query: "stored" })).providerID).toBe(parallel.providerID)
-      yield* kv.remove("websearch:provider")
+      yield* websearch.select(parallel.providerID)
+
+      expect(yield* kv.get(WebSearch.ProviderKey)).toBe(parallel.providerID)
+      expect((yield* websearch.query({ query: "remembered" })).providerID).toBe(parallel.providerID)
+    }),
+  )
+
+  it.effect("keeps config transforms above the persisted selection", () =>
+    Effect.gen(function* () {
+      const exa = yield* register("exa")
+      const parallel = yield* register("parallel")
+      const websearch = yield* WebSearch.Service
+      yield* websearch.select(parallel.providerID)
+      yield* websearch.transform((draft) => draft.default.set(exa.providerID))
+
+      expect((yield* websearch.query({ query: "configured" })).providerID).toBe(exa.providerID)
+    }),
+  )
+
+  it.effect("chooses a registered provider for random selection", () =>
+    Effect.gen(function* () {
+      yield* register("exa")
+      yield* register("parallel")
+      const websearch = yield* WebSearch.Service
+      yield* websearch.transform((draft) => draft.default.set("random"))
+
+      expect(["exa", "parallel"]).toContain((yield* websearch.query({ query: "random" })).providerID)
     }),
   )
 
@@ -98,11 +155,9 @@ describe("WebSearch", () => {
     Effect.gen(function* () {
       yield* register("exa")
       const websearch = yield* WebSearch.Service
-      const kv = yield* KV.Service
-      yield* kv.set("websearch:provider", false)
+      yield* websearch.transform((draft) => draft.default.set(false))
 
       expect((yield* websearch.query({ query: "disabled" }).pipe(Effect.flip))._tag).toBe("WebSearch.Disabled")
-      yield* kv.remove("websearch:provider")
     }),
   )
 

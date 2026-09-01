@@ -27,6 +27,26 @@ test("health.get decodes the readiness response", async () => {
   expect(result).toEqual({ healthy: true, version: "old", pid: 123 })
 })
 
+test("vcs.base decodes nullable review-base metadata", async () => {
+  const location = { directory: "/repo", project: { id: "global", directory: "/repo", canonical: "/repo" } }
+  const base = {
+    name: "release",
+    ref: "refs/remotes/origin/release",
+    source: "reflog",
+  }
+  for (const data of [base, null]) {
+    const httpClient = HttpClient.make((request) =>
+      Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({ location, data }))),
+    )
+    const result = await Effect.gen(function* () {
+      const client = yield* OpenCode.make({ baseUrl: "http://localhost:3000" })
+      return yield* client.vcs.base({ location: { directory: AbsolutePath.make("/repo") } })
+    }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient), Effect.runPromise)
+    expect(result.data).toEqual(data)
+    expect(result.location.directory).toBe("/repo")
+  }
+})
+
 test("session.get returns the decoded Effect projection", async () => {
   const httpClient = HttpClient.make((request) =>
     Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(session))),
@@ -111,7 +131,7 @@ test("event.subscribe exposes and decodes the native Effect event stream", async
   expect(Array.from(events).map((event) => event.type)).toEqual(["server.connected", "session.model.selected"])
   const durable = events[1]
   if (durable?.type !== "session.model.selected") throw new Error("Expected model event")
-  expect(DateTime.toEpochMillis(durable.created)).toBe(1_717_171_717_000)
+  expect(durable.created).toBe(1_717_171_717_000)
   expect(durable.durable).toEqual({ aggregateID: "ses_test", seq: 1, version: 1 })
 })
 
@@ -136,8 +156,10 @@ test("event.subscribe terminates on Effect protocol decode failures", async () =
 
 test("session methods retain decoded Effect inputs and outputs", async () => {
   const logQueries: Array<Record<string, string>> = []
+  const requests: Array<{ method: string; url: string }> = []
   const httpClient = HttpClient.make((request) => {
     const url = request.url
+    requests.push({ method: request.method, url })
     if (url.includes("/log")) {
       logQueries.push(Object.fromEntries(request.urlParams.params))
       return Effect.succeed(
@@ -170,7 +192,14 @@ test("session methods retain decoded Effect inputs and outputs", async () => {
       return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(session)))
     }
     if (request.method === "POST") {
-      return Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })))
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          request.url.includes("/interrupt")
+            ? Response.json({ interrupted: true })
+            : new Response(null, { status: 204 }),
+        ),
+      )
     }
     return Effect.succeed(
       HttpClientResponse.fromWeb(request, Response.json({ data: [session.data], cursor: { next: "next" } })),
@@ -183,6 +212,7 @@ test("session methods retain decoded Effect inputs and outputs", async () => {
     const created = yield* client.session.create({
       location: Location.Ref.make({ directory: AbsolutePath.make("/tmp/project") }),
     })
+    yield* client.session.view({ sessionID: Session.ID.make("ses_test"), idle: session.data.time.idle })
     yield* client.session.switchAgent({ sessionID: Session.ID.make("ses_test"), agent: Agent.ID.make("build") })
     yield* client.session.switchModel({
       sessionID: Session.ID.make("ses_test"),
@@ -199,16 +229,21 @@ test("session methods retain decoded Effect inputs and outputs", async () => {
     const log = yield* client.session
       .log({ sessionID: Session.ID.make("ses_test"), after: Event.Seq.make(0) })
       .pipe(Stream.runCollect)
-    yield* client.session.interrupt({ sessionID: Session.ID.make("ses_test") })
+    const interrupted = yield* client.session.interrupt({ sessionID: Session.ID.make("ses_test") })
     const message = yield* client.session.message({
       sessionID: Session.ID.make("ses_test"),
       messageID: SessionMessage.ID.make("msg_model"),
     })
-    return { page, active, created, admitted, context, log, message }
+    return { page, active, created, admitted, context, log, interrupted, message }
   }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient), Effect.runPromise)
 
-  expect(DateTime.toEpochMillis(result.page.data[0].time.created)).toBe(1_717_171_717_000)
+  const listed = result.page.data[0]
+  if (!listed?.time.idle || !listed.time.viewed) throw new Error("Expected attention times")
+  expect(DateTime.toEpochMillis(listed.time.created)).toBe(1_717_171_717_000)
+  expect(DateTime.toEpochMillis(listed.time.idle)).toBe(1_717_171_717_002)
+  expect(DateTime.toEpochMillis(listed.time.viewed)).toBe(1_717_171_717_001)
   expect(result.active).toEqual({ ses_test: { type: "running" } })
+  expect(result.interrupted).toEqual({ interrupted: true })
   expect(Object.getPrototypeOf(result.page.data[0])).toBe(Object.prototype)
   expect(Object.getPrototypeOf(result.created)).toBe(Object.prototype)
   expect(result.created.id).toBe("ses_test")
@@ -217,11 +252,10 @@ test("session methods retain decoded Effect inputs and outputs", async () => {
   expect(DateTime.toEpochMillis(result.admitted.timeCreated)).toBe(1_717_171_717_000)
   expect(result.context).toEqual([])
   expect(logQueries[0]).toEqual({ after: "0" })
+  expect(requests).toContainEqual({ method: "POST", url: "http://localhost:3000/api/session/ses_test/view" })
   const logged = Array.from(result.log)
   expect(logged.map((item) => item.type)).toEqual(["session.model.selected", "log.synced"])
-  expect(logged[0]?.type === "session.model.selected" && DateTime.toEpochMillis(logged[0].created)).toBe(
-    1_717_171_717_000,
-  )
+  expect(logged[0]?.type === "session.model.selected" && logged[0].created).toBe(1_717_171_717_000)
   expect(logged.at(-1)).toEqual(synced)
   expect(result.message).toEqual(expect.objectContaining({ id: "msg_model", type: "model-switched" }))
 })
@@ -260,6 +294,8 @@ const session = {
     time: {
       created: 1_717_171_717_000,
       updated: 1_717_171_717_000,
+      idle: 1_717_171_717_002,
+      viewed: 1_717_171_717_001,
     },
     title: "Test",
     location: { directory: "/tmp/project" },

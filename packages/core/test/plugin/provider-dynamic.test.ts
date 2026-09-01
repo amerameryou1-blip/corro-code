@@ -23,8 +23,10 @@ const itWithAISDK = testEffect(Layer.mergeAll(PluginTestLayer, AppNodeBuilder.bu
 function npmEntrypoint(entrypoint?: string) {
   return Npm.Service.of({
     add: () => Effect.succeed({ directory: "", entrypoint }),
-    install: () => Effect.void,
-    which: () => Effect.succeed(undefined),
+    resolve: () => Effect.succeed({ directory: "", entrypoint }),
+    check: () => Effect.succeed(false),
+    update: () => Effect.succeed({ directory: "", entrypoint }),
+    which: () => Effect.undefined,
   })
 }
 
@@ -156,7 +158,6 @@ describe("DynamicProviderPlugin", () => {
 
   itWithAISDK.live("wraps missing provider factory exports as AISDK init errors", () =>
     Effect.gen(function* () {
-      const plugin = yield* Plugin.Service
       const aisdk = yield* AISDK.Service
       const tmp = yield* tempEntrypoint("export const notAProviderFactory = true\n")
       yield* addPlugin(npmEntrypoint(tmp.entrypoint))
@@ -176,7 +177,6 @@ describe("DynamicProviderPlugin", () => {
 
   itWithAISDK.effect("uses the model modelID for the default language model", () =>
     Effect.gen(function* () {
-      const plugin = yield* Plugin.Service
       const aisdk = yield* AISDK.Service
       yield* addPlugin()
       const language = yield* aisdk.language(

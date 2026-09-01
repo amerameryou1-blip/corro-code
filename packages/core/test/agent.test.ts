@@ -22,8 +22,8 @@ const globalLayer = Layer.succeed(Global.Service, Global.Service.of(global))
 
 const it = testEffect(
   AppNodeBuilder.build(LayerNode.group([Agent.node, Bus.node, Location.node]), [
-    [Global.node, globalLayer],
-    [Location.node, locationLayer],
+    Global.node.replace(globalLayer),
+    Location.node.replace(locationLayer),
   ]) as unknown as Layer.Layer<unknown, never>,
 )
 
@@ -65,6 +65,26 @@ describe("Agent", () => {
 
       expect(yield* agent.get(id)).toMatchObject({ id, description: "Reviews code", mode: "subagent" })
       expect((yield* agent.list()).map((info) => info.id)).toEqual([id])
+    }),
+  )
+
+  it.effect("lists the selected default agent first", () =>
+    Effect.gen(function* () {
+      const agent = yield* Agent.Service
+      yield* agent.transform((editor) => {
+        editor.update(Agent.ID.make("build"), (info) => {
+          info.mode = "primary"
+        })
+        editor.update(Agent.ID.make("reviewer"), (info) => {
+          info.mode = "primary"
+        })
+        editor.update(Agent.ID.make("explore"), (info) => {
+          info.mode = "subagent"
+        })
+        editor.default(Agent.ID.make("reviewer"))
+      })
+
+      expect((yield* agent.list()).map((info) => String(info.id))).toEqual(["reviewer", "build", "explore"])
     }),
   )
 

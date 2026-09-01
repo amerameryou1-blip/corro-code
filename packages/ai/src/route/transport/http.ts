@@ -87,8 +87,15 @@ export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJs
         middleware: prepareInput.middleware,
       }
     }),
-  frames: (prepared, _request, runtime) =>
-    prepared.framing.frame(RequestExecutor.stream(runtime.http, prepared.request, prepared.middleware)),
+  execute: (prepared, _request, runtime) =>
+    Effect.gen(function* () {
+      const response = yield* runtime.http.execute(prepared.request, prepared.middleware)
+      return {
+        frames: prepared.framing.frame(RequestExecutor.responseStream(response)),
+        http: RequestExecutor.responseHttp(response),
+        body: prepared.framing.body,
+      }
+    }),
 })
 
 export const sseJson = {

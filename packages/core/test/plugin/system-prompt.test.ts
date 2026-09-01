@@ -7,6 +7,7 @@ import { PluginHooks } from "@opencode-ai/core/plugin/hooks"
 import { PluginHost } from "@opencode-ai/core/plugin/host"
 import { SystemPromptPlugin } from "@opencode-ai/core/plugin/system-prompt"
 import { Session } from "@opencode-ai/core/session"
+import { SessionSystemPrompt } from "@opencode-ai/core/session/system-prompt"
 import type { SessionHooks } from "@opencode-ai/plugin/effect/session"
 import { Model } from "@opencode-ai/schema/model"
 import { Provider } from "@opencode-ai/schema/provider"
@@ -14,10 +15,9 @@ import { Effect } from "effect"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "./fixture"
 import PROMPT_META from "../../src/plugin/system-prompt/meta.txt"
-import PROMPT_DEFAULT from "../../src/session/runner/prompt/base.txt"
 
 const it = testEffect(PluginTestLayer)
-const fallback = PROMPT_DEFAULT
+const fallback = SessionSystemPrompt.make([])
 const makeHost = Effect.gen(function* () {
   const agents = yield* Agent.Service
   const plugins = yield* Plugin.Service
@@ -32,6 +32,8 @@ const context = (id: string, system = fallback): SessionHooks["context"] => ({
   system: [SystemPart.make(system)],
   messages: [],
   tools: {},
+  generation: {},
+  providerOptions: {},
 })
 
 describe("SystemPromptPlugin", () => {
@@ -42,18 +44,20 @@ describe("SystemPromptPlugin", () => {
     expect(PROMPT_META).toContain("`read` for reading files")
     expect(PROMPT_META).toContain("`edit` for editing")
     expect(PROMPT_META).toContain("`write` for creating files")
+    expect(PROMPT_META).toContain("Follow that reminder for the files you may edit")
     expect(PROMPT_META).toContain("https://opencode.ai/v2/docs/")
-    expect(PROMPT_META).not.toMatch(/TodoWrite|Task tool|WebFetch|\bBash\b|https:\/\/opencode\.ai\/docs/)
+    expect(PROMPT_META).not.toMatch(
+      /TodoWrite|Task tool|WebFetch|\bBash\b|including planning files|https:\/\/opencode\.ai\/docs/,
+    )
   })
 
   test("uses granular IDs with a common prefix", () => {
     expect(SystemPromptPlugin.Plugins.map((plugin) => plugin.id)).toEqual([
-      "opencode.system-prompt.openai",
-      "opencode.system-prompt.google",
-      "opencode.system-prompt.anthropic",
-      "opencode.system-prompt.kimi",
-      "opencode.system-prompt.arcee",
-      "opencode.system-prompt.meta",
+      "opencode.prompt.openai",
+      "opencode.prompt.anthropic",
+      "opencode.prompt.kimi",
+      "opencode.prompt.arcee",
+      "opencode.prompt.meta",
     ])
   })
 
@@ -69,12 +73,12 @@ describe("SystemPromptPlugin", () => {
         ["gpt-4.1", "You are OpenCode, You and the user share the same workspace"],
         ["o3", "You are OpenCode, You and the user share the same workspace"],
         ["gpt-5-codex", "## Editing constraints"],
-        ["gemini-2.5-pro", "# Core Mandates"],
+        ["gemini-2.5-pro", fallback],
         ["claude-sonnet-4", "# Professional objectivity"],
         ["kimi-k2", "# Prompt and Tool Use"],
         ["trinity", "what command should I run to list files"],
         ["meta/muse-spark-1.1", "powered by Muse Spark"],
-        ["llama-3.3", "You are opencode, an interactive CLI tool"],
+        ["llama-3.3", fallback],
       ] as const
 
       yield* Effect.forEach(
@@ -160,15 +164,15 @@ describe("SystemPromptPlugin", () => {
     Effect.gen(function* () {
       const hooks = yield* PluginHooks.Service
       const pluginHost = yield* makeHost
-      yield* SystemPromptPlugin.GooglePlugin.effect(pluginHost)
+      yield* SystemPromptPlugin.AnthropicPlugin.effect(pluginHost)
       const gemini = context("gemini-2.5-pro")
       const claude = context("claude-sonnet-4")
 
       yield* hooks.trigger("session", "context", gemini)
       yield* hooks.trigger("session", "context", claude)
 
-      expect(gemini.system[0]?.text).toContain("# Core Mandates")
-      expect(claude.system[0]?.text).toBe(fallback)
+      expect(gemini.system[0]?.text).toBe(fallback)
+      expect(claude.system[0]?.text).toContain("# Professional objectivity")
     }),
   )
 

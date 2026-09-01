@@ -2,11 +2,12 @@ import { expect, test } from "bun:test"
 import { Schema } from "effect"
 import { Agent } from "@opencode-ai/core/agent"
 import { Session } from "@opencode-ai/core/session"
+import { SessionStore } from "@opencode-ai/core/session/store"
 import { Location } from "@opencode-ai/schema/location"
 import { Model } from "@opencode-ai/schema/model"
 import { Provider } from "@opencode-ai/schema/provider"
 import { Project } from "@opencode-ai/schema/project"
-import { ProjectDirectories } from "@opencode-ai/schema/project-directories"
+import { Worktree } from "@opencode-ai/schema/worktree"
 import { PermissionV1 } from "@opencode-ai/schema/permission-v1"
 import { Prompt } from "@opencode-ai/schema/prompt"
 import { SessionInbox } from "@opencode-ai/schema/session-inbox"
@@ -17,13 +18,12 @@ import { Connection } from "@opencode-ai/schema/connection"
 import { Credential } from "@opencode-ai/schema/credential"
 import { FileSystem } from "@opencode-ai/schema/filesystem"
 import { Integration } from "@opencode-ai/schema/integration"
-import { AI } from "@opencode-ai/schema/ai"
 import { LLM } from "@opencode-ai/schema/llm"
 import { Permission } from "@opencode-ai/schema/permission"
 import { Pty } from "@opencode-ai/schema/pty"
 import { Reference } from "@opencode-ai/schema/reference"
 import { Skill } from "@opencode-ai/schema/skill"
-import { AbsolutePath, DateTimeUtcFromMillis, optional, statics } from "@opencode-ai/schema/schema"
+import { AbsolutePath, optional, statics } from "@opencode-ai/schema/schema"
 
 test("Core reuses the canonical shared schemas", async () => {
   const schemaAgent = await import("@opencode-ai/schema/agent")
@@ -39,7 +39,7 @@ test("Core reuses the canonical shared schemas", async () => {
     coreModel,
     corePermission,
     corePermissionV1,
-    coreProjectCopy,
+    coreWorktree,
     corePty,
     coreProject,
     coreProvider,
@@ -60,7 +60,7 @@ test("Core reuses the canonical shared schemas", async () => {
     import("@opencode-ai/core/model"),
     import("@opencode-ai/core/permission"),
     import("@opencode-ai/core/v1/permission"),
-    import("@opencode-ai/core/project/copy"),
+    import("@opencode-ai/core/worktree"),
     import("@opencode-ai/core/pty"),
     import("@opencode-ai/core/project/schema"),
     import("@opencode-ai/core/provider"),
@@ -96,7 +96,6 @@ test("Core reuses the canonical shared schemas", async () => {
     [coreIntegration.Method, Integration.Method],
     [coreIntegration.Ref, Integration.Ref],
     [coreLocation.Ref, Location.Ref],
-    [coreAI.ProviderMetadata, AI.ProviderMetadata],
     [coreAI.FinishReason, LLM.FinishReason],
     [coreModel.ID, Model.ID],
     [coreModel.VariantID, Model.VariantID],
@@ -112,20 +111,23 @@ test("Core reuses the canonical shared schemas", async () => {
     [corePermission.Rule, Permission.Rule],
     [corePermission.Ruleset, Permission.Ruleset],
     [corePermissionV1.Event, PermissionV1.Event],
-    [coreProjectCopy.Event, ProjectDirectories.Event],
+    [coreWorktree.CreateInput, Worktree.CreateInput],
+    [coreWorktree.RemoveInput, Worktree.RemoveInput],
+    [coreWorktree.Info, Worktree.Info],
+    [coreWorktree.ListInput, Worktree.ListInput],
+    [coreWorktree.List, Worktree.List],
+    [coreWorktree.Event, Worktree.Event],
     [corePty.Info, Pty.Info],
     [corePty.Event, Pty.Event],
     [coreProject.ID, Project.ID],
     [coreProject.Current, Project.Current],
-    [coreProject.Directory, Project.Directory],
-    [coreProject.DirectoriesInput, Project.DirectoriesInput],
-    [coreProject.Directories, Project.Directories],
     [coreReference.LocalSource, Reference.LocalSource],
     [coreReference.GitSource, Reference.GitSource],
     [coreReference.Source, Reference.Source],
     [Session.ID, schemaSession.Session.ID],
     [Session.Info, schemaSession.Session.Info],
     [Session.ListAnchor, schemaSession.Session.ListAnchor],
+    [Session.ListInput, SessionStore.ListInput],
     [coreSessionInbox.Delivery, SessionInbox.Delivery],
     [coreSessionInbox.Item, SessionInbox.Item],
     [coreSessionInbox.User, SessionInbox.User],
@@ -162,7 +164,6 @@ test("Core reuses the canonical shared schemas", async () => {
   ]
   for (const [core, shared] of schemas) expect(core).toBe(shared)
 
-  expect(Agent.Info.default(Agent.ID.make("test"))).toEqual(Agent.Info.default(Agent.ID.make("test")))
   expect(coreModel.Info.default(coreProvider.ID.make("test"), coreModel.ID.make("model"))).toEqual(
     Model.Info.default(Provider.ID.make("test"), Model.ID.make("model")),
   )

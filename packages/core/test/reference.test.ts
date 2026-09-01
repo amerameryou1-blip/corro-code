@@ -1,7 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect, Exit, Layer, Scope } from "effect"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { Global } from "@opencode-ai/util/global"
 import { Reference } from "@opencode-ai/core/reference"
@@ -12,7 +11,7 @@ import { it } from "./lib/effect"
 const cache = Layer.mock(RepositoryCache.Service, {
   ensure: () => Effect.die("unexpected Git materialization"),
 })
-const referenceLayer = AppNodeBuilder.build(Reference.node, [[RepositoryCache.node, cache]])
+const referenceLayer = AppNodeBuilder.build(Reference.node, [RepositoryCache.node.replace(cache)])
 
 describe("Reference", () => {
   it.effect("registers normalized sources for the owning scope", () =>

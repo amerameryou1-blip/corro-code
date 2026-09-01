@@ -25,6 +25,9 @@ export type ID = typeof ID.Type
 export const Package = Schema.String
 export type Package = typeof Package.Type
 
+export const Activation = Schema.Literals(["auto", "enabled", "disabled"])
+export type Activation = typeof Activation.Type
+
 export const Overlays = {
   settings: Schema.Record(Schema.String, Schema.Any).pipe(optional),
   headers: Schema.Record(Schema.String, Schema.String).pipe(optional),
@@ -44,15 +47,16 @@ export const Request = Schema.Struct({
 export interface Info extends Schema.Schema.Type<typeof Info> {}
 export const Info = Schema.Struct({
   id: ID,
+  canonical: ID.pipe(optional),
   integrationID: Integration.ID.pipe(optional),
   name: Schema.String,
-  disabled: Schema.Boolean.pipe(optional),
+  activation: Activation,
   package: Package,
   ...Overlays,
 })
   .annotate({ identifier: "Provider.Info" })
   .pipe(
     statics(() => ({
-      empty: (id: ID): Info => ({ id, name: id, package: "" }),
+      empty: (id: ID): Info => ({ id, name: id, activation: "auto", package: "" }),
     })),
   )

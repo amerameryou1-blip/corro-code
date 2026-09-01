@@ -16,6 +16,7 @@ import { Permission } from "../../permission.js"
 import type { LocationMutation } from "../../location-mutation.js"
 import type { ReadTool } from "../../tool/plugin/read.js"
 import type { EditTool } from "../../tool/plugin/edit.js"
+import { AbsolutePath } from "../../schema.js"
 
 const legacySources = [
   { pattern: "{agent,agents}/**/*.md", primary: false },
@@ -31,19 +32,7 @@ type PathAction =
   | typeof ReadTool.name
   | typeof EditTool.name
 const pathActions = ["external_directory", "read", "edit"] as const satisfies readonly PathAction[]
-const agentKeys = new Set([
-  "model",
-  "variant",
-  "request",
-  "system",
-  "description",
-  "mode",
-  "hidden",
-  "color",
-  "steps",
-  "disabled",
-  "permissions",
-])
+const agentKeys = new Set(["variant", ...Object.keys(ConfigAgent.Info.fields)])
 
 export const Plugin = define({
   id: "opencode.config.agent",
@@ -51,22 +40,19 @@ export const Plugin = define({
     const config = yield* Config.Service
     const fs = yield* FSUtil.Service
     const global = yield* Global.Service
+    const loadEntry = Effect.fnUntraced(function* (entry: Entry) {
+      if (entry.type === "document") return [entry]
+      if (entry.type !== "directory") return []
+      const files = yield* discover(fs, entry.path)
+      return yield* Effect.forEach(files, (file) =>
+        fs.readFileStringSafe(file.filepath).pipe(
+          Effect.map((content) => (content ? decode(file, content) : undefined)),
+          Effect.orElseSucceed(() => undefined),
+        ),
+      ).pipe(Effect.map((documents) => documents.filter((document): document is Document => document !== undefined)))
+    })
     const load = Effect.fn("ConfigAgentPlugin.load")(function* () {
-      return yield* Effect.forEach(yield* config.entries(), (entry) => {
-        if (entry.type === "document") return Effect.succeed([entry])
-        if (entry.type !== "directory") return Effect.succeed([])
-        return Effect.gen(function* () {
-          const files = yield* discover(fs, entry.path)
-          return yield* Effect.forEach(files, (file) =>
-            fs.readFileStringSafe(file.filepath).pipe(
-              Effect.map((content) => (content ? decode(file, content) : undefined)),
-              Effect.catch(() => Effect.succeed(undefined)),
-            ),
-          ).pipe(
-            Effect.map((documents) => documents.filter((document): document is Document => document !== undefined)),
-          )
-        })
-      }).pipe(Effect.map((documents) => documents.flat()))
+      return yield* Effect.forEach(yield* config.entries(), loadEntry).pipe(Effect.map((documents) => documents.flat()))
     })
     const loaded = { documents: [] as Document[] }
     const reload = load().pipe(
@@ -159,8 +145,7 @@ function isPathAction(action: string): action is PathAction {
 }
 
 function expandHome(resource: string, home: string) {
-  if (resource === "~") return home
-  if (resource === "$HOME") return home
+  if (resource === "~" || resource === "$HOME") return home
   const relative = resource.startsWith("~/")
     ? resource.slice(2)
     : resource.startsWith("$HOME/") || resource.startsWith("$HOME\\")
@@ -179,7 +164,7 @@ function discover(fs: FSUtil.Interface, directory: string) {
       ),
   ).pipe(
     Effect.map((files) => files.flat()),
-    Effect.catch(() => Effect.succeed([])),
+    Effect.orElseSucceed(() => []),
   )
 }
 
@@ -210,5 +195,5 @@ function decode(file: { directory: string; filepath: string; primary: boolean },
     }),
   )
   if (!info) return
-  return new Document({ type: "document", path: file.filepath, info })
+  return new Document({ type: "document", path: AbsolutePath.make(file.filepath), info })
 }

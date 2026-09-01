@@ -95,6 +95,11 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (url.pathname === "/path") return json({ home: "", state: "", config: "", worktree, directory })
     if (url.pathname === "/api/location")
       return json({ directory, project: { id: "proj_test", directory: worktree, canonical: worktree } })
+    if (url.pathname === "/api/plugin")
+      return json({
+        location: { directory, project: { id: "proj_test", directory: worktree, canonical: worktree } },
+        data: [],
+      })
     if (url.pathname === "/api/vcs")
       return json({
         location: { directory, project: { id: "proj_test", directory: worktree, canonical: worktree } },
@@ -107,7 +112,12 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
       })
     if (url.pathname === "/api/project/current") return json({ id: "proj_test", directory: worktree })
     if (url.pathname === "/api/project") return json([])
-    if (url.pathname === "/api/project/proj_test/directories") return json([{ directory: worktree }])
+    if (url.pathname === "/api/worktree/proj_test") {
+      if (request.method === "GET") return json([{ directory: worktree }])
+      if (request.method === "POST") return json({ directory: `${worktree}/created` })
+      return new Response(null, { status: 204 })
+    }
+    if (url.pathname === "/api/worktree/proj_test/refresh") return new Response(null, { status: 204 })
     if (url.pathname === "/api/shell")
       return json({
         location: { directory, project: { id: "proj_test", directory: worktree, canonical: worktree } },
@@ -125,6 +135,8 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
       })
     if (url.pathname === "/api/session") return json({ data: [], cursor: {} })
     if (url.pathname === "/api/session/active") return json({ data: {} })
+    if (request.method === "POST" && /^\/api\/session\/[^/]+\/model$/.test(url.pathname))
+      return new Response(null, { status: 204 })
     if (url.pathname === "/api/permission/request")
       return json({
         location: { directory, project: { id: "proj_test", directory: worktree, canonical: worktree } },

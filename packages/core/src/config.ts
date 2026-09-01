@@ -10,12 +10,10 @@ import {
   ClaudeDirectory,
   Directory,
   Document,
-  File,
   Info,
   type Entry,
   Event,
 } from "@opencode-ai/schema/config"
-import { Integration } from "@opencode-ai/schema/integration"
 import { Credential } from "./credential.js"
 import { Bus } from "./bus.js"
 import { Watcher } from "./filesystem/watcher.js"
@@ -28,9 +26,8 @@ import { ConfigNormalize } from "./config/normalize.js"
 import { WellKnown } from "./wellknown.js"
 
 export function latest<K extends keyof Info>(entries: readonly Entry[], key: K): Info[K] | undefined {
-  return entries
-    .filter((entry): entry is Document => entry.type === "document")
-    .findLast((entry) => entry.info[key] !== undefined)?.info[key]
+  return entries.findLast((entry): entry is Document => entry.type === "document" && entry.info[key] !== undefined)
+    ?.info[key]
 }
 
 export interface Interface {
@@ -46,6 +43,9 @@ export interface Interface {
 
 export const Options = Schema.Struct({
   project: Schema.optional(Schema.Boolean),
+  // false skips the global config dir, ~/.claude, and ~/.agents; wellknown,
+  // file, and content entries still load.
+  global: Schema.optional(Schema.Boolean),
   file: Schema.optional(Schema.String),
   content: Schema.optional(Schema.String),
 })
@@ -91,6 +91,7 @@ export const layer = (options?: Options) =>
       const wellknown = yield* WellKnown.Service
       const names = ["opencode.json", "opencode.jsonc"]
       const reloadLock = Semaphore.makeUnsafe(1)
+      const fileTargets = new Set<AbsolutePath>()
       const decodeOptions = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
       const decodeInfo = Schema.decodeUnknownOption(Info, decodeOptions)
       const parseInfo = Effect.fn("Config.parseInfo")(function* (text: string, source: string) {
@@ -131,7 +132,36 @@ export const layer = (options?: Options) =>
         const substituted = yield* ConfigVariable.substitute({ type: "path", path: filepath, text })
         const info = yield* parseInfo(substituted, filepath)
         if (!info) return
-        return new Document({ type: "document", path: filepath, info })
+        return new Document({ type: "document", path: AbsolutePath.make(filepath), info })
+      })
+
+      const loadWellknownEntry = Effect.fnUntraced(function* (entry: WellKnown.Entry) {
+        const auth = entry.manifest.auth
+        if (!auth) return []
+        const credential = (yield* credentials.list(entry.integrationID)).at(-1)
+        if (!credential || credential.value.type !== "key") return []
+        const variables = { [auth.env]: credential.value.key }
+        const configs = yield* wellknown
+          .resolve(entry, variables)
+          .pipe(
+            Effect.catch(() =>
+              Effect.logWarning("failed to load wellknown config", { source: entry.origin }).pipe(
+                Effect.as([] as const),
+              ),
+            ),
+          )
+        return yield* Effect.forEach(configs, (config) =>
+          ConfigVariable.substitute({
+            type: "virtual",
+            source: entry.origin,
+            dir: entry.origin,
+            text: JSON.stringify(config),
+            env: variables,
+          }).pipe(
+            Effect.flatMap((text) => parseInfo(text, entry.origin)),
+            Effect.map((info) => (info ? new Document({ type: "document", info }) : undefined)),
+          ),
+        ).pipe(Effect.map((documents) => documents.filter((document) => document !== undefined)))
       })
 
       const loadWellknown = Effect.fn("Config.loadWellknown")(function* () {
@@ -142,38 +172,7 @@ export const layer = (options?: Options) =>
               Effect.logWarning("failed to discover wellknown config", { error }).pipe(Effect.as([] as const)),
             ),
           )
-        return yield* Effect.forEach(entries, (entry) =>
-          Effect.gen(function* () {
-            const auth = entry.manifest.auth
-            if (!auth) return []
-            const credential = (yield* credentials.list(entry.integrationID)).findLast(
-              (credential) => credential.value.type === "key",
-            )
-            if (!credential || credential.value.type !== "key") return []
-            const variables = { [auth.env]: credential.value.key }
-            const configs = yield* wellknown
-              .resolve(entry, variables)
-              .pipe(
-                Effect.catch(() =>
-                  Effect.logWarning("failed to load wellknown config", { source: entry.origin }).pipe(
-                    Effect.as([] as const),
-                  ),
-                ),
-              )
-            return yield* Effect.forEach(configs, (config) =>
-              ConfigVariable.substitute({
-                type: "virtual",
-                source: entry.origin,
-                dir: entry.origin,
-                text: JSON.stringify(config),
-                env: variables,
-              }).pipe(
-                Effect.flatMap((text) => parseInfo(text, entry.origin)),
-                Effect.map((info) => (info ? new Document({ type: "document", info }) : undefined)),
-              ),
-            ).pipe(Effect.map((documents) => documents.filter((document) => document !== undefined)))
-          }),
-        ).pipe(Effect.map((documents) => documents.flat()))
+        return yield* Effect.forEach(entries, loadWellknownEntry).pipe(Effect.map((documents) => documents.flat()))
       })
 
       const loadDirectory = Effect.fnUntraced(function* (directory: AbsolutePath) {
@@ -200,49 +199,53 @@ export const layer = (options?: Options) =>
                 })
                 .pipe(Effect.orDie)
 
+        const globalEnabled = options?.global !== false
+        // A walked path that resolves into a global root is global config
+        // however the walk reached it (home above the project, or a location
+        // beneath the global config dir), so global: false excludes it
+        // uniformly — classified once here, not per consumer below.
+        const globalRoots = [globalDirectory, globalClaudeDirectory, globalAgentsDirectory].map((item) =>
+          path.resolve(item),
+        )
+        const visible = globalEnabled
+          ? discovered
+          : discovered.filter((item) => {
+              const resolved = path.resolve(item)
+              return !globalRoots.some((root) => resolved === root || resolved.startsWith(root + path.sep))
+            })
         // We load certain files from a few other folders in the ecosystem
         const claude = [
           ...new Set([
-            ...((yield* fs.isDir(globalClaudeDirectory)) ? [globalClaudeDirectory] : []),
-            ...discovered.filter((item) => path.basename(item) === ".claude").toReversed(),
+            ...(globalEnabled && (yield* fs.isDir(globalClaudeDirectory)) ? [globalClaudeDirectory] : []),
+            ...visible.filter((item) => path.basename(item) === ".claude").toReversed(),
           ]),
         ].map((directory) => new ClaudeDirectory({ type: "claude", path: AbsolutePath.make(directory) }))
         const agents = [
           ...new Set([
-            ...((yield* fs.isDir(globalAgentsDirectory)) ? [globalAgentsDirectory] : []),
-            ...discovered.filter((item) => path.basename(item) === ".agents").toReversed(),
+            ...(globalEnabled && (yield* fs.isDir(globalAgentsDirectory)) ? [globalAgentsDirectory] : []),
+            ...visible.filter((item) => path.basename(item) === ".agents").toReversed(),
           ]),
         ].map((directory) => new AgentsDirectory({ type: "agents", path: AbsolutePath.make(directory) }))
 
-        const directories = [
-          globalDirectory,
-          ...discovered
-            .filter((item) => path.basename(item) === ".opencode")
-            .toReversed()
-            .map((directory) => AbsolutePath.make(directory)),
-        ]
-        const directPaths = discovered
+        const projectDirectories = visible
+          .filter((item) => path.basename(item) === ".opencode")
+          .toReversed()
+          .map((directory) => AbsolutePath.make(directory))
+        const directPaths = visible
           .filter((item) => ![".agents", ".claude", ".opencode"].includes(path.basename(item)))
           .toReversed()
-        const direct = yield* Effect.forEach(directPaths, (filepath) =>
-          loadFile(filepath).pipe(
-            Effect.map((config) => [
-              ...(config ? [config] : []),
-              new File({ type: "file", path: AbsolutePath.make(filepath) }),
-            ]),
-          ),
-        ).pipe(
+        fileTargets.clear()
+        directPaths.forEach((filepath) => fileTargets.add(AbsolutePath.make(filepath)))
+        const direct = yield* Effect.forEach(directPaths, (filepath) => loadFile(filepath)).pipe(
           Effect.orDie,
-          Effect.map((entries) => entries.flat()),
+          Effect.map((entries) => entries.filter((entry): entry is Document => entry !== undefined)),
         )
 
         const file = options?.file
+        if (file) fileTargets.add(AbsolutePath.make(path.resolve(file)))
         const explicit = file
           ? yield* loadFile(path.resolve(file)).pipe(
-              Effect.map((config) => [
-                ...(config ? [config] : []),
-                new File({ type: "file", path: AbsolutePath.make(path.resolve(file)) }),
-              ]),
+              Effect.map((config) => (config ? [config] : [])),
               Effect.orDie,
             )
           : []
@@ -260,15 +263,21 @@ export const layer = (options?: Options) =>
               )
             : []
 
-        const supplementary = yield* Effect.forEach(directories, loadDirectory).pipe(Effect.orDie)
+        // Global entries sit below explicit and direct files; project
+        // directories rank above them.
+        const globalSupplementary = globalEnabled ? yield* loadDirectory(globalDirectory).pipe(Effect.orDie) : []
+        const projectSupplementary = yield* Effect.forEach(projectDirectories, loadDirectory).pipe(
+          Effect.orDie,
+          Effect.map((entries) => entries.flat()),
+        )
         return [
           ...(yield* loadWellknown().pipe(Effect.orDie)),
           ...claude,
           ...agents,
-          ...(supplementary[0] ?? []),
+          ...globalSupplementary,
           ...explicit,
           ...direct,
-          ...supplementary.slice(1).flat(),
+          ...projectSupplementary,
           ...content,
         ]
       })
@@ -285,7 +294,10 @@ export const layer = (options?: Options) =>
       const watched = new Set<string>()
       const reconcile = Effect.fn("Config.reconcileWatches")(function* (entries: readonly Entry[]) {
         const directories = entries.flatMap((entry) => (entry.type === "directory" ? [entry.path] : []))
-        const files = entries.flatMap((entry) => (entry.type === "file" ? [entry.path] : []))
+        const files = [
+          ...entries.flatMap((entry) => (entry.type === "document" && entry.path ? [entry.path] : [])),
+          ...fileTargets,
+        ]
         const targets = [
           ...directories.map((path) => ({ path, type: "directory" as const, ignore })),
           ...files
@@ -304,16 +316,15 @@ export const layer = (options?: Options) =>
         }
       })
 
-      const reload = Effect.fn("Config.reload")(() =>
-        reloadLock.withPermit(
-          Effect.gen(function* () {
-            const next = yield* discover()
-            if (isDeepStrictEqual(configs, next)) return
-            configs = next
-            yield* reconcile(next)
-            yield* bus.publish(Event.Updated, {})
-          }),
-        ),
+      const reload = Effect.fn("Config.reload")(
+        function* () {
+          const next = yield* discover()
+          yield* reconcile(next)
+          if (isDeepStrictEqual(configs, next)) return
+          configs = next
+          yield* bus.publish(Event.Updated, {})
+        },
+        (effect) => reloadLock.withPermit(effect),
       )
 
       yield* Stream.fromPubSub(updates).pipe(
@@ -325,11 +336,11 @@ export const layer = (options?: Options) =>
         ),
         Effect.forkScoped({ startImmediately: true }),
       )
-      yield* bus.subscribe(Integration.Event.ConnectionUpdated).pipe(
+      yield* bus.subscribe(Credential.Event.Switched).pipe(
         Stream.filterEffect((event) =>
           wellknown.entries().pipe(
             Effect.map((entries) => entries.some((entry) => entry.integrationID === event.data.integrationID)),
-            Effect.catch(() => Effect.succeed(false)),
+            Effect.orElseSucceed(() => false),
           ),
         ),
         Stream.runForEach(() =>
@@ -365,7 +376,7 @@ export const layer = (options?: Options) =>
       yield* reconcile(initial)
 
       return Service.of({
-        entries: Effect.fn("Config.entries")(function* () {
+        entries: Effect.fnUntraced(function* () {
           return configs
         }),
         changes: () => Stream.fromPubSub(updates),

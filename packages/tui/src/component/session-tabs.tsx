@@ -1,6 +1,7 @@
-import { RGBA, ScrollBoxRenderable, TextAttributes, type MouseEvent } from "@opentui/core"
+import { BoxRenderable, RGBA, ScrollBoxRenderable, TextAttributes, type MouseEvent } from "@opentui/core"
 import {
   For,
+  Index,
   Match,
   Show,
   Switch,
@@ -11,17 +12,18 @@ import {
   onCleanup,
   untrack,
 } from "solid-js"
-import { useTerminalDimensions } from "@opentui/solid"
+import { Portal, useTerminalDimensions } from "@opentui/solid"
 import { useConfig } from "../config"
 import { useSessionTabs } from "../context/session-tabs"
 import { useData } from "../context/data"
-import { useTheme, useThemes } from "../context/theme"
+import { useTheme } from "../context/theme"
 import {
   adaptiveSessionTabLayout,
   moveSessionTab,
   NEW_SESSION_TAB_TITLE,
   sessionTabComplete,
-  sessionTabShortcutLabel,
+  sessionTabDetail,
+  sessionTabNumberLabel,
   seedSessionTabMotion,
   sessionTabOverflowWidth,
   type SessionTab,
@@ -33,20 +35,51 @@ import { TabPulse, unreadGlowIntensity } from "./tab-pulse"
 import { tint } from "../theme/color"
 import { SESSION_SIDEBAR_WIDTH } from "../ui/layout"
 import { projectName } from "../util/project"
-import { marqueeCycleWidth, marqueeOverflows, marqueeText } from "../util/marquee"
+import { marqueeCycleWidth, marqueeOverflows, marqueeTextParts } from "../util/marquee"
 import { useDialog } from "../ui/dialog"
 import { DialogSessionRename } from "./dialog-session-rename"
 import { Keymap } from "../context/keymap"
-import { moveSelection } from "../ui/select-controller"
+import { registerOpencodeSpinner } from "./register-spinner"
+import { SPINNER_FRAMES } from "./spinner-frames"
+import "./title-shimmer"
+
+registerOpencodeSpinner()
+
+export const TAB_SPINNERS = {
+  dots: { frames: SPINNER_FRAMES, interval: 80 },
+  arcs: { frames: ["◜", "◝", "◞", "◟"], interval: 120 },
+  quadrants: { frames: ["◴", "◷", "◶", "◵"], interval: 120 },
+  line: { frames: ["|", "/", "-", "\\"], interval: 120 },
+}
+export type TabSpinner = keyof typeof TAB_SPINNERS
+
+export const TAB_UNREAD_MARKERS = {
+  "small-dot": "•",
+  dot: "●",
+  square: "▪",
+  "large-square": "■",
+}
+export type TabUnreadMarker = keyof typeof TAB_UNREAD_MARKERS
 
 // A long title fades out over its last cells instead of cutting hard.
 const FADE_WIDTH = 4
 // The add button renders as " + " at the end of the strip, so the tab layout leaves it room.
 const ADD_TAB_WIDTH = 3
 const MARQUEE_DELAY = 600
-const MARQUEE_INTERVAL = 100
+const MARQUEE_INTERVAL = 80
 const CONTEXT_MENU_WIDTH = 16
+const MIDDLE_MOUSE_BUTTON = 1
 const RIGHT_MOUSE_BUTTON = 2
+const MOUSE_CLOSE_HOLD_MS = 5_000
+
+type MouseCloseHold = {
+  items: string[]
+  ids: string[]
+  widths: number[]
+  closed: string
+  target: string
+  x: number
+}
 
 type TabContextMenuState = {
   x: number
@@ -64,16 +97,114 @@ export const EMPTY_SESSION_TAB_STATUS: SessionTabsStatus = {
   promptPulse: 0,
   attention: false,
   busy: false,
+  renaming: false,
 }
 export type SessionTabsController = Pick<ContextController, "tabs" | "current" | "select" | "close" | "move"> & {
   newTab?: () => boolean
   add?: () => void
   detail?: (sessionID: string) => string | undefined
+  isPreview?: (sessionID: string) => boolean
+  promote?: (sessionID: string) => void
   status(sessionID: string): SessionTabsStatus
 }
 const NEW_SESSION_TAB: SessionTab = { sessionID: "new", title: NEW_SESSION_TAB_TITLE }
-const glowTextColor = (base: RGBA, glow: RGBA, index: number, width: number) =>
-  tint(base, glow, 0.12 * unreadGlowIntensity(index, width))
+const glowTextColor = (base: RGBA, glow: RGBA, index: number, width: number, level = 1) =>
+  tint(base, glow, 0.12 * unreadGlowIntensity(index, width) * level)
+
+function tabFeedbackColor(status: SessionTabsStatus, theme: ReturnType<typeof useTheme>) {
+  if (status.attention) return theme.text.status[status.attention]
+  if (status.unread === "error") return theme.text.feedback.error.default
+  return undefined
+}
+
+function TabIndicator(props: {
+  status: SessionTabsStatus
+  label: string
+  width: number
+  color: RGBA
+  unreadColor: RGBA
+  backgroundColor: RGBA
+  flashColor: RGBA
+  animations: boolean
+  numbers: boolean
+  spinner?: TabSpinner
+  unreadMarker?: TabUnreadMarker
+  attributes?: number
+}) {
+  const runs = () => props.status.busy && !props.status.attention
+  const pending = createMemo(() => props.status.busy || Boolean(props.status.attention))
+  const unread = createMemo(() => Boolean(props.status.unread) && !pending())
+  const unreadColor = createMemo<RGBA>((previous) => (unread() ? props.unreadColor : previous), props.unreadColor)
+  const fade = createAnimatable(
+    { opacity: unread() ? 1 : 0 },
+    { enabled: () => props.animations, transition: tween({ duration: 0.18 }) },
+  )
+  createComputed(() => {
+    if (unread()) return fade.jump({ opacity: 1 })
+    if (pending()) return fade.jump({ opacity: 0 })
+    fade.animate({ opacity: 0 })
+  })
+  const fading = () => !props.status.unread && fade.value().opacity > 0
+  const color = () => {
+    if (props.numbers) return props.color
+    if (unread()) return props.unreadColor
+    if (!fading()) return props.color
+    const opacity = fade.value().opacity
+    // Brighten during the first fifth, then dissolve into the tab background.
+    const flash = Math.max(0, 1 - Math.abs(opacity - 0.8) / 0.2)
+    return tint(props.backgroundColor, tint(unreadColor(), props.flashColor, flash * 0.3), Math.min(1, opacity / 0.8))
+  }
+  const spinner = () => TAB_SPINNERS[props.spinner ?? "dots"]
+  const label = () => {
+    if (props.numbers) return props.label
+    if (props.status.attention === "permission") return "!"
+    if (props.status.attention === "question") return "?"
+    if (runs()) return spinner().frames[0]
+    if (props.label === "+") return "+"
+    if (props.status.unread || fading()) return TAB_UNREAD_MARKERS[props.unreadMarker ?? "small-dot"]
+    return ""
+  }
+  return (
+    <box width={props.width + 1} flexShrink={0} flexDirection="row" justifyContent="flex-end" paddingRight={1}>
+      <Show
+        when={runs() && props.animations && !props.numbers}
+        fallback={
+          <text fg={color()} selectable={false} attributes={props.attributes}>
+            {label()}
+          </text>
+        }
+      >
+        <spinner frames={spinner().frames} interval={spinner().interval} color={props.color} />
+      </Show>
+    </box>
+  )
+}
+
+function createPreviewDoubleClick(tabs: SessionTabsController) {
+  let previous: { sessionID: string; time: number } | undefined
+  return (sessionID: string) => {
+    if (!tabs.isPreview?.(sessionID)) {
+      previous = undefined
+      return
+    }
+    const now = Date.now()
+    if (previous?.sessionID === sessionID && now - previous.time < 300) {
+      previous = undefined
+      tabs.promote?.(sessionID)
+      return
+    }
+    previous = { sessionID, time: now }
+  }
+}
+
+function createGlowLevel(dimmed: () => boolean, animations: () => boolean) {
+  const motion = createAnimatable(
+    { level: dimmed() ? 0.7 : 1 },
+    { enabled: animations, transition: tween({ duration: 0.2 }) },
+  )
+  createEffect(() => motion.animate({ level: dimmed() ? 0.7 : 1 }))
+  return () => motion.value().level
+}
 
 function createNumberIgnition(runs: () => boolean, prompt: () => number, animations: () => boolean) {
   const ignition = createAnimatable({ level: 0 }, { enabled: animations, transition: tween({ duration: 0.7 }) })
@@ -100,6 +231,45 @@ function fadeTitleColor(color: RGBA, background: RGBA, index: number, length: nu
   return opacity === 0 ? color : tint(color, background, opacity)
 }
 
+function heldSessionTabLayout(hold: MouseCloseHold, tabs: readonly SessionTab[]) {
+  const ids = tabs.map((tab) => tab.sessionID)
+  const expected = hold.items.filter((id) => id !== hold.closed)
+  const unchanged = ids.length === hold.items.length && ids.every((id, index) => id === hold.items[index])
+  const removed = ids.length === expected.length && ids.every((id, index) => id === expected[index])
+  if (!unchanged && !removed) return undefined
+
+  const visibleIDs = hold.ids.filter((id) => ids.includes(id))
+  if (removed && !visibleIDs.includes(hold.target)) {
+    visibleIDs.push(hold.target)
+    visibleIDs.sort((a, b) => ids.indexOf(a) - ids.indexOf(b))
+  }
+  const positions = visibleIDs.map((id) => ids.indexOf(id))
+  const start = positions[0]
+  if (start === undefined || positions.some((position, index) => position !== start + index)) return undefined
+  const visible = visibleIDs.flatMap((id) => tabs.find((tab) => tab.sessionID === id) ?? [])
+  if (visible.length !== visibleIDs.length) return undefined
+
+  const widths = visibleIDs.map((id) => hold.widths[hold.ids.indexOf(id)] ?? 1)
+  if (removed) {
+    const index = visibleIDs.indexOf(hold.target)
+    if (index === -1) return undefined
+    const leading = start > 0 ? sessionTabOverflowWidth(start) : 0
+    const preceding = widths.slice(0, index).reduce((sum, width) => sum + width, 0)
+    // The close glyph sits one cell in from the right edge: x = tab start + width - 2.
+    const width = hold.x - leading - preceding + 2
+    if (width < 1) return undefined
+    widths[index] = width
+  }
+  return {
+    tabs: visible,
+    widths,
+    before: start,
+    after: tabs.length - start - visible.length,
+    start,
+    total: widths.reduce((sum, width) => sum + width, 0),
+  }
+}
+
 export function createMarquee(animations: () => boolean) {
   const [offset, setOffset] = createSignal(0)
   const [active, setActive] = createSignal<string>()
@@ -115,7 +285,16 @@ export function createMarquee(animations: () => boolean) {
     interval = undefined
   }
   const scroll = () => {
-    interval = setInterval(() => setOffset((value) => (value + 1) % cycleWidth), MARQUEE_INTERVAL)
+    interval = setInterval(
+      () =>
+        setOffset((value) => {
+          if (value + 1 < cycleWidth) return value + 1
+          clear()
+          leading.animate({ opacity: 0 })
+          return 0
+        }),
+      MARQUEE_INTERVAL,
+    )
   }
   const enter = (sessionID: string, title: string, width: number) => {
     if (!marqueeOverflows(title, width)) {
@@ -188,13 +367,20 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
   const dimensions = useTerminalDimensions()
   const theme = useTheme("elevated")
   const dialog = useDialog()
-  const keymap = Keymap.use()
+  onCleanup(Keymap.use().mode.push("menu"))
+  Keymap.createLayer(() => ({
+    mode: "menu",
+    commands: [{ bind: "escape,ctrl+c", title: "Close tab menu", group: "Tabs", run: props.onClose }],
+  }))
   const actions = createMemo(() => {
     const sessionID = props.state.sessionID
     return [
       ...(props.tabs.add ? [{ title: "New tab", run: () => props.tabs.add?.() }] : []),
       ...(sessionID
         ? [
+            ...(props.tabs.promote && props.tabs.isPreview?.(sessionID)
+              ? [{ title: "Keep open", run: () => props.tabs.promote?.(sessionID) }]
+              : []),
             {
               title: "Rename",
               run: () => DialogSessionRename.show(dialog, sessionID, props.state.title),
@@ -204,73 +390,78 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
         : []),
     ]
   })
-  const [selected, setSelected] = createSignal(0)
+  const [selected, setSelected] = createSignal<number>()
   const top = () => Math.max(0, Math.min(props.state.y + 1, dimensions().height - actions().length))
   const left = () => Math.max(0, Math.min(props.state.x, dimensions().width - CONTEXT_MENU_WIDTH))
   const run = (index: number) => {
+    const action = actions()[index]
     props.onClose()
-    actions()[index]?.run()
+    action?.run()
   }
 
-  createEffect(() => {
-    const popMode = keymap.mode.push("modal")
-    onCleanup(popMode)
-  })
-  Keymap.createLayer(() => ({
-    mode: "modal",
-    commands: [
-      { bind: "escape", title: "Close tab menu", group: "Tabs", run: props.onClose },
-      {
-        bind: "up",
-        title: "Previous tab menu item",
-        group: "Tabs",
-        run: () => setSelected(moveSelection(selected(), { count: actions().length, delta: -1, policy: "wrap" })),
-      },
-      {
-        bind: "down",
-        title: "Next tab menu item",
-        group: "Tabs",
-        run: () => setSelected(moveSelection(selected(), { count: actions().length, delta: 1, policy: "wrap" })),
-      },
-      { bind: "return", title: "Select tab menu item", group: "Tabs", run: () => run(selected()) },
-    ],
-  }))
   return (
-    <box
-      position="absolute"
-      left={left()}
-      top={top()}
-      height={actions().length}
-      width={CONTEXT_MENU_WIDTH}
-      zIndex={2500}
-      flexDirection="column"
-      backgroundColor={theme.background.default}
-      onMouseDown={(event) => {
-        event.preventDefault()
-        event.stopPropagation()
+    <Portal
+      ref={(container) => {
+        if (!(container instanceof BoxRenderable)) return
+        // Portal's wrapper otherwise follows the full-height app in root layout.
+        container.position = "absolute"
+        container.left = 0
+        container.top = 0
+        container.zIndex = 2500
       }}
     >
-      <For each={actions()}>
-        {(action, index) => (
-          <box
-            width="100%"
-            paddingLeft={1}
-            paddingRight={1}
-            backgroundColor={selected() === index() ? theme.background.action.primary.hovered : undefined}
-            onMouseOver={() => setSelected(index())}
-            onMouseUp={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              run(index())
-            }}
-          >
-            <text fg={theme.text.default} selectable={false}>
-              {action.title}
-            </text>
-          </box>
-        )}
-      </For>
-    </box>
+      <box
+        position="absolute"
+        left={0}
+        top={0}
+        width={dimensions().width}
+        height={dimensions().height}
+        zIndex={2500}
+        onMouseDown={(event) => {
+          props.onClose()
+          event.preventDefault()
+          event.stopPropagation()
+        }}
+      >
+        <box
+          position="absolute"
+          left={left()}
+          top={top()}
+          height={actions().length}
+          width={CONTEXT_MENU_WIDTH}
+          flexDirection="column"
+          backgroundColor={theme.background.default}
+          onMouseDown={(event) => {
+            if (event.button === RIGHT_MOUSE_BUTTON) props.onClose()
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+        >
+          <For each={actions()}>
+            {(action, index) => (
+              <box
+                width="100%"
+                paddingLeft={1}
+                paddingRight={1}
+                backgroundColor={selected() === index() ? theme.background.action.primary.hovered : undefined}
+                onMouseOver={() => setSelected(index())}
+                onMouseOut={() => setSelected(undefined)}
+                onMouseUp={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  if (event.button === RIGHT_MOUSE_BUTTON) return
+                  run(index())
+                }}
+              >
+                <text fg={theme.text.default} selectable={false}>
+                  {action.title}
+                </text>
+              </box>
+            )}
+          </For>
+        </box>
+      </box>
+    </Portal>
   )
 }
 
@@ -278,39 +469,64 @@ export function SessionTabs(
   props: {
     controller?: SessionTabsController
     animations?: boolean
+    spinner?: TabSpinner
+    unreadMarker?: TabUnreadMarker
     orientation?: "horizontal" | "vertical"
+    width?: number
   } = {},
 ) {
+  const config = useConfig().data
+
   return (
     <Switch>
       <Match when={props.orientation === "vertical"}>
-        <VerticalSessionTabs controller={props.controller} animations={props.animations} />
+        <VerticalSessionTabs
+          controller={props.controller}
+          animations={props.animations}
+          spinner={props.spinner}
+          unreadMarker={props.unreadMarker}
+          numbers={config.tabs.indicators === "numbers"}
+          width={props.width}
+        />
       </Match>
       <Match when={true}>
-        <HorizontalSessionTabs controller={props.controller} animations={props.animations} />
+        <HorizontalSessionTabs
+          controller={props.controller}
+          animations={props.animations}
+          spinner={props.spinner}
+          unreadMarker={props.unreadMarker}
+          numbers={config.tabs.indicators === "numbers"}
+        />
       </Match>
     </Switch>
   )
 }
 
-function VerticalSessionTabs(props: { controller?: SessionTabsController; animations?: boolean }) {
+function VerticalSessionTabs(props: {
+  controller?: SessionTabsController
+  animations?: boolean
+  numbers: boolean
+  spinner?: TabSpinner
+  unreadMarker?: TabUnreadMarker
+  width?: number
+}) {
   const contextTabs = useSessionTabs()
   const tabs: SessionTabsController = props.controller ?? contextTabs
   const data = useData()
   const theme = useTheme("elevated")
-  const { mode } = useThemes()
   const config = useConfig().data
   const animations = () => props.animations ?? config.animations ?? true
-  const width = () => SESSION_SIDEBAR_WIDTH
-  const hueStep = () => (mode() === "light" ? 800 : 200)
-  const accent = () => theme.hue.accent[hueStep()]
-  const activeNumber = () => theme.hue.interactive[hueStep()]
-  const idleNumber = () => tint(theme.text.subdued, theme.background.default, 0.35)
+  const width = () => props.width ?? SESSION_SIDEBAR_WIDTH
+  const unreadColor = () => theme.text.status.unread
+  const activeNumber = () => theme.text.status.running
+  const idleNumber = () => tint(theme.text.formfield.default, theme.background.default, 0.55)
   const separatorUpperPulseColor = createMemo(() => tint(theme.background.default, theme.text.default, 0.04))
   const separatorLowerPulseColor = createMemo(() => tint(theme.background.default, theme.text.default, 0.05))
   const [addHovered, setAddHovered] = createSignal(false)
   const marquee = createTabMarquee(animations)
   const hovered = marquee.hovered
+  const handleClick = createPreviewDoubleClick(tabs)
+  // OpenTUI captures the first drag target, which may differ from the tab pressed on a fast move.
   const [dragging, setDragging] = createSignal<string>()
   const [preview, setPreview] = createSignal<{ sessionID: string; index: number }>()
   const [contextMenu, setContextMenu] = createSignal<TabContextMenuState>()
@@ -337,8 +553,9 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
               ...status,
               complete: sessionTabComplete(status.unread, status.busy),
               runs: status.busy && !status.attention,
-              glows:
-                tab.sessionID !== activeID() && (status.attention || (!status.busy && status.unread !== undefined)),
+              glows: Boolean(
+                status.attention || (tab.sessionID !== activeID() && !status.busy && status.unread !== undefined),
+              ),
             },
           ] as const
         }),
@@ -347,6 +564,10 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
   const itemStatus = (tab: SessionTab) => statuses().get(tab.sessionID)!
   let rail: { screenX: number; screenY: number } | undefined
   let scroll: ScrollBoxRenderable | undefined
+  let didDrag = false
+  let addPressed = false
+  // A captured drag ends with a synthetic up on its drop target; do not turn that into a click.
+  let suppressClick = false
 
   createEffect(() => {
     const pending = preview()
@@ -368,6 +589,29 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
     }
   })
 
+  const release = () => {
+    const source = dragging()
+    if (!source) return
+    if (didDrag) suppressClick = true
+    setDragging(undefined)
+    const pending = preview()
+    if (pending?.sessionID === source) tabs.move(pending.sessionID, pending.index)
+    tabs.select(source)
+  }
+
+  const drag = (event: MouseEvent) => {
+    if (!rail) return
+    const source = dragging()
+    if (!source) return
+    didDrag = true
+    const target = Math.max(
+      0,
+      Math.min(tabs.tabs().length - 1, Math.floor((event.y - rail.screenY - 1 + (scroll?.scrollTop ?? 0)) / 3)),
+    )
+    const sourceIndex = items().findIndex((item) => item.sessionID === source)
+    if (target !== sourceIndex && preview()?.index !== target) setPreview({ sessionID: source, index: target })
+  }
+
   return (
     <box
       ref={(element) => (rail = element)}
@@ -379,6 +623,15 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
       paddingTop={1}
       backgroundColor={theme.background.default}
       onMouseOut={marquee.leaveHovered}
+      onMouseUp={(event) => {
+        if (event.button === RIGHT_MOUSE_BUTTON) return
+        release()
+        if (!didDrag) return
+        didDrag = false
+        queueMicrotask(() => (suppressClick = false))
+      }}
+      onMouseDrag={drag}
+      onMouseDragEnd={release}
     >
       <scrollbox ref={(element) => (scroll = element)} flexGrow={1} scrollbarOptions={{ visible: false }}>
         <box flexShrink={0} flexDirection="column" gap={1}>
@@ -393,25 +646,42 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
                 const value = session()
                 return value ? data.project.get(value.projectID) : undefined
               })
-              const numberWidth = () => 2
+              const numberWidth = () => Math.max(2, String(items().length).length)
               const restingTitleWidth = () => Math.max(1, width() - numberWidth() - 2)
               const hoveredTitleWidth = () => Math.max(1, restingTitleWidth() - 1)
               const titleWidth = () => (hovered() === tab.sessionID ? hoveredTitleWidth() : restingTitleWidth())
-              const title = () => tab.title ?? "Untitled session"
+              const title = () => (props.controller ? undefined : session()?.title) ?? tab.title ?? "Untitled session"
               const scrolling = () => marquee.active() === tab.sessionID
-              const visibleTitle = createMemo(() =>
+              const visibleTitleParts = createMemo(() =>
                 scrolling()
-                  ? marqueeText(title(), titleWidth(), marquee.offset())
-                  : Locale.takeWidth(title(), titleWidth()),
+                  ? marqueeTextParts(title(), titleWidth(), marquee.offset())
+                  : Locale.graphemes(Locale.takeWidth(title(), titleWidth())).map((value) => ({
+                      value,
+                      separator: false,
+                    })),
               )
-              const visibleTitleParts = createMemo(() => Locale.graphemes(visibleTitle()))
+              const visibleTitle = createMemo(() =>
+                visibleTitleParts()
+                  .map((part) => part.value)
+                  .join(""),
+              )
               const titleFades = createMemo(() => marqueeOverflows(title(), titleWidth()) && titleWidth() > FADE_WIDTH)
               const detail = createMemo(() => {
                 const fixture = tabs.detail?.(tab.sessionID)
-                if (fixture !== undefined) return Locale.takeWidth(fixture, titleWidth())
+                if (fixture !== undefined) return fixture
                 const value = session()
-                return Locale.takeWidth(projectName(project(), value?.location.directory) ?? "", titleWidth())
+                const currentProject = project()
+                const projectLabel = projectName(currentProject, value?.location.directory) ?? ""
+                const vcs = value ? data.location.vcs.info(value.location) : undefined
+                const location = value ? data.location.info(value.location) : undefined
+                const worktree = !!location && location.project.directory !== location.project.canonical
+                return sessionTabDetail(projectLabel, vcs?.branch.current, vcs?.branch.default, worktree)
               })
+              const visibleDetail = createMemo(() => Locale.takeWidth(detail(), titleWidth()))
+              const visibleDetailParts = createMemo(() => Locale.graphemes(visibleDetail()))
+              const detailFades = createMemo(
+                () => marqueeOverflows(detail(), titleWidth()) && titleWidth() > FADE_WIDTH,
+              )
               const background = createMemo(() => {
                 if (selected()) return theme.background.action.primary.selected
                 if (hovered() === tab.sessionID || dragging() === tab.sessionID)
@@ -426,11 +696,7 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
                   hovered() === tab.sessionID && !selected()
                     ? foreground()
                     : tint(idleNumber(), tint(theme.text.default, pulseBackground(), 0.25), Number(selected()))
-                const color = status().attention
-                  ? theme.text.feedback.warning.default
-                  : status().unread === "error"
-                    ? theme.text.feedback.error.default
-                    : tint(base, accent(), Number(complete()))
+                const color = tabFeedbackColor(status(), theme) ?? tint(base, glowHue(), numberGlow.value().level)
                 const runningColor = runs() ? activeNumber() : color
                 return sweepLevel() === 0
                   ? tint(runningColor, theme.text.default, numberIgnition.value().level)
@@ -441,19 +707,42 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
                 return selected() ? theme.text.default : theme.text.subdued
               }
               const complete = () => status().complete
+              // Latched so a resolving glow fades out in the hue it lit with instead of snapping to the unread color.
+              let lastGlowHue: RGBA | undefined
               const glowHue = () => {
-                if (status().attention) return theme.text.feedback.warning.default
-                if (status().unread === "error") return theme.text.feedback.error.default
-                return accent()
+                const feedback = tabFeedbackColor(status(), theme)
+                if (feedback) return (lastGlowHue = feedback)
+                if (status().unread !== undefined) return (lastGlowHue = unreadColor())
+                return lastGlowHue ?? unreadColor()
               }
               const pulseColor = createMemo(() => tint(pulseBackground(), theme.text.default, 0.25))
               const flashColor = createMemo(() => tint(pulseBackground(), theme.text.default, 0.7))
-              const glowColor = createMemo(() => tint(pulseBackground(), glowHue(), 0.45))
+              const glowLevel = createGlowLevel(() => selected() && Boolean(status().attention), animations)
+              const glowColor = createMemo(() => tint(pulseBackground(), glowHue(), 0.45 * glowLevel()))
               const detailPulseColor = createMemo(() => tint(pulseBackground(), theme.text.default, 0.13))
               const detailFlashColor = createMemo(() => tint(pulseBackground(), theme.text.default, 0.42))
-              const detailGlowColor = createMemo(() => tint(pulseBackground(), glowHue(), 0.25))
+              const detailGlowColor = createMemo(() => tint(pulseBackground(), glowHue(), 0.25 * glowLevel()))
               const detailColor = createMemo(() => tint(theme.text.subdued, pulseBackground(), 0.35))
+              const detailTextColor = (index: number) =>
+                detailFades()
+                  ? fadeTitleColor(detailColor(), pulseBackground(), index, visibleDetailParts().length, 0)
+                  : detailColor()
               const glows = () => status().glows
+              // Text tints ride an eased level so they diffuse away with the background glow instead of snapping.
+              const titleGlow = createAnimatable(
+                { level: 0 },
+                { enabled: animations, transition: tween({ duration: 0.4 }) },
+              )
+              createEffect(() => titleGlow.animate({ level: glows() ? 1 : 0 }))
+              const numberGlow = createAnimatable(
+                { level: 0 },
+                { enabled: animations, transition: tween({ duration: 0.4 }) },
+              )
+              createEffect(() =>
+                numberGlow.animate({
+                  level: status().attention || status().unread === "error" || complete() ? 1 : 0,
+                }),
+              )
               const previous = createMemo(() => items()[index() - 1])
               const previousStatus = createMemo(() => {
                 const tab = previous()
@@ -463,19 +752,31 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
               })
               const previousGlows = () => previousStatus().glows
               const previousRuns = () => previousStatus().runs
+              const previousGlowLevel = createGlowLevel(
+                () => previous()?.sessionID === activeID() && Boolean(previousStatus().attention),
+                animations,
+              )
               const indicatorWidth = 10
+              let lastPreviousGlowHue: RGBA | undefined
               const previousGlowHue = () => {
-                if (previousStatus().attention) return theme.text.feedback.warning.default
-                if (previousStatus().unread === "error") return theme.text.feedback.error.default
-                return accent()
+                const feedback = tabFeedbackColor(previousStatus(), theme)
+                if (feedback) return (lastPreviousGlowHue = feedback)
+                if (previousStatus().unread !== undefined) return (lastPreviousGlowHue = unreadColor())
+                return lastPreviousGlowHue ?? unreadColor()
               }
-              const separatorUpperColor = createMemo(() => tint(theme.background.default, previousGlowHue(), 0.1))
-              const separatorLowerColor = createMemo(() => tint(theme.background.default, glowHue(), 0.12))
-              const titleColor = (index: number) => {
-                const color = glows()
-                  ? glowTextColor(foreground(), glowColor(), 1 + numberWidth() + index, width())
-                  : foreground()
-                return titleFades()
+              const separatorUpperColor = createMemo(() =>
+                tint(theme.background.default, previousGlowHue(), 0.1 * previousGlowLevel()),
+              )
+              const separatorLowerColor = createMemo(() =>
+                tint(theme.background.default, glowHue(), 0.12 * glowLevel()),
+              )
+              const titleColor = (index: number, separator: boolean) => {
+                const level = titleGlow.value().level
+                const color =
+                  level === 0
+                    ? foreground()
+                    : glowTextColor(foreground(), glowColor(), 1 + numberWidth() + index, width(), level)
+                const faded = titleFades()
                   ? fadeTitleColor(
                       color,
                       pulseBackground(),
@@ -484,12 +785,7 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
                       scrolling() ? marquee.leading() : 0,
                     )
                   : color
-              }
-              const release = () => {
-                setDragging(undefined)
-                const pending = preview()
-                if (pending?.sessionID === tab.sessionID) tabs.move(pending.sessionID, pending.index)
-                tabs.select(tab.sessionID)
+                return separator ? tint(faded, pulseBackground(), 0.55) : faded
               }
               return (
                 <box
@@ -501,12 +797,21 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
                   onMouseOver={() => marquee.enter(tab.sessionID, title(), hoveredTitleWidth())}
                   onMouseOut={() => marquee.leave(tab.sessionID)}
                   onMouseDown={(event) => {
+                    if (event.button === MIDDLE_MOUSE_BUTTON) {
+                      didDrag = false
+                      setDragging(undefined)
+                      tabs.close(tab.sessionID)
+                      event.preventDefault()
+                      event.stopPropagation()
+                      return
+                    }
                     if (event.button === RIGHT_MOUSE_BUTTON) {
+                      didDrag = false
                       setDragging(undefined)
                       if (!rail) return
                       setContextMenu({
-                        x: event.x - rail.screenX,
-                        y: event.y - rail.screenY,
+                        x: event.x,
+                        y: event.y,
                         sessionID: tab.sessionID,
                         title: tab.title,
                       })
@@ -514,26 +819,11 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
                       event.stopPropagation()
                       return
                     }
+                    didDrag = false
+                    handleClick(tab.sessionID)
                     marquee.enter(tab.sessionID, title(), hoveredTitleWidth())
                     setDragging(tab.sessionID)
                   }}
-                  onMouseUp={(event) => {
-                    if (event.button === RIGHT_MOUSE_BUTTON) return
-                    release()
-                  }}
-                  onMouseDrag={(event) => {
-                    if (!rail) return
-                    const target = Math.max(
-                      0,
-                      Math.min(
-                        tabs.tabs().length - 1,
-                        Math.floor((event.y - rail.screenY - 1 + (scroll?.scrollTop ?? 0)) / 3),
-                      ),
-                    )
-                    if (target !== index() && preview()?.index !== target)
-                      setPreview({ sessionID: tab.sessionID, index: target })
-                  }}
-                  onMouseDragEnd={release}
                 >
                   <TabPulse
                     top={-1}
@@ -547,8 +837,6 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
                     outerComplete={previousStatus().complete && !previousStatus().attention}
                     glow={glows()}
                     outerGlow={previousGlows()}
-                    breathe={status().attention}
-                    outerBreathe={previousStatus().attention}
                     color={separatorLowerPulseColor()}
                     width={indicatorWidth}
                     outerColor={separatorUpperPulseColor()}
@@ -576,18 +864,16 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
                       outerComplete={false}
                       glow={glows()}
                       outerGlow={false}
-                      breathe={status().attention}
-                      outerBreathe={false}
                       color={tint(theme.background.default, theme.text.default, 0.04)}
                       width={indicatorWidth}
                       outerColor={tint(theme.background.default, theme.text.default, 0.006)}
                       flashColor={tint(theme.background.default, theme.text.default, 0.18)}
                       flashTail={8}
-                      glowColor={tint(theme.background.default, glowHue(), 0.1)}
+                      glowColor={tint(theme.background.default, glowHue(), 0.1 * glowLevel())}
                       outerGlowColor={theme.background.default}
                       glowTail={8}
                       outerGlowTail={5}
-                      completionColor={tint(theme.background.default, glowHue(), 0.1)}
+                      completionColor={tint(theme.background.default, glowHue(), 0.1 * glowLevel())}
                       outerCompletionColor={theme.background.default}
                       backgroundColor={theme.background.default}
                     />
@@ -599,7 +885,6 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
                       promptPulse={status().promptPulse}
                       complete={complete() && !status().attention}
                       glow={glows()}
-                      breathe={status().attention}
                       color={pulseColor()}
                       width={indicatorWidth}
                       glowColor={glowColor()}
@@ -609,28 +894,49 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
                       backgroundColor={pulseBackground()}
                       onLevel={setSweepLevel}
                     />
-                    <box zIndex={1} width="100%" flexDirection="row" paddingLeft={1} paddingRight={1}>
-                      <text
+                    <box zIndex={1} width="100%" flexDirection="row" paddingRight={1}>
+                      <TabIndicator
+                        status={status()}
+                        label={sessionTabNumberLabel(index())}
                         width={numberWidth()}
-                        fg={numberColor()}
-                        selectable={false}
+                        color={numberColor()}
+                        unreadColor={tabFeedbackColor(status(), theme) ?? unreadColor()}
+                        backgroundColor={pulseBackground()}
+                        flashColor={theme.text.default}
+                        animations={animations()}
+                        numbers={props.numbers}
+                        spinner={props.spinner}
+                        unreadMarker={props.unreadMarker}
                         attributes={selected() ? TextAttributes.BOLD : undefined}
-                      >
-                        {sessionTabShortcutLabel(index())}
-                      </text>
-                      <text
+                      />
+                      <title_shimmer
                         width={titleWidth()}
+                        height={1}
                         fg={foreground()}
+                        rename={{ pending: status().renaming, title: title() }}
+                        enabled={animations()}
+                        backdrop={pulseBackground()}
                         wrapMode="none"
                         selectable={false}
-                        attributes={selected() ? TextAttributes.BOLD : undefined}
+                        attributes={
+                          (status().renaming && !animations()
+                            ? TextAttributes.DIM
+                            : selected()
+                              ? TextAttributes.BOLD
+                              : 0) | (tabs.isPreview?.(tab.sessionID) ? TextAttributes.ITALIC : 0) || undefined
+                        }
                       >
-                        <Show when={glows() || titleFades()} fallback={visibleTitle()}>
-                          <For each={visibleTitleParts()}>
-                            {(character, index) => <span style={{ fg: titleColor(index()) }}>{character}</span>}
-                          </For>
+                        <Show
+                          when={scrolling() || titleGlow.value().level > 0 || titleFades()}
+                          fallback={visibleTitle()}
+                        >
+                          <Index each={visibleTitleParts()}>
+                            {(part, index) => (
+                              <span style={{ fg: titleColor(index, part().separator) }}>{part().value}</span>
+                            )}
+                          </Index>
                         </Show>
-                      </text>
+                      </title_shimmer>
                       <text
                         position="absolute"
                         right={1}
@@ -640,8 +946,14 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
                         selectable={false}
                         onMouseOver={() => setCloseHovered(true)}
                         onMouseOut={() => setCloseHovered(false)}
+                        onMouseDown={(event) => {
+                          if (event.button === RIGHT_MOUSE_BUTTON || hovered() !== tab.sessionID) return
+                          didDrag = false
+                          event.stopPropagation()
+                        }}
                         onMouseUp={(event) => {
                           if (event.button === RIGHT_MOUSE_BUTTON) return
+                          if (suppressClick) return
                           if (hovered() !== tab.sessionID) return
                           event.stopPropagation()
                           tabs.close(tab.sessionID)
@@ -658,7 +970,6 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
                       promptPulse={status().promptPulse}
                       complete={complete() && !status().attention}
                       glow={glows()}
-                      breathe={status().attention}
                       color={detailPulseColor()}
                       width={indicatorWidth}
                       glowColor={detailGlowColor()}
@@ -670,7 +981,11 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
                     />
                     <box zIndex={1} width="100%" flexDirection="row" paddingLeft={numberWidth() + 1} paddingRight={2}>
                       <text fg={detailColor()} wrapMode="none" selectable={false}>
-                        {detail()}
+                        <Show when={detailFades()} fallback={visibleDetail()}>
+                          <For each={visibleDetailParts()}>
+                            {(character, index) => <span style={{ fg: detailTextColor(index()) }}>{character}</span>}
+                          </For>
+                        </Show>
                       </text>
                     </box>
                   </box>
@@ -697,16 +1012,23 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
               onMouseOver={() => setAddHovered(true)}
               onMouseOut={() => setAddHovered(false)}
               onMouseDown={(event: MouseEvent) => {
-                if (event.button !== RIGHT_MOUSE_BUTTON) return
+                didDrag = false
+                setDragging(undefined)
+                addPressed = event.button !== RIGHT_MOUSE_BUTTON
+                if (addPressed) return
                 if (!rail) return
-                setContextMenu({ x: event.x - rail.screenX, y: event.y - rail.screenY })
+                setContextMenu({ x: event.x, y: event.y })
                 event.preventDefault()
                 event.stopPropagation()
               }}
               onMouseUp={(event: MouseEvent) => {
                 if (event.button === RIGHT_MOUSE_BUTTON) return
+                if (suppressClick) return
+                if (!addPressed) return
+                addPressed = false
                 if (!newTab()) tabs.add?.()
               }}
+              onMouseDragEnd={() => (addPressed = false)}
             >
               <text
                 width={2}
@@ -734,6 +1056,7 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
                   selectable={false}
                   onMouseUp={(event) => {
                     if (event.button === RIGHT_MOUSE_BUTTON) return
+                    if (suppressClick) return
                     if (!addHovered()) return
                     event.stopPropagation()
                     tabs.close()
@@ -753,27 +1076,52 @@ function VerticalSessionTabs(props: { controller?: SessionTabsController; animat
   )
 }
 
-function HorizontalSessionTabs(props: { controller?: SessionTabsController; animations?: boolean } = {}) {
+function HorizontalSessionTabs(props: {
+  controller?: SessionTabsController
+  animations?: boolean
+  spinner?: TabSpinner
+  unreadMarker?: TabUnreadMarker
+  numbers: boolean
+}) {
   const tabs = props.controller ?? useSessionTabs()
+  const data = props.controller ? undefined : useData()
   const dimensions = useTerminalDimensions()
   const theme = useTheme()
-  const { mode } = useThemes()
   const config = useConfig().data
   const animations = () => props.animations ?? config.animations ?? true
   const [addHovered, setAddHovered] = createSignal(false)
   const marquee = createTabMarquee(animations)
   const hovered = marquee.hovered
+  const handleClick = createPreviewDoubleClick(tabs)
+  // OpenTUI captures the first drag target, which may differ from the tab pressed on a fast move.
   const [dragging, setDragging] = createSignal<string>()
   // A drag reorders a local preview and persists one move on release instead of writing
   // per slot crossing; the preview holds after release until the store reflects the move,
   // so the strip never flashes the pre-drag order while the write is in flight.
   const [preview, setPreview] = createSignal<{ sessionID: string; index: number }>()
   const [contextMenu, setContextMenu] = createSignal<TabContextMenuState>()
-  let strip: { screenX: number; screenY: number } | undefined
-  const hueStep = () => (mode() === "light" ? 800 : 200)
-  const accent = () => theme.hue.accent[hueStep()]
-  const activeNumber = () => theme.hue.interactive[hueStep()]
-  const idleNumber = () => tint(theme.text.subdued, theme.background.default, 0.35)
+  const [closeHold, setCloseHold] = createSignal<MouseCloseHold>()
+  let strip: { screenX: number; screenY: number; width: number; height: number } | undefined
+  let didDrag = false
+  let addPressed = false
+  let closeHoldTimer: ReturnType<typeof setTimeout> | undefined
+  let releasingCloseHold = false
+  const clearCloseHold = () => {
+    setCloseHold(undefined)
+    if (closeHoldTimer) clearTimeout(closeHoldTimer)
+    closeHoldTimer = undefined
+  }
+  const releaseCloseHold = () => {
+    if (!closeHold()) return
+    releasingCloseHold = true
+    clearCloseHold()
+  }
+  onCleanup(clearCloseHold)
+  // A captured drag ends with a synthetic up on its drop target; do not turn that into a click.
+  let suppressClick = false
+  const unreadColor = () => theme.text.status.unread
+  const activeNumber = () => theme.text.status.running
+  const idleNumber = () => tint(theme.text.formfield.default, theme.background.default, 0.55)
   const newTab = () => tabs.newTab?.() ?? false
   const activeID = createMemo(() => (newTab() ? NEW_SESSION_TAB.sessionID : tabs.current()))
   const ordered = createMemo(() => {
@@ -791,14 +1139,23 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
     const index = tabs.tabs().findIndex((tab) => tab.sessionID === pending.sessionID)
     if (index === -1 || index === Math.min(pending.index, tabs.tabs().length - 1)) setPreview(undefined)
   })
-  const layout = createMemo((previous: ReturnType<typeof adaptiveSessionTabLayout> | undefined) =>
-    adaptiveSessionTabLayout(
-      items(),
-      activeID(),
-      dimensions().width - (showPlus() ? ADD_TAB_WIDTH : 0),
-      previous?.start,
-    ),
+  const heldLayout = createMemo(() => {
+    const hold = closeHold()
+    return hold ? heldSessionTabLayout(hold, items()) : undefined
+  })
+  const layout = createMemo(
+    (previous: ReturnType<typeof adaptiveSessionTabLayout> | undefined) =>
+      heldLayout() ??
+      adaptiveSessionTabLayout(
+        items(),
+        activeID(),
+        dimensions().width - (showPlus() ? ADD_TAB_WIDTH : 0),
+        previous?.start,
+      ),
   )
+  createEffect(() => {
+    if (closeHold() && !heldLayout()) clearCloseHold()
+  })
   createEffect(() => {
     const active = marquee.active()
     if (active && !layout().tabs.some((tab) => tab.sessionID === active)) marquee.reset()
@@ -834,6 +1191,7 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
   )
   let signature = ""
   let total = 0
+  let terminalWidth = dimensions().width
 
   // createComputed runs before render effects, so seeded widths are visible on the first frame
   // of a membership change instead of flashing the final layout.
@@ -842,12 +1200,34 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
     const nextSignature = identity()
     const changed = Boolean(signature) && signature !== nextSignature
     const resized = Boolean(total) && total !== layout().total
+    const terminalResized = terminalWidth !== dimensions().width
     const previous = signature
     signature = nextSignature
     total = layout().total
+    terminalWidth = dimensions().width
+    const releasing = releasingCloseHold
+    releasingCloseHold = false
+    if (terminalResized && closeHold()) {
+      clearCloseHold()
+      return
+    }
+    if (closeHold() && heldLayout()) {
+      const current = untrack(motion.value)
+      const seeded = changed
+        ? seedSessionTabMotion(
+            previous.split(":"),
+            layout().tabs.map((tab) => tab.sessionID),
+            current,
+            next,
+          )
+        : current
+      if (!seeded) return motion.jump(next)
+      motion.jump({ ...seeded, widths: next.widths })
+      return motion.animate(next)
+    }
     if (!changed && !resized) return motion.animate(next)
     // Identity-stable total changes are terminal resizes and still jump.
-    if (!changed) return motion.jump(next)
+    if (!changed) return releasing ? motion.animate(next) : motion.jump(next)
     const seeded = seedSessionTabMotion(
       previous.split(":"),
       layout().tabs.map((tab) => tab.sessionID),
@@ -866,18 +1246,41 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
     const active = activeIndex()
     const remainder = layout().total - widths.reduce((sum, width) => sum + width, 0)
     // Absorb only rounding slack; membership animations leave a real gap while widths grow into place.
-    if (active !== -1 && Math.abs(remainder) <= layout().tabs.length) widths[active]! += remainder
+    if (active !== -1 && Math.abs(remainder) <= layout().tabs.length) widths[active] += remainder
     return new Map(
       layout().tabs.map((tab, index) => [
         tab.sessionID,
         {
-          width: widths[index]!,
+          width: widths[index],
           selection: current.selections[index] ?? Number(tab.sessionID === activeID()),
           activity: current.activities[index] ?? Number(statuses().get(tab.sessionID)!.complete),
         },
       ]),
     )
   })
+
+  const holdCloseCell = (sessionID: string, x: number) => {
+    if (!strip) return clearCloseHold()
+    const current = layout()
+    const index = current.tabs.findIndex((tab) => tab.sessionID === sessionID)
+    const all = items()
+    const itemIndex = all.findIndex((tab) => tab.sessionID === sessionID)
+    const target = all[itemIndex + 1] ?? all[itemIndex - 1]
+    if (index === -1 || itemIndex === -1 || !target) return clearCloseHold()
+    const ids = current.tabs.map((tab) => tab.sessionID)
+    const values = ids.map((id) => visuals().get(id))
+    if (values.some((value) => !value)) return clearCloseHold()
+    setCloseHold({
+      items: all.map((tab) => tab.sessionID),
+      ids,
+      widths: values.map((value) => value!.width),
+      closed: sessionID,
+      target: target.sessionID,
+      x: x - strip.screenX,
+    })
+    if (closeHoldTimer) clearTimeout(closeHoldTimer)
+    closeHoldTimer = setTimeout(releaseCloseHold, MOUSE_CLOSE_HOLD_MS)
+  }
 
   // Map an absolute pointer column to the items index of the visible slot beneath it.
   const slotAt = (x: number) => {
@@ -891,6 +1294,29 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
     return layout().before + layout().widths.length - 1
   }
 
+  const release = () => {
+    const source = dragging()
+    if (!source) return
+    if (didDrag) suppressClick = true
+    setDragging(undefined)
+    const pending = preview()
+    if (pending?.sessionID === source) tabs.move(pending.sessionID, pending.index)
+    if (source === NEW_SESSION_TAB.sessionID) return
+    tabs.select(source)
+  }
+
+  const drag = (event: MouseEvent) => {
+    const source = dragging()
+    if (!source || source === NEW_SESSION_TAB.sessionID) return
+    didDrag = true
+    const slot = slotAt(event.x)
+    const target = slot === undefined ? undefined : Math.min(slot, tabs.tabs().length - 1)
+    const sourceIndex = items().findIndex((item) => item.sessionID === source)
+    if (target !== undefined && target !== sourceIndex && preview()?.index !== target) {
+      setPreview({ sessionID: source, index: target })
+    }
+  }
+
   return (
     <box
       ref={(element) => (strip = element)}
@@ -899,25 +1325,26 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
       position="relative"
       flexDirection="row"
       zIndex={1}
-      onMouseOut={marquee.leaveHovered}
-      renderAfter={function (buffer) {
-        const x = Math.max(0, this.screenX)
-        const y = this.screenY + this.height
-        const width = Math.min(this.width, buffer.width - x)
-        if (y < 0 || y >= buffer.height || width <= 0) return
-        buffer.fillRect(
-          x,
-          y,
-          width,
-          1,
-          RGBA.fromValues(
-            theme.background.default.r,
-            theme.background.default.g,
-            theme.background.default.b,
-            mode() === "light" ? 0.14 : 0.28,
-          ),
+      onMouseOut={(event) => {
+        marquee.leaveHovered()
+        if (!strip) return
+        if (
+          event.x < strip.screenX ||
+          event.x >= strip.screenX + strip.width ||
+          event.y < strip.screenY ||
+          event.y >= strip.screenY + strip.height
         )
+          releaseCloseHold()
       }}
+      onMouseUp={(event) => {
+        if (event.button === RIGHT_MOUSE_BUTTON) return
+        release()
+        if (!didDrag) return
+        didDrag = false
+        queueMicrotask(() => (suppressClick = false))
+      }}
+      onMouseDrag={drag}
+      onMouseDragEnd={release}
     >
       <Show when={layout().before > 0}>
         <text width={sessionTabOverflowWidth(layout().before)} fg={theme.text.subdued} selectable={false}>
@@ -942,28 +1369,32 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
           // The edge flash washes toward a brighter stop on the same background-to-text ramp,
           // so it reads as a lift of the pulse color rather than a different hue.
           const flashColor = () => tint(background(), theme.text.default, 0.65)
-          const feedbackColor = () => {
-            if (status().attention) return theme.text.feedback.warning.default
-            if (status().unread === "error") return theme.text.feedback.error.default
-            return undefined
-          }
-          const glowColor = () => feedbackColor() ?? accent()
-          const glows = () => !selected() && (status().attention || (!status().busy && status().unread !== undefined))
-          const title = () => tab.title ?? "Untitled session"
+          const feedbackColor = () => tabFeedbackColor(status(), theme)
+          const glowLevel = createGlowLevel(() => selected() && Boolean(status().attention), animations)
+          const glowColor = createMemo(() => tint(background(), feedbackColor() ?? unreadColor(), glowLevel()))
+          const glows = () =>
+            Boolean(status().attention || (!selected() && !status().busy && status().unread !== undefined))
+          const title = () => data?.session.get(tab.sessionID)?.title ?? tab.title ?? "Untitled session"
           const tabNumber = createMemo(() => items().findIndex((item) => item.sessionID === tab.sessionID) + 1)
-          // Shortcut labels stay one cell wide: 1-9, 0 for ten, then a neutral dot.
-          const numberWidth = () => 2
+          const numberWidth = () => Math.max(2, String(items().length).length)
           // Hovering reveals the close mark, so the title's right bound shifts left of it.
           const restingTitleWidth = () => Math.max(1, width() - 1 - numberWidth())
           const hoveredTitleWidth = () => Math.max(1, restingTitleWidth() - 2)
           const availableTitleWidth = () => (hovered() === tab.sessionID ? hoveredTitleWidth() : restingTitleWidth())
           const scrolling = () => marquee.active() === tab.sessionID
-          const visibleTitle = createMemo(() =>
+          const visibleTitleParts = createMemo(() =>
             scrolling()
-              ? marqueeText(title(), availableTitleWidth(), marquee.offset())
-              : Locale.takeWidth(title(), availableTitleWidth()),
+              ? marqueeTextParts(title(), availableTitleWidth(), marquee.offset())
+              : Locale.graphemes(Locale.takeWidth(title(), availableTitleWidth())).map((value) => ({
+                  value,
+                  separator: false,
+                })),
           )
-          const visibleTitleParts = createMemo(() => Locale.graphemes(visibleTitle()))
+          const visibleTitle = createMemo(() =>
+            visibleTitleParts()
+              .map((part) => part.value)
+              .join(""),
+          )
           const titleFades = createMemo(
             () => marqueeOverflows(title(), availableTitleWidth()) && availableTitleWidth() > FADE_WIDTH,
           )
@@ -975,10 +1406,10 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
           }
           // Title characters sitting over the glow tinge toward its color, following the same
           // spatial falloff as the glow itself; characters beyond the tail stay neutral.
-          const characterColor = (index: number) => {
+          const characterColor = (index: number, separator: boolean) => {
             const base = foreground()
             const color = glows() ? glowTextColor(base, glowColor(), 1 + numberWidth() + index, width()) : base
-            return titleFades()
+            const faded = titleFades()
               ? fadeTitleColor(
                   color,
                   background(),
@@ -987,6 +1418,7 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
                   scrolling() ? marquee.leading() : 0,
                 )
               : color
+            return separator ? tint(faded, background(), 0.55) : faded
           }
           // The running sweep's level under the number cell, reported by the pulse renderable.
           const [sweepLevel, setSweepLevel] = createSignal(0)
@@ -997,21 +1429,12 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
               hovered() === tab.sessionID && !selected()
                 ? foreground()
                 : tint(idleNumber(), tint(theme.text.default, background(), 0.25), selection())
-            const color = feedback ?? (runs() ? activeNumber() : tint(base, accent(), activity()))
+            const color = runs() ? activeNumber() : (feedback ?? tint(base, unreadColor(), activity()))
             // The number brightens faintly as the running sweep passes beneath it.
             return tint(color, theme.text.default, Math.max(numberIgnition.value().level, 0.15 * sweepLevel()))
           }
           const bold = () => (selected() || dragged() ? TextAttributes.BOLD : undefined)
           const closeColor = () => tint(theme.text.subdued, theme.text.default, 0.6)
-          // Releasing a drag (or a plain click) selects the tab, matching browser tab strips and
-          // keeping sloppy clicks indistinguishable from clean ones.
-          const release = () => {
-            setDragging(undefined)
-            const pending = preview()
-            if (pending?.sessionID === tab.sessionID) tabs.move(pending.sessionID, pending.index)
-            if (tab === NEW_SESSION_TAB) return
-            tabs.select(tab.sessionID)
-          }
           return (
             <box
               width={width()}
@@ -1021,11 +1444,22 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
               onMouseOver={() => marquee.enter(tab.sessionID, title(), hoveredTitleWidth())}
               onMouseOut={() => marquee.leave(tab.sessionID)}
               onMouseDown={(event) => {
+                if (event.button === MIDDLE_MOUSE_BUTTON) {
+                  releaseCloseHold()
+                  didDrag = false
+                  setDragging(undefined)
+                  tabs.close(tab === NEW_SESSION_TAB ? undefined : tab.sessionID)
+                  event.preventDefault()
+                  event.stopPropagation()
+                  return
+                }
                 if (event.button === RIGHT_MOUSE_BUTTON) {
+                  releaseCloseHold()
+                  didDrag = false
                   setDragging(undefined)
                   setContextMenu({
-                    x: event.x - (strip?.screenX ?? 0),
-                    y: event.y - (strip?.screenY ?? 0),
+                    x: event.x,
+                    y: event.y,
                     sessionID: tab === NEW_SESSION_TAB ? undefined : tab.sessionID,
                     title: tab === NEW_SESSION_TAB ? undefined : tab.title,
                   })
@@ -1033,20 +1467,12 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
                   event.stopPropagation()
                   return
                 }
+                didDrag = false
+                releaseCloseHold()
+                handleClick(tab.sessionID)
                 marquee.enter(tab.sessionID, title(), hoveredTitleWidth())
                 setDragging(tab.sessionID)
               }}
-              onMouseUp={(event) => {
-                if (event.button === RIGHT_MOUSE_BUTTON) return
-                release()
-              }}
-              onMouseDrag={(event) => {
-                if (tab === NEW_SESSION_TAB) return
-                const slot = slotAt(event.x)
-                if (slot !== undefined && slot !== tabNumber() - 1)
-                  setPreview({ sessionID: tab.sessionID, index: slot })
-              }}
-              onMouseDragEnd={release}
             >
               <TabPulse
                 enabled={animations()}
@@ -1054,34 +1480,50 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
                 promptPulse={status().promptPulse}
                 complete={status().complete && !status().attention}
                 glow={glows()}
-                breathe={status().attention}
                 color={pulseColor()}
                 glowColor={glowColor()}
                 flashColor={flashColor()}
-                completionColor={accent()}
+                completionColor={unreadColor()}
                 backgroundColor={background()}
                 onLevel={setSweepLevel}
               />
               <box zIndex={1} width="100%" flexDirection="row">
-                <text width={1} selectable={false}>
-                  {" "}
-                </text>
-                <text width={numberWidth()} fg={numberColor()} selectable={false} attributes={bold()}>
-                  {tab === NEW_SESSION_TAB ? "+" : sessionTabShortcutLabel(tabNumber() - 1)}
-                </text>
-                <text
+                <TabIndicator
+                  status={status()}
+                  label={tab === NEW_SESSION_TAB ? "+" : sessionTabNumberLabel(tabNumber() - 1)}
+                  width={numberWidth()}
+                  color={numberColor()}
+                  unreadColor={feedbackColor() ?? unreadColor()}
+                  backgroundColor={background()}
+                  flashColor={theme.text.default}
+                  animations={animations()}
+                  numbers={props.numbers}
+                  spinner={props.spinner}
+                  unreadMarker={props.unreadMarker}
+                  attributes={bold()}
+                />
+                <title_shimmer
                   width={availableTitleWidth()}
+                  height={1}
                   fg={foreground()}
+                  rename={{ pending: status().renaming, title: title() }}
+                  enabled={animations()}
+                  backdrop={background()}
                   wrapMode="none"
                   selectable={false}
-                  attributes={bold()}
+                  attributes={
+                    (status().renaming && !animations() ? TextAttributes.DIM : (bold() ?? 0)) |
+                      (tabs.isPreview?.(tab.sessionID) ? TextAttributes.ITALIC : 0) || undefined
+                  }
                 >
-                  <Show when={glows() || titleFades()} fallback={visibleTitle()}>
-                    <For each={visibleTitleParts()}>
-                      {(character, index) => <span style={{ fg: characterColor(index()) }}>{character}</span>}
-                    </For>
+                  <Show when={scrolling() || glows() || titleFades()} fallback={visibleTitle()}>
+                    <Index each={visibleTitleParts()}>
+                      {(part, index) => (
+                        <span style={{ fg: characterColor(index, part().separator) }}>{part().value}</span>
+                      )}
+                    </Index>
                   </Show>
-                </text>
+                </title_shimmer>
                 <text
                   position="absolute"
                   right={1}
@@ -1091,12 +1533,19 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
                   selectable={false}
                   onMouseOver={() => setCloseHovered(true)}
                   onMouseOut={() => setCloseHovered(false)}
+                  onMouseDown={(event) => {
+                    if (event.button === RIGHT_MOUSE_BUTTON || hovered() !== tab.sessionID) return
+                    didDrag = false
+                    event.stopPropagation()
+                  }}
                   onMouseUp={(event) => {
                     if (event.button === RIGHT_MOUSE_BUTTON) return
+                    if (suppressClick) return
                     // The close mark only renders while hovered; without motion events a click can
                     // land here first, and must select the tab instead of closing it invisibly.
                     if (hovered() !== tab.sessionID) return
                     event.stopPropagation()
+                    holdCloseCell(tab.sessionID, event.x)
                     tabs.close(tab === NEW_SESSION_TAB ? undefined : tab.sessionID)
                   }}
                 >
@@ -1121,15 +1570,23 @@ function HorizontalSessionTabs(props: { controller?: SessionTabsController; anim
           onMouseOver={() => setAddHovered(true)}
           onMouseOut={() => setAddHovered(false)}
           onMouseDown={(event) => {
-            if (event.button !== RIGHT_MOUSE_BUTTON) return
-            setContextMenu({ x: event.x - (strip?.screenX ?? 0), y: event.y - (strip?.screenY ?? 0) })
+            releaseCloseHold()
+            didDrag = false
+            setDragging(undefined)
+            addPressed = event.button !== RIGHT_MOUSE_BUTTON
+            if (addPressed) return
+            setContextMenu({ x: event.x, y: event.y })
             event.preventDefault()
             event.stopPropagation()
           }}
           onMouseUp={(event) => {
             if (event.button === RIGHT_MOUSE_BUTTON) return
+            if (suppressClick) return
+            if (!addPressed) return
+            addPressed = false
             tabs.add?.()
           }}
+          onMouseDragEnd={() => (addPressed = false)}
         >
           {" + "}
         </text>

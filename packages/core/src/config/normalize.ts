@@ -1,6 +1,7 @@
 export * as ConfigNormalize from "./normalize.js"
 
 import { isDeepStrictEqual } from "node:util"
+import { isRecord } from "@opencode-ai/ai/utils/record"
 import { Option, Schema } from "effect"
 import { Info } from "@opencode-ai/schema/config"
 import { ConfigAgent } from "@opencode-ai/schema/config/agent"
@@ -149,7 +150,7 @@ export function normalize(input: unknown): Result {
     "agents",
     migratedAgents,
     nativeAgents,
-    isRecord(input.agent) || isRecord(input.mode) || isRecord(input.agents),
+    migratedSmallModel !== undefined || isRecord(input.agent) || isRecord(input.mode) || isRecord(input.agents),
     diagnostics,
   )
 
@@ -291,18 +292,13 @@ function normalizeMcpTimeout(
     invalid(path, diagnostics)
     return
   }
-  const recognized = ["startup", "catalog", "execution"].filter((key) => own(value, key))
+  const recognized = Object.entries(ConfigMCP.Timeout.fields).filter(([key]) => own(value, key))
   if (Object.keys(value).length && !recognized.length) {
     invalid(path, diagnostics)
     return
   }
-  recognized.forEach((key) => {
-    const leaf = decodeEncoded(
-      ConfigMCP.Timeout.fields[key as keyof typeof ConfigMCP.Timeout.fields],
-      value[key],
-      [...path, key],
-      diagnostics,
-    )
+  recognized.forEach(([key, field]) => {
+    const leaf = decodeEncoded(field, value[key], [...path, key], diagnostics)
     if (leaf === undefined) return
     overlay(timeout, key, leaf, [...path, key], diagnostics)
   })
@@ -401,6 +397,15 @@ function normalizeExperimental(
       unsupportedExperimental.forEach((key) =>
         unsupportedIfPresent(experimental, key, ["experimental", key], diagnostics),
       )
+      if (own(experimental, "portable_shell_scanner")) {
+        const value = decodeEncoded(
+          ConfigExperimental.Info.fields.portable_shell_scanner,
+          experimental.portable_shell_scanner,
+          ["experimental", "portable_shell_scanner"],
+          diagnostics,
+        )
+        if (value !== undefined) result.portable_shell_scanner = value
+      }
       if (own(experimental, "subagent_depth")) {
         const value = decodeEncoded(
           ConfigExperimental.Info.fields.subagent_depth,
@@ -773,10 +778,6 @@ function isEnabledOnlyMcp(value: unknown) {
   return isRecord(value) && !own(value, "type") && typeof value.enabled === "boolean"
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (!isRecord(value)) return false
   const prototype = Object.getPrototypeOf(value)
@@ -784,7 +785,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function own(value: Record<string, unknown>, key: string) {
-  return Object.prototype.hasOwnProperty.call(value, key)
+  return Object.hasOwn(value, key)
 }
 
 function setOwn(value: Record<string, unknown>, key: string, item: unknown) {

@@ -46,7 +46,7 @@ export const Plugin = define({
 
     function firstMissing(target: string): Effect.Effect<string | undefined> {
       const parent = path.dirname(target)
-      if (parent === target) return Effect.succeed(undefined)
+      if (parent === target) return Effect.undefined
       return fs.isDir(parent).pipe(Effect.flatMap((exists) => (exists ? Effect.succeed(target) : firstMissing(parent))))
     }
 
@@ -54,7 +54,7 @@ export const Plugin = define({
       "ConfigSkillPlugin.watchDirectory",
     )(function* (directory: string) {
       const target = path.resolve(directory)
-      const resolved = yield* fs.realPath(directory).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      const resolved = yield* fs.realPath(directory).pipe(Effect.orElseSucceed(() => undefined))
       if (resolved) {
         yield* watch(resolved, "directory")
         if (resolved !== target) yield* watch(target, "file")
@@ -65,7 +65,7 @@ export const Plugin = define({
       if (
         yield* fs.realPath(directory).pipe(
           Effect.as(true),
-          Effect.catch(() => Effect.succeed(false)),
+          Effect.orElseSucceed(() => false),
         )
       ) {
         if (missing) yield* FiberMap.remove(watches, `file:${path.resolve(missing)}`)
@@ -124,11 +124,11 @@ export const Plugin = define({
       for (const directory of directories) {
         const files = yield* fs
           .scan("{*.md,**/SKILL.md}", { cwd: directory, absolute: true, include: "file", symlink: true, dot: true })
-          .pipe(Effect.catch(() => Effect.succeed([] as string[])))
+          .pipe(Effect.orElseSucceed(() => [] as string[]))
         for (const filepath of files.toSorted()) {
-          const resolved = yield* fs.realPath(filepath).pipe(Effect.catch(() => Effect.succeed(filepath)))
+          const resolved = yield* fs.realPath(filepath).pipe(Effect.orElseSucceed(() => filepath))
           if (!roots.some((root) => FSUtil.contains(root, resolved))) yield* watch(path.dirname(resolved), "directory")
-          const content = yield* fs.readFileStringSafe(filepath).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          const content = yield* fs.readFileStringSafe(filepath).pipe(Effect.orElseSucceed(() => undefined))
           if (!content) continue
           const parsed = SkillFile.parse(directory, filepath, content)
           if (parsed._tag === "Skipped") {
@@ -151,26 +151,25 @@ export const Plugin = define({
       return skills
     })
 
-    const refresh = Effect.fn("ConfigSkillPlugin.refresh")(function* (file?: string) {
-      yield* lock.withPermit(
-        Effect.gen(function* () {
-          yield* FiberMap.clear(watches)
-          const skills = new Map<Skill.ID, Skill.Info>()
-          const current = sources()
-          for (const source of current) {
-            for (const skill of yield* load(source)) skills.set(skill.id, skill)
-          }
-          loaded.skills = Array.from(skills.values())
-          if (file) {
-            yield* Effect.logInfo("skills rescanned", {
-              file,
-              sources: current.map(Skill.Source.key),
-              skills: loaded.skills.map((skill) => skill.id),
-            })
-          }
-        }),
-      )
-    })
+    const refresh = Effect.fn("ConfigSkillPlugin.refresh")(
+      function* (file?: string) {
+        yield* FiberMap.clear(watches)
+        const skills = new Map<Skill.ID, Skill.Info>()
+        const current = sources()
+        for (const source of current) {
+          for (const skill of yield* load(source)) skills.set(skill.id, skill)
+        }
+        loaded.skills = Array.from(skills.values())
+        if (file) {
+          yield* Effect.logInfo("skills rescanned", {
+            file,
+            sources: current.map(Skill.Source.key),
+            skills: loaded.skills.map((skill) => skill.id),
+          })
+        }
+      },
+      (effect, ..._args: [file?: string]) => lock.withPermit(effect),
+    )
 
     yield* Stream.fromPubSub(changes).pipe(
       Stream.runForEach((file) => refresh(file).pipe(Effect.andThen(ctx.skill.reload()))),

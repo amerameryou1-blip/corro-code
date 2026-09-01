@@ -2,8 +2,9 @@ export * as PluginHost from "./host.js"
 
 import { Plugin } from "@opencode-ai/plugin/effect"
 import type { IntegrationMethodRegistration } from "@opencode-ai/plugin/effect/integration"
-import type { CredentialOAuth } from "@opencode-ai/sdk/v2/types"
 import { EventManifest } from "@opencode-ai/schema/event-manifest"
+import type { Event } from "@opencode-ai/schema/event"
+import { ServerConfig } from "@opencode-ai/schema/mcp"
 import { App } from "../app.js"
 import { Effect, Schema, Stream } from "effect"
 import { Agent } from "../agent.js"
@@ -13,20 +14,33 @@ import { Command } from "../command.js"
 import { Credential } from "../credential.js"
 import { Bus } from "../bus.js"
 import { Integration } from "../integration.js"
+import { KV } from "../kv.js"
 import { Location } from "../location.js"
 import { Model } from "../model.js"
+import { Mcp } from "../mcp/index.js"
 import { PluginRuntime } from "./runtime.js"
 import { Provider } from "../provider.js"
 import { Reference } from "../reference.js"
+import { Rpc } from "../rpc.js"
 import { AbsolutePath, type DeepMutable } from "../schema.js"
 import { Skill } from "../skill.js"
 import { Tool } from "../tool.js"
 import { Workspace } from "../workspace.js"
+import { Vcs } from "../vcs.js"
 import { WebSearch } from "../websearch.js"
+import { Generate } from "../generate.js"
+import { Permission } from "../permission.js"
 import { PluginHooks } from "./hooks.js"
+import type { Interface } from "../plugin.js"
 
 const mutable = <T>(value: T) => value as DeepMutable<T>
-export const make = Effect.fn("PluginHost.make")(function* (plugin: import("../plugin.js").Interface) {
+type RpcEvent = Event.Payload & {
+  readonly type: `rpc.${string}`
+  readonly location: Location.Ref
+  readonly data: Readonly<Record<string, unknown>>
+}
+const isRpcEvent = (event: Event.Payload): event is RpcEvent => event.type.startsWith("rpc.")
+export const make = Effect.fn("PluginHost.make")(function* (plugin: Interface, pluginID: string = "test") {
   const app = yield* App.Metadata
   const agents = yield* Agent.Service
   const aisdk = yield* AISDK.Service
@@ -34,11 +48,17 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: import("../p
   const commands = yield* Command.Service
   const bus = yield* Bus.Service
   const integration = yield* Integration.Service
+  const kv = yield* KV.Service
+  const mcp = yield* Mcp.Service
   const location = yield* Location.Service
   const reference = yield* Reference.Service
+  const rpc = yield* Rpc.Service
   const skill = yield* Skill.Service
   const tools = yield* Tool.Service
+  const vcs = yield* Vcs.Service
   const websearch = yield* WebSearch.Service
+  const generate = yield* Generate.Service
+  const permission = yield* Permission.Service
   const hooks = yield* PluginHooks.Service
   const runtime = yield* PluginRuntime.Service
   const locationInfo = () =>
@@ -60,9 +80,12 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: import("../p
   const response = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(Effect.map((data) => ({ location: locationInfo(), data })))
 
-  return {
+  // Keep the instance graph's inferred types independent of Session handles.
+  const context: Plugin.Context = {
     app,
+    location: locationInfo(),
     options: {},
+    rpc: Object.assign(rpc.client, { register: rpc.register }),
     agent: {
       get: (input) => {
         const ref = locationRef(input)
@@ -86,7 +109,7 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: import("../p
       list: (input) => {
         const ref = locationRef(input)
         if (ref && !isCurrentLocation(ref)) return runtime.location.agent.list(ref)
-        return agents.list().pipe(Effect.map((data) => ({ location: locationInfo(), data })))
+        return response(agents.list())
       },
       reload: agents.reload,
       transform: (callback) =>
@@ -101,9 +124,10 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: import("../p
         }),
     },
     aisdk: {
-      hook: (name, callback) => {
+      hook: (name, callback, options) => {
         if (name === "sdk") {
           return aisdk.hook.sdk((event) => {
+            if (options?.providerID !== undefined && options.providerID !== event.model.providerID) return Effect.void
             const output = {
               model: mutable(event.model),
               package: event.package,
@@ -116,6 +140,7 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: import("../p
           })
         }
         return aisdk.hook.language((event) => {
+          if (options?.providerID !== undefined && options.providerID !== event.model.providerID) return Effect.void
           const output = {
             model: mutable(event.model),
             options: event.options,
@@ -174,13 +199,26 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: import("../p
     command: {
       list: () => response(commands.list()),
       reload: commands.reload,
-      transform: (callback) =>
-        commands.transform((draft) => {
-          callback(draft)
-        }),
+      transform: commands.transform,
     },
     event: {
-      subscribe: () => bus.subscribe().pipe(Stream.filter(EventManifest.isServer)),
+      subscribe: () =>
+        bus
+          .subscribe()
+          .pipe(
+            Stream.filter(
+              (event): event is EventManifest.ServerEvent | RpcEvent =>
+                EventManifest.isServer(event) || isRpcEvent(event),
+            ),
+          ),
+    },
+    experimental: {
+      terminal: {
+        read: (input) => runtime.persistentPty.read(input.sessionID, input.lines),
+      },
+    },
+    generate: {
+      text: (input) => generate.text(input).pipe(Effect.map((text) => ({ text }))),
     },
     integration: {
       list: () => response(integration.list()),
@@ -269,6 +307,48 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: import("../p
           })
         }),
     },
+    mcp: {
+      list: (input) => {
+        const ref = locationRef(input)
+        if (ref && !isCurrentLocation(ref)) return runtime.location.mcp.list(ref)
+        return response(mcp.servers())
+      },
+      reload: mcp.reload,
+      transform: (callback) =>
+        mcp.transform((draft) => {
+          callback({
+            list: () => draft.list().map(([name, config]) => [name, mutable(config)]),
+            get: (name) => mutable(draft.get(name)),
+            set: (name, config) => draft.set(name, Schema.decodeUnknownSync(ServerConfig)(config)),
+            update: draft.update,
+            remove: draft.remove,
+          })
+        }),
+    },
+    permission: {
+      hook: (name, callback) => hooks.register("permission", name, callback),
+      list: (input) => permission.forSession(input.sessionID),
+      get: (input) =>
+        permission
+          .get(input.requestID)
+          .pipe(
+            Effect.flatMap((request) =>
+              request?.sessionID === input.sessionID
+                ? Effect.succeed(request)
+                : Effect.fail(new Error(`Permission request not found: ${input.requestID}`)),
+            ),
+          ),
+      reply: (input) =>
+        permission
+          .get(input.requestID)
+          .pipe(
+            Effect.flatMap((request) =>
+              request?.sessionID === input.sessionID
+                ? permission.reply({ requestID: input.requestID, reply: input.reply, message: input.message })
+                : Effect.fail(new Error(`Permission request not found: ${input.requestID}`)),
+            ),
+          ),
+    },
     plugin: {
       list: () => response(plugin.list()),
     },
@@ -297,19 +377,23 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: import("../p
           })
         }),
     },
+    storage: storage(kv, pluginID),
     shell: {
       hook: (name, callback) => hooks.register("shell", name, callback),
     },
     tool: {
-      transform: (callback) =>
-        tools
-          .transform((draft) =>
-            callback({
-              add: (tool) => draft.add(tool),
-            }),
-          )
-          .pipe(Effect.orDie, Effect.as({ dispose: Effect.void })),
+      transform: tools.transform,
+      reload: tools.reload,
       hook: (name, callback) => hooks.register("tool", name, callback),
+    },
+    vcs: {
+      get: () => response(vcs.info()),
+      base: () => response(vcs.base()),
+      branches: (input) => response(vcs.branches({ search: input?.search, limit: input?.limit })),
+      status: () => response(vcs.status()),
+      diff: (input) => response(vcs.diff(input.mode, { context: input.context, base: input.base })),
+      transform: vcs.transform,
+      reload: vcs.reload,
     },
     websearch: {
       providers: () => response(websearch.providers()),
@@ -332,13 +416,16 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: import("../p
               }),
             default: {
               get: draft.default.get,
-              set: (providerID) => draft.default.set(WebSearch.ID.make(providerID)),
+              set: (selection) =>
+                draft.default.set(
+                  selection === false || selection === "random" ? selection : WebSearch.ID.make(selection),
+                ),
             },
           })
         }),
     },
     session: {
-      hook: (name, callback) => hooks.register("session", name, callback),
+      hook: (name, callback, options) => hooks.register("session", name, callback, options),
       create: (input) =>
         runtime.session.create({
           id: input?.id,
@@ -349,16 +436,53 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: import("../p
             input?.location ?? Location.Ref.make({ directory: location.directory, workspaceID: location.workspaceID }),
         }),
       get: (input) => runtime.session.get(input.sessionID),
+      switchAgent: runtime.session.switchAgent,
+      switchModel: runtime.session.switchModel,
       prompt: runtime.session.prompt,
       generate: (input) => runtime.session.generate(input).pipe(Effect.map((text) => ({ text }))),
       command: runtime.session.command,
       rename: runtime.session.rename,
+      move: runtime.session.move,
       synthetic: runtime.session.synthetic,
-      interrupt: (input) => runtime.session.interrupt(input.sessionID),
+      interrupt: (input) =>
+        runtime.session
+          .interrupt(input.sessionID, { continue: input.continue })
+          .pipe(Effect.map((interrupted) => ({ interrupted }))),
       wait: (input) => runtime.session.wait(input.sessionID),
+      context: (input) => runtime.session.context(input.sessionID),
     },
-  } satisfies Plugin.Context
+  }
+  return context
 })
+
+export function storage(kv: KV.Interface, pluginID: string): Plugin.Context["storage"] {
+  const namespace = `plugin:${pluginID
+    .split("")
+    .map((value) => value.charCodeAt(0).toString(16).padStart(4, "0"))
+    .join("")}:`
+  return {
+    get: (key) => kv.get(namespace + key),
+    set: (key, value) => kv.set(namespace + key, value),
+    remove: (key) => kv.remove(namespace + key),
+    scan: (options) =>
+      kv
+        .scan({
+          prefix: namespace + options.prefix,
+          after: options.after === undefined ? undefined : namespace + options.after,
+          limit: options.limit,
+        })
+        .pipe(
+          Effect.map((result) => {
+            const entries = result.entries.map((entry) => ({
+              key: entry.key.slice(namespace.length),
+              value: entry.value,
+            }))
+            if (result.next === undefined) return { entries }
+            return { entries, next: result.next.slice(namespace.length) }
+          }),
+        ),
+  }
+}
 
 function methodImplementation(input: IntegrationMethodRegistration): Integration.Implementation {
   if ("authorize" in input) {
@@ -403,6 +527,6 @@ function methodImplementation(input: IntegrationMethodRegistration): Integration
   }
 }
 
-function credential(value: CredentialOAuth) {
+function credential(value: Credential.OAuth) {
   return Credential.OAuth.make({ ...value, methodID: Integration.MethodID.make(value.methodID) })
 }

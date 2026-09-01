@@ -1,7 +1,7 @@
 import path from "path"
 import { describe, expect } from "bun:test"
 import { Money } from "@opencode-ai/schema/money"
-import { Effect, Layer } from "effect"
+import { Effect, Exit, Layer, Scope } from "effect"
 import { Catalog } from "@opencode-ai/core/catalog"
 import { Integration } from "@opencode-ai/core/integration"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
@@ -11,46 +11,87 @@ import { Location } from "@opencode-ai/core/location"
 import { Model } from "@opencode-ai/core/model"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { ModelsDevPlugin } from "@opencode-ai/core/plugin/models-dev"
+import { Plugin } from "@opencode-ai/core/plugin"
+import { PluginHost } from "@opencode-ai/core/plugin/host"
 import { ProviderPlugins } from "@opencode-ai/core/plugin/provider"
 import { Provider } from "@opencode-ai/core/provider"
 import { AbsolutePath } from "@opencode-ai/core/schema"
+import { withEnv } from "../fixture/env"
 import { location } from "../fixture/location"
 import { testEffect } from "../lib/effect"
 import { catalogHost, host, integrationHost } from "./host"
+import { PluginTestLayer } from "./fixture"
 
 const locationLayer = Layer.succeed(
   Location.Service,
   Location.Service.of(location({ directory: AbsolutePath.make(import.meta.dir) })),
 )
 const layer = AppNodeBuilder.build(LayerNode.group([Catalog.node, Integration.node, Bus.node]), [
-  [Location.node, locationLayer],
+  Location.node.replace(locationLayer),
 ])
 const it = testEffect(layer)
+const real = testEffect(PluginTestLayer)
 const models = (file: string) =>
-  AppNodeBuilder.build(ModelsDev.node, [[ModelsDev.node, ModelsDev.configured({ file, fetch: false })]])
-
-function withEnv<A, E, R>(variables: Record<string, string | undefined>, effect: () => Effect.Effect<A, E, R>) {
-  return Effect.acquireUseRelease(
-    Effect.sync(() => {
-      const previous = Object.fromEntries(Object.keys(variables).map((key) => [key, process.env[key]]))
-      Object.entries(variables).forEach(([key, value]) => {
-        if (value === undefined) delete process.env[key]
-        else process.env[key] = value
-      })
-      return previous
-    }),
-    effect,
-    (previous) =>
-      Effect.sync(() => {
-        Object.entries(previous).forEach(([key, value]) => {
-          if (value === undefined) delete process.env[key]
-          else process.env[key] = value
-        })
-      }),
-  )
-}
+  AppNodeBuilder.build(ModelsDev.node, [ModelsDev.node.replace(ModelsDev.configured({ file, fetch: false }))])
 
 describe("ModelsDevPlugin", () => {
+  real.effect("keeps the retained model seed unchanged across catalog replay", () =>
+    Effect.gen(function* () {
+      const catalog = yield* Catalog.Service
+      const plugins = yield* Plugin.Service
+      const providerID = Provider.ID.make("acme")
+      const modelID = Model.ID.make("model")
+      const modelsDev = ModelsDev.Service.of({
+        get: () =>
+          Effect.succeed([
+            {
+              info: {
+                id: providerID,
+                name: "Acme",
+                activation: "auto",
+                package: Provider.aisdk("@ai-sdk/openai-compatible"),
+              },
+              environment: [],
+              models: [
+                {
+                  id: modelID,
+                  modelID,
+                  providerID,
+                  name: "Model",
+                  capabilities: { tools: true, input: [], output: [] },
+                  variants: [],
+                  time: { released: Date.parse("2026-01-01") },
+                  cost: [],
+                  status: "active",
+                  enabled: true,
+                  limit: { context: 128_000, output: 32_000 },
+                },
+              ],
+            },
+          ] satisfies readonly ModelsDev.Snapshot[]),
+        refresh: () => Effect.void,
+      })
+      const pluginHost = yield* PluginHost.make(plugins)
+      yield* ModelsDevPlugin.effect(pluginHost).pipe(Effect.provideService(ModelsDev.Service, modelsDev))
+
+      const scope = yield* Scope.make()
+      yield* catalog
+        .transform((draft) =>
+          draft.model.update(providerID, modelID, (model) => {
+            model.variants ??= []
+            model.variants.push({ id: Model.VariantID.make("configured") })
+          }),
+        )
+        .pipe(Scope.provide(scope))
+      expect((yield* catalog.model.get(providerID, modelID))?.variants).toEqual([
+        { id: Model.VariantID.make("configured") },
+      ])
+
+      yield* Scope.close(scope, Exit.void)
+      expect((yield* catalog.model.get(providerID, modelID))?.variants).toEqual([])
+    }),
+  )
+
   it.effect("projects normalized models.dev snapshots into the catalog", () =>
     Effect.gen(function* () {
       const integrations = yield* Integration.Service
@@ -64,6 +105,7 @@ describe("ModelsDevPlugin", () => {
               info: {
                 id: providerID,
                 name: "Acme",
+                activation: "auto",
                 package: Provider.aisdk("@ai-sdk/openai-compatible"),
                 settings: { baseURL: "https://api.acme.test/v1" },
               },
@@ -239,6 +281,7 @@ describe("ModelsDevPlugin", () => {
           info: {
             id: providerID,
             name: "Acme",
+            activation: "auto",
             package: Provider.aisdk("@ai-sdk/openai-compatible"),
           },
           environment: [],
@@ -330,6 +373,7 @@ describe("ModelsDevPlugin", () => {
                       info: {
                         id: providerID,
                         name: "Acme",
+                        activation: "auto",
                         package: Provider.aisdk("@ai-sdk/openai-compatible"),
                         settings: { baseURL: "https://${ACME_HOST}/${UNDECLARED_HOST}/v1" },
                       },
@@ -385,6 +429,7 @@ describe("ModelsDevPlugin", () => {
         info: {
           id: Provider.ID.make(id),
           name,
+          activation: "auto",
           package: Provider.aisdk(packageName),
         },
         environment: id === "azure" ? ["AZURE_RESOURCE_NAME", environment] : [environment],
@@ -417,8 +462,48 @@ describe("ModelsDevPlugin", () => {
       expect(yield* integrations.get(Integration.ID.make("google-vertex"))).toBeDefined()
       expect(yield* integrations.get(Integration.ID.make("azure-cognitive-services"))).toBeUndefined()
       expect(yield* integrations.get(Integration.ID.make("google-vertex-anthropic"))).toBeUndefined()
-      expect(ProviderPlugins.map((plugin) => plugin.id)).not.toContain("opencode.provider.azure-cognitive-services")
-      expect(ProviderPlugins.map((plugin) => plugin.id)).not.toContain("opencode.provider.google-vertex-anthropic")
+      expect(ProviderPlugins.map((plugin) => plugin.id)).not.toContain("opencode.provider.azure.cognitive.services")
+      expect(ProviderPlugins.map((plugin) => plugin.id)).not.toContain("opencode.provider.google.vertex.anthropic")
+    }),
+  )
+
+  it.effect("advertises only key-bearing Google Vertex environment variables", () =>
+    Effect.gen(function* () {
+      const integrations = yield* Integration.Service
+      const catalog = yield* Catalog.Service
+
+      yield* ModelsDevPlugin.effect(
+        host({
+          catalog: catalogHost(catalog),
+          integration: integrationHost(integrations),
+        }),
+      ).pipe(
+        Effect.provideService(
+          ModelsDev.Service,
+          ModelsDev.Service.of({
+            get: () =>
+              Effect.succeed([
+                {
+                  info: {
+                    id: Provider.ID.make("google-vertex"),
+                    name: "Google Vertex",
+                    activation: "auto",
+                    package: Provider.aisdk("@ai-sdk/google-vertex"),
+                  },
+                  environment: ["GOOGLE_VERTEX_PROJECT", "GOOGLE_VERTEX_LOCATION", "GOOGLE_APPLICATION_CREDENTIALS"],
+                  models: [],
+                },
+              ] satisfies readonly ModelsDev.Snapshot[]),
+            refresh: () => Effect.void,
+          }),
+        ),
+      )
+
+      // Vertex authenticates through ADC; project, location, and the credentials
+      // file path are configuration, not API keys.
+      expect(yield* integrations.get(Integration.ID.make("google-vertex"))).toMatchObject({
+        methods: [{ type: "key" }, { type: "env", names: ["GOOGLE_VERTEX_API_KEY"] }],
+      })
     }),
   )
 

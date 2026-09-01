@@ -9,7 +9,7 @@ import type { TypedQueryBuilder } from "drizzle-orm/query-builders/query-builder
 import type { AnyRelations, EmptyRelations } from "drizzle-orm/relations"
 import { SelectionProxyHandler } from "drizzle-orm/selection-proxy"
 import { type ColumnsSelection, type SQL, sql, type SQLWrapper } from "drizzle-orm/sql/sql"
-import type { SQLiteAsyncDialect } from "drizzle-orm/sqlite-core/dialect"
+import type { SQLiteDialect } from "drizzle-orm/sqlite-core/dialect"
 import { QueryBuilder } from "drizzle-orm/sqlite-core/query-builders/query-builder"
 import type { SelectedFields } from "drizzle-orm/sqlite-core/query-builders/select.types"
 import type { SQLiteTransactionConfig } from "drizzle-orm/sqlite-core/session"
@@ -45,7 +45,7 @@ export class SQLiteEffectDatabase<
 
   constructor(
     /** @internal */
-    readonly dialect: SQLiteAsyncDialect,
+    readonly dialect: SQLiteDialect,
     /** @internal */
     readonly session: SQLiteEffectSession<TEffectHKT, TRunResult, TRelations>,
     relations: TRelations,
@@ -237,59 +237,6 @@ export class SQLiteEffectDatabase<
     transaction: (tx: SQLiteEffectTransaction<TEffectHKT, TRunResult, TRelations>) => Effect.Effect<A, E, R>,
     config?: SQLiteTransactionConfig,
   ) => Effect.Effect<A, E | SqlError, R> = (tx, config) => this.session.transaction(tx, config)
-}
-
-export type SQLiteEffectWithReplicas<Q> = Q & { $primary: Q; $replicas: Q[] }
-
-export const withReplicas = <
-  TEffectHKT extends QueryEffectHKTBase,
-  TRunResult,
-  TRelations extends AnyRelations,
-  Q extends SQLiteEffectDatabase<TEffectHKT, TRunResult, TRelations>,
->(
-  primary: Q,
-  replicas: [Q, ...Q[]],
-  getReplica: (replicas: Q[]) => Q = () => replicas[Math.floor(Math.random() * replicas.length)]!,
-): SQLiteEffectWithReplicas<Q> => {
-  const select: Q["select"] = (...args: []) => getReplica(replicas).select(...args)
-  const selectDistinct: Q["selectDistinct"] = (...args: []) => getReplica(replicas).selectDistinct(...args)
-  const $count: Q["$count"] = (...args: [any]) => getReplica(replicas).$count(...args)
-  const _with: Q["with"] = (...args: []) => getReplica(replicas).with(...args)
-  const $with = ((...args: [string] | [string, ColumnsSelection]) =>
-    args.length === 1
-      ? getReplica(replicas).$with(args[0])
-      : getReplica(replicas).$with(args[0], args[1])) as Q["$with"]
-
-  const update: Q["update"] = (...args: [any]) => primary.update(...args)
-  const insert: Q["insert"] = (...args: [any]) => primary.insert(...args)
-  const $delete: Q["delete"] = (...args: [any]) => primary.delete(...args)
-  const run: Q["run"] = (...args: [any]) => primary.run(...args)
-  const all: Q["all"] = (...args: [any]) => primary.all(...args)
-  const get: Q["get"] = (...args: [any]) => primary.get(...args)
-  const values: Q["values"] = (...args: [any]) => primary.values(...args)
-  const transaction: Q["transaction"] = (...args: [any]) => primary.transaction(...args)
-
-  return {
-    ...primary,
-    update,
-    insert,
-    delete: $delete,
-    run,
-    all,
-    get,
-    values,
-    transaction,
-    $primary: primary,
-    $replicas: replicas,
-    select,
-    selectDistinct,
-    $count,
-    $with,
-    with: _with,
-    get query() {
-      return getReplica(replicas).query
-    },
-  }
 }
 
 export type AnySQLiteEffectDatabase = SQLiteEffectDatabase<any, any, any>

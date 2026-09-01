@@ -20,6 +20,38 @@ const model = Model.Ref.make({ id: Model.ID.make("model"), providerID: Provider.
 const build = Agent.defaultID
 
 describe("toLLMMessages", () => {
+  test("background user shells enter model context only through their completion notification", () => {
+    const shell = SessionMessage.Shell.make({
+      id: id("background-shell"),
+      type: "shell",
+      shellID: Shell.ID.make("sh_background"),
+      status: "running",
+      command: "pwd",
+      metadata: { background: true },
+      time: { created },
+    })
+    const notification = SessionMessage.Synthetic.make({
+      id: id("shell-completion"),
+      type: "synthetic",
+      text: "User shell pwd completed: /project",
+      metadata: { source: "shell", shellID: shell.shellID, state: "completed" },
+      time: { created },
+    })
+
+    expect(toLLMMessages([shell], model)).toEqual([])
+    const completed = SessionMessage.Shell.make({
+      ...shell,
+      status: "exited",
+      exit: 0,
+      output: { output: "/project", cursor: 8, size: 8, truncated: false },
+      time: { created, completed: created },
+    })
+    expect(toLLMMessages([completed], model)).toEqual([])
+    expect(toLLMMessages([completed, notification], model)).toEqual([
+      Message.make({ id: notification.id, role: "user", content: notification.text }),
+    ])
+  })
+
   test("omits empty assistant turns", () => {
     const assistant = (value: string, content: SessionMessage.Assistant["content"]) =>
       SessionMessage.Assistant.make({
@@ -205,18 +237,56 @@ Recent work
     })
   })
 
-  test("lowers selected skill instructions with the original user prompt", () => {
+  test("lowers each prepared skill once before the prompt", () => {
+    const effect = SkillAttachment.make({
+      id: Skill.ID.make("effect"),
+      name: Skill.Name.make("Effect"),
+      text: "<skill_content>Use Effect</skill_content>",
+    })
+    const api = SkillAttachment.make({
+      id: Skill.ID.make("api-design"),
+      name: Skill.Name.make("API design"),
+      text: "<skill_content>Design APIs</skill_content>",
+    })
     const messages = toLLMMessages(
       [
         SessionMessage.User.make({
-          id: id("user-skill"),
+          id: id("user-skill-content"),
           type: "user",
-          text: "Design this API",
+          text: "Use @effect and @api-design",
+          skills: [effect, api, SkillAttachment.make({ id: effect.id, name: effect.name })],
+          time: { created },
+        }),
+      ],
+      model,
+    )
+
+    expect(messages).toEqual([
+      Message.make({
+        id: id("user-skill-content"),
+        role: "user",
+        content: [
+          { type: "text", text: "<skill_content>Use Effect</skill_content>" },
+          { type: "text", text: "<skill_content>Design APIs</skill_content>" },
+          { type: "text", text: "Use @effect and @api-design" },
+        ],
+        metadata: {},
+      }),
+    ])
+  })
+
+  test("does not inject skill content for reference-only attachments", () => {
+    const messages = toLLMMessages(
+      [
+        SessionMessage.User.make({
+          id: id("user-skill-reference"),
+          type: "user",
+          text: "Use @api-design",
           skills: [
             SkillAttachment.make({
               id: Skill.ID.make("api-design"),
               name: Skill.Name.make("API design"),
-              text: "Start from the ideal call site.",
+              mention: { start: 4, end: 15, text: "@api-design" },
             }),
           ],
           time: { created },
@@ -225,17 +295,9 @@ Recent work
       model,
     )
 
-    expect(messages).toHaveLength(1)
     expect(messages[0]).toMatchObject({
-      id: id("user-skill"),
       role: "user",
-      content: [
-        {
-          type: "text",
-          text: "Start from the ideal call site.",
-        },
-        { type: "text", text: "Design this API" },
-      ],
+      content: [{ type: "text", text: "Use @api-design" }],
     })
   })
 
@@ -369,7 +431,7 @@ Recent work
     ])
   })
 
-  test("uses materialized image data as provider media and drops unsupported attachments", () => {
+  test("uses materialized image and PDF data as provider media", () => {
     const data = Base64.make("AAECAw==")
     const messages = toLLMMessages(
       [
@@ -395,6 +457,7 @@ Recent work
     expect(messages[0]?.content).toEqual([
       { type: "text", text: "Inspect this image" },
       { type: "media", mediaType: "image/png", data, filename: "image.png" },
+      { type: "media", mediaType: "application/pdf", data: "JVBERg==", filename: "document.pdf" },
     ])
   })
 
@@ -953,7 +1016,7 @@ Recent work
     )
 
     expect(messages[0]?.content).toEqual([
-      { type: "text", text: "Visible thought" },
+      { type: "reasoning", text: "Visible thought" },
       {
         type: "tool-call",
         id: "hosted-old-model",
@@ -1027,7 +1090,7 @@ Recent work
     ])
   })
 
-  test("preserves assistant text provider state across same-provider model changes and failures", () => {
+  test("drops assistant text provider state across model changes and failures", () => {
     const messages = toLLMMessages(
       [
         SessionMessage.Assistant.make({
@@ -1047,6 +1110,36 @@ Recent work
         }),
       ],
       Model.Ref.make({ id: Model.ID.make("new"), providerID: Provider.ID.make("provider") }),
+    )
+
+    expect(messages[0]?.content).toEqual([
+      {
+        type: "text",
+        text: "Checking.",
+        providerMetadata: undefined,
+      },
+    ])
+  })
+
+  test("preserves assistant text provider state for the same model", () => {
+    const messages = toLLMMessages(
+      [
+        SessionMessage.Assistant.make({
+          id: id("assistant-phase"),
+          type: "assistant",
+          agent: build,
+          model: { id: Model.ID.make("same"), providerID: Provider.ID.make("provider") },
+          content: [
+            SessionMessage.AssistantText.make({
+              type: "text",
+              text: "Checking.",
+              state: { phase: "commentary" },
+            }),
+          ],
+          time: { created, completed: created },
+        }),
+      ],
+      Model.Ref.make({ id: Model.ID.make("same"), providerID: Provider.ID.make("provider") }),
     )
 
     expect(messages[0]?.content).toEqual([

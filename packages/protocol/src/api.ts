@@ -11,6 +11,7 @@ import { FileSystemGroup } from "./groups/fs.js"
 import { makeFormGroup } from "./groups/form.js"
 import { CommandGroup } from "./groups/command.js"
 import { SkillGroup } from "./groups/skill.js"
+import { RpcGroup } from "./groups/rpc.js"
 import { EventGroup, makeEventGroup } from "./groups/event.js"
 import type { Definition } from "@opencode-ai/schema/event"
 import { AgentGroup } from "./groups/agent.js"
@@ -19,8 +20,8 @@ import { HealthGroup } from "./groups/health.js"
 import { ServerGroup } from "./groups/server.js"
 import { DebugGroup } from "./groups/debug.js"
 import { PtyGroup } from "./groups/pty.js"
+import { PersistentPtyGroup } from "./groups/persistent-pty.js"
 import { ShellGroup } from "./groups/shell.js"
-import { makeQuestionGroup } from "./groups/question.js"
 import { ReferenceGroup } from "./groups/reference.js"
 import { Authorization } from "./middleware/authorization.js"
 import { LocationGroup } from "./groups/location.js"
@@ -29,17 +30,17 @@ import { WebSearchGroup } from "./groups/websearch.js"
 import { McpGroup } from "./groups/mcp.js"
 import { CredentialGroup } from "./groups/credential.js"
 import { ProjectGroup } from "./groups/project.js"
-import { ProjectCopyGroup } from "./groups/project-copy.js"
+import { WorktreeGroup } from "./groups/worktree.js"
 import { VcsGroup } from "./groups/vcs.js"
 import { MigrationGroup } from "./groups/migration.js"
 import { ConfigGroup } from "./groups/config.js"
+import { WorkspaceGroup } from "./groups/workspace.js"
 
 type LocationGroups<LocationId extends HttpApiMiddleware.AnyId> =
   | HttpApiGroup.AddMiddleware<typeof LocationGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof AgentGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof PluginGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof ModelGroup, LocationId>
-  | HttpApiGroup.AddMiddleware<typeof GenerateGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof ProviderGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof IntegrationGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof WebSearchGroup, LocationId>
@@ -49,10 +50,10 @@ type LocationGroups<LocationId extends HttpApiMiddleware.AnyId> =
   | HttpApiGroup.AddMiddleware<typeof FileSystemGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof CommandGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof SkillGroup, LocationId>
+  | HttpApiGroup.AddMiddleware<typeof RpcGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof PtyGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof ShellGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof ReferenceGroup, LocationId>
-  | HttpApiGroup.AddMiddleware<typeof ProjectCopyGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof VcsGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof ConfigGroup, LocationId>
 
@@ -72,9 +73,7 @@ type MixedMiddlewareGroups<
   LocationService,
   SessionLocationId extends HttpApiMiddleware.AnyId,
   SessionLocationService,
-> =
-  | ReturnType<typeof makePermissionGroup<LocationId, LocationService, SessionLocationId, SessionLocationService>>
-  | ReturnType<typeof makeQuestionGroup<LocationId, LocationService, SessionLocationId, SessionLocationService>>
+> = ReturnType<typeof makePermissionGroup<LocationId, LocationService, SessionLocationId, SessionLocationService>>
 
 type ApiGroups<
   LocationId extends HttpApiMiddleware.AnyId,
@@ -89,6 +88,10 @@ type ApiGroups<
   | typeof ServerGroup
   | typeof DebugGroup
   | typeof MigrationGroup
+  | typeof WorktreeGroup
+  | typeof WorkspaceGroup
+  | typeof GenerateGroup
+  | typeof PersistentPtyGroup
   | LocationGroups<LocationId>
   | FormGroups<LocationId, LocationService, FormLocationId, FormLocationService>
   | SessionGroups<SessionLocationId, SessionLocationService>
@@ -156,7 +159,7 @@ const makeApiFromGroup = <
     .add(makeSessionGroup(sessionLocationMiddleware))
     .add(MessageGroup)
     .add(ModelGroup.middleware(locationMiddleware))
-    .add(GenerateGroup.middleware(locationMiddleware))
+    .add(GenerateGroup)
     .add(ProviderGroup.middleware(locationMiddleware))
     .add(IntegrationGroup.middleware(locationMiddleware))
     .add(McpGroup.middleware(locationMiddleware))
@@ -167,12 +170,14 @@ const makeApiFromGroup = <
     .add(FileSystemGroup.middleware(locationMiddleware))
     .add(CommandGroup.middleware(locationMiddleware))
     .add(SkillGroup.middleware(locationMiddleware))
+    .add(RpcGroup.middleware(locationMiddleware))
     .add(eventGroup)
     .add(PtyGroup.middleware(locationMiddleware))
+    .add(PersistentPtyGroup)
     .add(ShellGroup.middleware(locationMiddleware))
-    .add(makeQuestionGroup(locationMiddleware, sessionLocationMiddleware))
     .add(ReferenceGroup.middleware(locationMiddleware))
-    .add(ProjectCopyGroup.middleware(locationMiddleware))
+    .add(WorktreeGroup)
+    .add(WorkspaceGroup)
     .add(VcsGroup.middleware(locationMiddleware))
     .add(DebugGroup)
     .add(MigrationGroup)

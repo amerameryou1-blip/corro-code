@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { Money } from "@opencode-ai/schema/money"
-import { Effect, Layer, Ref } from "effect"
+import { Effect, Fiber, Layer, Ref, Scope, Stream } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNodePlatform } from "@opencode-ai/util/effect/app-node-platform"
 import { LayerNode } from "@opencode-ai/util/effect/layer-node"
+import { Bus } from "@opencode-ai/core/bus"
 import { KV } from "@opencode-ai/core/kv"
 import { Model } from "@opencode-ai/core/model"
-import { ModelsDev } from "@opencode-ai/core/models-dev"
+import { bodyDigest, ModelsDev } from "@opencode-ai/core/models-dev"
 import { Provider } from "@opencode-ai/core/provider"
 import { it } from "./lib/effect"
 
@@ -47,6 +48,7 @@ const fixtureSnapshot = [
     info: {
       id: Provider.ID.make("acme"),
       name: "Acme",
+      activation: "auto",
       package: Provider.aisdk("@ai-sdk/openai-compatible"),
     },
     models: [
@@ -109,6 +111,7 @@ const fixture2Snapshot = [
     info: {
       id: Provider.ID.make("beta"),
       name: "Beta",
+      activation: "auto",
       package: Provider.aisdk("@ai-sdk/openai-compatible"),
     },
     models: [
@@ -178,10 +181,10 @@ const buildLayer = (state: Ref.Ref<MockState>, cache: MockCache, options: Models
   // and Effect.provide uses a process-global MemoMap by default — without fresh,
   // every test would reuse the cachedInvalidateWithTTL state from the first run.
   Layer.fresh(
-    AppNodeBuilder.build(ModelsDev.node, [
-      [ModelsDev.node, ModelsDev.configured(options)],
-      [LayerNodePlatform.httpClient, Layer.succeed(HttpClient.HttpClient, makeMockClient(state))],
-      [KV.node, makeMockKV(cache)],
+    AppNodeBuilder.build(LayerNode.group([ModelsDev.node, Bus.node]), [
+      ModelsDev.node.replace(ModelsDev.configured(options)),
+      LayerNodePlatform.httpClient.replace(Layer.succeed(HttpClient.HttpClient, makeMockClient(state))),
+      KV.node.replace(makeMockKV(cache)),
     ]),
   )
 
@@ -197,13 +200,16 @@ const makeFailingWriteKV = (cache: MockCache) =>
 const makeCache = (): MockCache => ({ values: new Map() })
 
 const writeCacheText = (cache: MockCache, text: string, updatedAt = Date.now()) =>
-  cache.values.set(cacheKey, { updatedAt, body: text })
+  cache.values.set(cacheKey, { updatedAt, digest: bodyDigest(text), body: text })
 
 const writeCache = (cache: MockCache, data: object, updatedAt?: number) =>
   writeCacheText(cache, JSON.stringify(data), updatedAt)
 
-const provided = <A, E>(state: Ref.Ref<MockState>, cache: MockCache, eff: Effect.Effect<A, E, ModelsDev.Service>) =>
-  eff.pipe(Effect.provide(buildLayer(state, cache)))
+const provided = <A, E>(
+  state: Ref.Ref<MockState>,
+  cache: MockCache,
+  eff: Effect.Effect<A, E, ModelsDev.Service | Bus.Service | Scope.Scope>,
+) => eff.pipe(Effect.provide(buildLayer(state, cache)))
 
 const initialState: MockState = {
   body: JSON.stringify(fixture),
@@ -225,6 +231,31 @@ describe("ModelsDev Service", () => {
       expect(result).toEqual(fixtureSnapshot)
       const final = yield* Ref.get(state)
       expect(final.calls).toEqual([])
+    }),
+  )
+
+  it.live("normalizes provider and model AI SDK packages from models.dev", () =>
+    Effect.gen(function* () {
+      const cache = makeCache()
+      writeCache(cache, {
+        acme: {
+          ...fixture.acme,
+          models: {
+            "acme-1": {
+              ...fixture.acme.models["acme-1"],
+              provider: { npm: "@ai-sdk/openai" },
+            },
+          },
+        },
+      })
+      const state = yield* Ref.make(initialState)
+      const result = yield* provided(
+        state,
+        cache,
+        ModelsDev.Service.use((service) => service.get()),
+      )
+      expect(result[0]?.info.package).toBe(Provider.aisdk("@ai-sdk/openai-compatible"))
+      expect(result[0]?.models[0]?.package).toBe(Provider.aisdk("@ai-sdk/openai"))
     }),
   )
 
@@ -266,7 +297,10 @@ describe("ModelsDev Service", () => {
       const context = yield* Layer.build(buildLayer(state, cache, { fetch: true, snapshot: false }))
       const result = yield* ModelsDev.Service.use((s) => s.get()).pipe(Effect.provide(context))
       expect(result).toEqual(fixture2Snapshot)
-      expect(cache.values.get(cacheKey)).toMatchObject({ body: JSON.stringify(fixture2) })
+      expect(cache.values.get(cacheKey)).toMatchObject({
+        body: JSON.stringify(fixture2),
+        digest: bodyDigest(JSON.stringify(fixture2)),
+      })
       const final = yield* Ref.get(state)
       expect(final.calls.length).toBe(1)
     }),
@@ -278,9 +312,9 @@ describe("ModelsDev Service", () => {
       const state = yield* Ref.make({ ...initialState, body: JSON.stringify(fixture2) })
       const layer = Layer.fresh(
         AppNodeBuilder.build(ModelsDev.node, [
-          [ModelsDev.node, ModelsDev.configured({ fetch: true, snapshot: false })],
-          [LayerNodePlatform.httpClient, Layer.succeed(HttpClient.HttpClient, makeMockClient(state))],
-          [KV.node, makeFailingWriteKV(cache)],
+          ModelsDev.node.replace(ModelsDev.configured({ fetch: true, snapshot: false })),
+          LayerNodePlatform.httpClient.replace(Layer.succeed(HttpClient.HttpClient, makeMockClient(state))),
+          KV.node.replace(makeFailingWriteKV(cache)),
         ]),
       )
       const result = yield* ModelsDev.Service.use((s) => s.get()).pipe(Effect.provide(layer))
@@ -356,7 +390,10 @@ describe("ModelsDev Service", () => {
       )
       expect(result.before).toEqual(fixtureSnapshot)
       expect(result.after).toEqual(fixture2Snapshot)
-      expect(cache.values.get(cacheKey)).toMatchObject({ body: JSON.stringify(fixture2) })
+      expect(cache.values.get(cacheKey)).toMatchObject({
+        body: JSON.stringify(fixture2),
+        digest: bodyDigest(JSON.stringify(fixture2)),
+      })
       const final = yield* Ref.get(state)
       expect(final.calls.length).toBe(1)
       expect(final.calls[0].url).toContain("/api.json")
@@ -389,13 +426,96 @@ describe("ModelsDev Service", () => {
         cache,
         Effect.gen(function* () {
           const svc = yield* ModelsDev.Service
-          yield* svc.refresh(false)
+          const bus = yield* Bus.Service
+          const refreshed = yield* bus.subscribe(ModelsDev.Event.Refreshed).pipe(
+            Stream.take(1),
+            Stream.runCollect,
+            Effect.forkScoped,
+            Effect.flatMap((fiber) =>
+              Effect.gen(function* () {
+                yield* Effect.yieldNow
+                yield* svc.refresh(false)
+                return yield* Fiber.join(fiber)
+              }),
+            ),
+          )
+          expect(refreshed.length).toBe(1)
           return yield* svc.get()
         }),
       )
       const final = yield* Ref.get(state)
       expect(final.calls.length).toBe(1)
       expect(after).toEqual(fixture2Snapshot)
+      expect(cache.values.get(cacheKey)).toMatchObject({
+        body: JSON.stringify(fixture2),
+        digest: bodyDigest(JSON.stringify(fixture2)),
+      })
+    }),
+  )
+
+  it.live("refresh(false) stays quiet when the fetched body matches the cached digest", () =>
+    Effect.gen(function* () {
+      const cache = makeCache()
+      writeCache(cache, fixture, Date.now() - 10 * 60 * 1000)
+      const seeded = structuredClone(cache.values.get(cacheKey))
+      // The server serves a byte-identical body, so the refresh still hits
+      // the network but must not rewrite the cache or publish Refreshed.
+      const state = yield* Ref.make(initialState)
+      yield* provided(
+        state,
+        cache,
+        Effect.gen(function* () {
+          const svc = yield* ModelsDev.Service
+          const bus = yield* Bus.Service
+          const event = yield* bus.subscribe(ModelsDev.Event.Refreshed).pipe(
+            Stream.take(1),
+            Stream.runCollect,
+            Effect.forkScoped,
+            Effect.flatMap((fiber) =>
+              Effect.gen(function* () {
+                yield* Effect.yieldNow
+                yield* svc.refresh(false)
+                return yield* Fiber.join(fiber).pipe(Effect.timeoutOption("50 millis"))
+              }),
+            ),
+          )
+          expect(event._tag).toBe("None")
+        }),
+      )
+      const final = yield* Ref.get(state)
+      expect(final.calls.length).toBe(1)
+      expect(cache.values.get(cacheKey)).toEqual(seeded)
+    }),
+  )
+
+  it.live("refresh(false) republishes once for legacy cache entries without a digest", () =>
+    Effect.gen(function* () {
+      const cache = makeCache()
+      cache.values.set(cacheKey, { updatedAt: Date.now() - 10 * 60 * 1000, body: JSON.stringify(fixture) })
+      const state = yield* Ref.make(initialState)
+      yield* provided(
+        state,
+        cache,
+        Effect.gen(function* () {
+          const svc = yield* ModelsDev.Service
+          const bus = yield* Bus.Service
+          const refreshed = yield* bus.subscribe(ModelsDev.Event.Refreshed).pipe(
+            Stream.take(1),
+            Stream.runCollect,
+            Effect.forkScoped,
+            Effect.flatMap((fiber) =>
+              Effect.gen(function* () {
+                yield* Effect.yieldNow
+                yield* svc.refresh(false)
+                return yield* Fiber.join(fiber)
+              }),
+            ),
+          )
+          expect(refreshed.length).toBe(1)
+        }),
+      )
+      // The rewritten entry now carries a digest, so later identical bodies stay quiet.
+      expect(cache.values.get(cacheKey)).toMatchObject({ digest: bodyDigest(JSON.stringify(fixture)) })
     }),
   )
 
