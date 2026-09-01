@@ -7,7 +7,6 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { generateText, jsonSchema, type ModelMessage } from "ai"
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock"
-import { mergeDeep } from "remeda"
 
 describe("ProviderTransform.options - setCacheKey", () => {
   const sessionID = "test-session-123"
@@ -510,16 +509,94 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
     expect(result.textVerbosity).toBe("low")
   })
 
-  test.each([undefined, "xhigh"])(
-    "Bedrock GPT-5 requests summaries with one effort option for variant %s",
-    async (variant) => {
+  test.each(
+    ["openai.gpt-5.6-luna", "us.openai.gpt-5.6-luna", "global.openai.gpt-5.6-luna"].flatMap((id) =>
+      [undefined, "none", "low", "medium", "high", "xhigh", "max"].map((variant) => [id, variant] as const),
+    ),
+  )("Bedrock %s requests summaries with one effort option for variant %s", async (id, variant) => {
+    const model = {
+      ...createGpt5Model(id),
+      providerID: "amazon-bedrock",
+      api: {
+        id,
+        url: "https://bedrock-runtime.us-east-1.amazonaws.com",
+        npm: "@ai-sdk/amazon-bedrock",
+      },
+    }
+    const variants = ProviderTransform.reasoningVariants(
+      {
+        id: model.api.id,
+        name: model.name,
+        release_date: "2026-07-09",
+        attachment: true,
+        reasoning: true,
+        temperature: false,
+        tool_call: true,
+        limit: model.limit,
+        reasoning_options: [{ type: "effort", values: ["none", "low", "medium", "high", "xhigh", "max"] }],
+      },
+      model,
+    )
+    if (!variants) throw new Error("Expected reasoning variants")
+    expect(variants[variant ?? "medium"]).toEqual({
+      additionalModelRequestFields: { reasoning: { effort: variant ?? "medium", summary: "auto" } },
+    })
+    expect(ProviderTransform.smallOptions({ ...model, variants })).toEqual({
+      additionalModelRequestFields: { reasoning: { effort: "none", summary: "auto" } },
+    })
+    expect(ProviderTransform.variants(model).high).toEqual({
+      additionalModelRequestFields: { reasoning: { effort: "high", summary: "auto" } },
+    })
+    const options = ProviderTransform.providerOptions(
+      model,
+      ProviderTransform.mergeOptions(
+        model.api,
+        ProviderTransform.options({ model, sessionID, providerOptions: {} }),
+        variant ? variants[variant] : {},
+      ),
+    )
+    expect(options).toEqual({
+      bedrock: {
+        additionalModelRequestFields: { reasoning: { effort: variant ?? "medium", summary: "auto" } },
+      },
+    })
+    const provider = createAmazonBedrock({
+      region: "us-east-1",
+      accessKeyId: "test",
+      secretAccessKey: "test",
+      fetch: Object.assign(
+        async () =>
+          Response.json({
+            output: { message: { role: "assistant", content: [{ text: "OK" }] } },
+            stopReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          }),
+        { preconnect() {} },
+      ),
+    })
+    const result = await provider(model.api.id).doGenerate({
+      prompt: [{ role: "user", content: [{ type: "text", text: "Hello" }] }],
+      providerOptions: options,
+    })
+    expect(result.request?.body).toHaveProperty("additionalModelRequestFields", {
+      reasoning: { effort: variant ?? "medium", summary: "auto" },
+    })
+    expect(result.request?.body).not.toHaveProperty("reasoningEffort")
+    expect(result.request?.body).not.toHaveProperty("reasoningSummary")
+    expect(result.request?.body).not.toHaveProperty("reasoningConfig")
+    expect(result.request?.body).not.toHaveProperty("additionalModelRequestFields.reasoningConfig")
+  })
+
+  test.each(["none", "low", "medium", "high", "xhigh", "max"])(
+    "Mantle keeps OpenAI options for variant %s",
+    (effort) => {
       const model = {
-        ...createGpt5Model("global.openai.gpt-5.6-luna"),
+        ...createGpt5Model("openai.gpt-5.6-luna"),
         providerID: "amazon-bedrock",
         api: {
-          id: "global.openai.gpt-5.6-luna",
-          url: "https://bedrock-runtime.us-east-1.amazonaws.com",
-          npm: "@ai-sdk/amazon-bedrock",
+          id: "openai.gpt-5.6-luna",
+          url: "https://bedrock-mantle.us-east-1.api.aws/openai/v1",
+          npm: "@ai-sdk/amazon-bedrock/mantle",
         },
       }
       const variants = ProviderTransform.reasoningVariants(
@@ -532,49 +609,51 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
           temperature: false,
           tool_call: true,
           limit: model.limit,
-          reasoning_options: [{ type: "effort", values: ["xhigh"] }],
+          reasoning_options: [{ type: "effort", values: [effort] }],
         },
         model,
       )
       if (!variants) throw new Error("Expected reasoning variants")
+      expect(variants[effort]).toEqual({
+        reasoningEffort: effort,
+        reasoningSummary: "auto",
+        include: ["reasoning.encrypted_content"],
+      })
       const options = ProviderTransform.providerOptions(
         model,
-        mergeDeep(
+        ProviderTransform.mergeOptions(
+          model.api,
           ProviderTransform.options({ model, sessionID, providerOptions: {} }),
-          variant ? variants[variant] : {},
+          variants[effort],
         ),
       )
-      expect(options).toEqual({
-        bedrock: {
-          reasoningConfig: { type: "enabled", maxReasoningEffort: variant ?? "medium" },
-          additionalModelRequestFields: { reasoning: { summary: "auto" } },
-        },
-      })
-      const provider = createAmazonBedrock({
-        region: "us-east-1",
-        accessKeyId: "test",
-        secretAccessKey: "test",
-        fetch: Object.assign(
-          async () =>
-            Response.json({
-              output: { message: { role: "assistant", content: [{ text: "OK" }] } },
-              stopReason: "end_turn",
-              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-            }),
-          { preconnect() {} },
-        ),
-      })
-      const result = await provider(model.api.id).doGenerate({
-        prompt: [{ role: "user", content: [{ type: "text", text: "Hello" }] }],
-        providerOptions: options,
-      })
-      expect(result.request?.body).toMatchObject({
-        additionalModelRequestFields: { reasoning: { summary: "auto" } },
-      })
-      expect(result.request?.body).not.toHaveProperty("reasoningEffort")
-      expect(result.request?.body).not.toHaveProperty("reasoningSummary")
+      expect(options.openai).toMatchObject({ reasoningEffort: effort, reasoningSummary: "auto", forceReasoning: true })
+      expect(options).not.toHaveProperty("bedrock")
     },
   )
+
+  test.each([
+    [
+      { reasoningConfig: { type: "enabled", maxReasoningEffort: "high" } },
+      { additionalModelRequestFields: { reasoning: { effort: "xhigh", summary: "detailed" } } },
+    ],
+    [
+      { additionalModelRequestFields: { reasoning: { effort: "high", summary: "detailed" } } },
+      { reasoningConfig: { type: "enabled", maxReasoningEffort: "xhigh" } },
+    ],
+  ])("Bedrock option layers preserve effort precedence across SDK and native fields", (model, variant) => {
+    const before = structuredClone([model, variant])
+    const options = ProviderTransform.mergeOptions(
+      { npm: "@ai-sdk/amazon-bedrock", id: "global.openai.gpt-5.6-luna" },
+      { additionalModelRequestFields: { reasoning: { effort: "medium", summary: "auto" } } },
+      model,
+      undefined,
+      variant,
+    )
+    expect(options.additionalModelRequestFields).toEqual({ reasoning: { effort: "xhigh", summary: "detailed" } })
+    expect(options).not.toHaveProperty("reasoningConfig.maxReasoningEffort")
+    expect([model, variant]).toEqual(before)
+  })
 
   test("openai-compatible gpt-5 models omit Responses-only reasoningSummary", () => {
     const model = {
