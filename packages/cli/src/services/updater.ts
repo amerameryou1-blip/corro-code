@@ -213,35 +213,37 @@ const make = (overrides: Overrides) =>
       return { action: next, version }
     })
 
-    const liveInstall = Effect.fnUntraced(function* (version: string) {
-      const detected = yield* method()
-      if (!detected) {
-        yield* Effect.logWarning("automatic update skipped: installation method not found")
-        return false
-      }
-      yield* upgrade(detected, version)
-      yield* Effect.logInfo("updated OpenCode", { from: current.version, to: version, method: detected })
-      return true
-    })
-    const install = overrides.install ?? liveInstall
-
-    const liveRestart = Effect.fnUntraced(function* () {
-      const [command, ...args] = [...selfCommand(), "service", "restart", "--preserve-terminals"]
-      if (!command) return yield* Effect.fail(new Error("Failed to resolve CLI command for restart"))
-      yield* Effect.tryPromise({
-        try: () =>
-          new Promise<void>((resolve, reject) => {
-            const child = spawn(command, args, { detached: true, stdio: "ignore", windowsHide: true })
-            child.once("spawn", () => {
-              child.unref()
-              resolve()
-            })
-            child.once("error", reject)
-          }),
-        catch: (cause) => new Error("Failed to start update restart helper", { cause }),
+    const install =
+      overrides.install ??
+      Effect.fnUntraced(function* (version: string) {
+        const detected = yield* method()
+        if (!detected) {
+          yield* Effect.logWarning("automatic update skipped: installation method not found")
+          return false
+        }
+        yield* upgrade(detected, version)
+        yield* Effect.logInfo("updated OpenCode", { from: current.version, to: version, method: detected })
+        return true
       })
-    })
-    const restart = overrides.restart ?? liveRestart
+
+    const restart =
+      overrides.restart ??
+      Effect.fnUntraced(function* () {
+        const [command, ...args] = [...selfCommand(), "service", "restart", "--preserve-terminals"]
+        if (!command) return yield* Effect.fail(new Error("Failed to resolve CLI command for restart"))
+        yield* Effect.tryPromise({
+          try: () =>
+            new Promise<void>((resolve, reject) => {
+              const child = spawn(command, args, { detached: true, stdio: "ignore", windowsHide: true })
+              child.once("spawn", () => {
+                child.unref()
+                resolve()
+              })
+              child.once("error", reject)
+            }),
+          catch: (cause) => new Error("Failed to start update restart helper", { cause }),
+        })
+      })
 
     const check = Effect.fn("cli.updater.check")(
       function* () {
