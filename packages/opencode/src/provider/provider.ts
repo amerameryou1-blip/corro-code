@@ -1550,11 +1550,7 @@ const layer = Layer.effect(
                   write: model?.cost?.cache_write ?? existingModel?.cost?.cache.write ?? 0,
                 },
               },
-              options: ProviderTransform.mergeOptions(
-                { id: apiID, npm: apiNpm },
-                existingModel?.options,
-                model.options,
-              ),
+              options: mergeDeep(existingModel?.options ?? {}, model.options ?? {}),
               limit: {
                 context: model.limit?.context ?? existingModel?.limit?.context ?? 0,
                 input: model.limit?.input ?? existingModel?.limit?.input,
@@ -1569,10 +1565,7 @@ const layer = Layer.effect(
               existingModel?.api.npm === parsedModel.api.npm
                 ? (existingModel.variants ?? ProviderTransform.variants(parsedModel))
                 : ProviderTransform.variants(parsedModel)
-            const merged = mergeDeep(
-              mapValues(variants, (v) => ProviderTransform.mergeOptions(parsedModel.api, v)),
-              mapValues(model.variants ?? {}, (v) => ProviderTransform.mergeOptions(parsedModel.api, v)),
-            )
+            const merged = mergeDeep(variants, model.variants ?? {})
             parsedModel.variants = mapValues(
               pickBy(merged, (v) => !v.disabled),
               (v) => omit(v, ["disabled"]),
@@ -1707,10 +1700,7 @@ const layer = Layer.effect(
 
             const configVariants = configProvider?.models?.[modelID]?.variants
             if (configVariants && model.variants) {
-              const merged = mergeDeep(
-                mapValues(model.variants, (v) => ProviderTransform.mergeOptions(model.api, v)),
-                mapValues(configVariants, (v) => ProviderTransform.mergeOptions(model.api, v)),
-              )
+              const merged = mergeDeep(model.variants, configVariants)
               model.variants = mapValues(
                 pickBy(merged, (v) => !v.disabled),
                 (v) => omit(v, ["disabled"]),

@@ -7,7 +7,6 @@ import { Global } from "@opencode-ai/core/global"
 import { Filesystem } from "@/util/filesystem"
 import { Env } from "../../src/env"
 import { Provider } from "@/provider/provider"
-import { ProviderTransform } from "@/provider/transform"
 
 import { disposeAllInstances } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
@@ -104,48 +103,6 @@ it.instance(
       expect(providers[ProviderV2.ID.amazonBedrock].options?.region).toBe("eu-west-1")
     }),
   { config: { provider: { "amazon-bedrock": { options: { region: "eu-west-1" } } } } },
-)
-
-it.instance(
-  "Bedrock: configured GPT-5 effort variants override generated and model options",
-  () =>
-    Effect.gen(function* () {
-      const model = yield* Provider.use.getModel(
-        ProviderV2.ID.amazonBedrock,
-        ModelV2.ID.make("global.openai.gpt-5.6-luna"),
-      )
-      expect(model.options.additionalModelRequestFields).toEqual({ reasoning: { effort: "low" } })
-      expect(model.variants?.high).toMatchObject({
-        additionalModelRequestFields: { reasoning: { effort: "xhigh", summary: "detailed" } },
-      })
-      expect(model.variants?.high).not.toHaveProperty("reasoningConfig.maxReasoningEffort")
-      expect(model.variants?.max).toBeUndefined()
-      const options = ProviderTransform.mergeOptions(model.api, model.options, model.variants?.none)
-      expect(options.additionalModelRequestFields).toEqual({ reasoning: { effort: "none", summary: "auto" } })
-    }),
-  {
-    config: {
-      provider: {
-        "amazon-bedrock": {
-          options: { region: "us-east-1", apiKey: "test-bearer-token" },
-          models: {
-            "global.openai.gpt-5.6-luna": {
-              reasoning: true,
-              options: { reasoningConfig: { maxReasoningEffort: "low" } },
-              variants: {
-                high: {
-                  reasoningConfig: { maxReasoningEffort: "xhigh" },
-                  additionalModelRequestFields: { reasoning: { summary: "detailed" } },
-                },
-                none: { additionalModelRequestFields: { reasoning: { effort: "none", summary: "auto" } } },
-                max: { disabled: true },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
 )
 
 it.instance(

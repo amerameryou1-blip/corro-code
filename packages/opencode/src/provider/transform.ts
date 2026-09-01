@@ -1060,8 +1060,21 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
         }
       }
 
-      // Use the same provider-specific mapping for defaults and fallback variants.
-      return effortVariants(model, WIDELY_SUPPORTED_EFFORTS)
+      // For Amazon Nova models, use reasoningConfig with maxReasoningEffort
+      return Object.fromEntries(
+        WIDELY_SUPPORTED_EFFORTS.map((effort) => [
+          effort,
+          {
+            reasoningConfig: {
+              type: "enabled",
+              maxReasoningEffort: effort,
+            },
+            ...(model.api.id.includes("openai.gpt-5")
+              ? { additionalModelRequestFields: { reasoning: { summary: "auto" } } }
+              : {}),
+          },
+        ]),
+      )
 
     case "@ai-sdk/google-vertex":
     // https://v5.ai-sdk.dev/providers/ai-sdk-providers/google-vertex
@@ -1278,12 +1291,7 @@ export function options(input: {
 
   if (input.model.api.id.includes("gpt-5") && !input.model.api.id.includes("gpt-5-chat")) {
     if (!input.model.api.id.includes("gpt-5-pro")) {
-      Object.assign(
-        result,
-        input.model.api.npm === "@ai-sdk/amazon-bedrock"
-          ? reasoningEffort(input.model, "medium")
-          : { reasoningEffort: "medium" },
-      )
+      result["reasoningEffort"] = "medium"
       if (
         input.model.api.npm === "@ai-sdk/openai" ||
         input.model.api.npm === "@ai-sdk/azure" ||
@@ -1316,31 +1324,6 @@ export function options(input: {
   }
 
   return result
-}
-
-export function mergeOptions(
-  api: Pick<Provider.Model["api"], "id" | "npm">,
-  ...layers: (Provider.Model["options"] | undefined)[]
-) {
-  return layers.reduce<Provider.Model["options"]>((target, layer) => {
-    const source = layer ?? {}
-    if (
-      api.npm !== "@ai-sdk/amazon-bedrock" ||
-      !api.id.includes("openai.gpt-5") ||
-      typeof source.reasoningConfig?.maxReasoningEffort !== "string"
-    )
-      return mergeDeep(target, source)
-
-    // Normalize each layer before merging so configured SDK options retain their precedence.
-    const { maxReasoningEffort, ...reasoningConfig } = source.reasoningConfig
-    return mergeDeep(target, {
-      ...source,
-      reasoningConfig,
-      additionalModelRequestFields: mergeDeep(source.additionalModelRequestFields ?? {}, {
-        reasoning: { effort: maxReasoningEffort },
-      }),
-    })
-  }, {})
 }
 
 export function smallOptions(model: Provider.Model) {
@@ -1746,9 +1729,6 @@ function reasoningEffort(model: Provider.Model, effort: string) {
     case "@ai-sdk/google-vertex":
       return { thinkingConfig: { includeThoughts: true, thinkingLevel: effort } }
     case "@ai-sdk/amazon-bedrock":
-      // The SDK's generic reasoningConfig excludes GPT-5's "none" effort.
-      if (model.api.id.includes("openai.gpt-5"))
-        return { additionalModelRequestFields: { reasoning: { effort, summary: "auto" } } }
       if (anthropicAdaptiveEfforts(model.api.id))
         return {
           reasoningConfig: {
@@ -1766,7 +1746,12 @@ function reasoningEffort(model: Provider.Model, effort: string) {
           },
         }
       if (model.api.id.includes("anthropic")) return
-      return { reasoningConfig: { type: "enabled", maxReasoningEffort: effort } }
+      return {
+        reasoningConfig: { type: "enabled", maxReasoningEffort: effort },
+        ...(model.api.id.includes("openai.gpt-5")
+          ? { additionalModelRequestFields: { reasoning: { summary: "auto" } } }
+          : {}),
+      }
     case "@ai-sdk/gateway":
       if (model.id.includes("anthropic")) return { thinking: { type: "adaptive", display: "summarized" }, effort }
       if (model.id.includes("google")) return { thinkingConfig: { includeThoughts: true, thinkingLevel: effort } }
