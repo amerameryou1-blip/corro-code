@@ -5,8 +5,10 @@ import { OPENCODE_CHANNEL, OPENCODE_LOCAL, OPENCODE_VERSION } from "../version"
 import { Context, Duration, Effect, FileSystem, Layer, Ref, Schedule, Semaphore, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { parse, type ParseError } from "jsonc-parser"
+import { spawn } from "node:child_process"
 import path from "node:path"
 import { action, parseReleaseVersion, type Action, type Policy } from "./updater-action"
+import { selfCommand } from "../util/process"
 
 declare const OPENCODE_CLI_NAME: string | undefined
 
@@ -18,7 +20,11 @@ const packageName =
 
 export interface Interface {
   readonly check: () => Effect.Effect<void>
-  readonly monitor: (input: { readonly url: string; readonly password: string }) => Effect.Effect<never>
+  readonly monitor: (input: {
+    readonly url: string
+    readonly password: string
+    readonly managed: boolean
+  }) => Effect.Effect<never>
   readonly method: () => Effect.Effect<Method | undefined>
   readonly latest: () => Effect.Effect<string, Error>
   readonly upgrade: (method: Method, version: string) => Effect.Effect<void, Error>
@@ -201,6 +207,23 @@ export const layer = Layer.effect(
       return true
     })
 
+    const restart = Effect.fnUntraced(function* () {
+      const [command, ...args] = [...selfCommand(), "service", "restart", "--preserve-terminals"]
+      if (!command) return yield* Effect.fail(new Error("Failed to resolve CLI command for restart"))
+      yield* Effect.tryPromise({
+        try: () =>
+          new Promise<void>((resolve, reject) => {
+            const child = spawn(command, args, { detached: true, stdio: "ignore", windowsHide: true })
+            child.once("spawn", () => {
+              child.unref()
+              resolve()
+            })
+            child.once("error", reject)
+          }),
+        catch: (cause) => new Error("Failed to start update restart helper", { cause }),
+      })
+    })
+
     const check = Effect.fn("cli.updater.check")(
       function* () {
         const result = yield* inspect()
@@ -213,6 +236,7 @@ export const layer = Layer.effect(
     const monitor = Effect.fn("cli.updater.monitor")(function* (input: {
       readonly url: string
       readonly password: string
+      readonly managed: boolean
     }) {
       const client = OpenCode.make({
         baseUrl: input.url,
@@ -234,7 +258,9 @@ export const layer = Layer.effect(
                 Effect.logWarning("automatic update failed", { cause: error }).pipe(Effect.as(false)),
               ),
             )
-            if (installed) yield* Ref.set(state, { type: "ready-to-restart", version: pending.version })
+            if (!installed) return
+            if (input.managed) yield* restart()
+            yield* Ref.set(state, { type: "ready-to-restart", version: pending.version })
           }),
         )
 

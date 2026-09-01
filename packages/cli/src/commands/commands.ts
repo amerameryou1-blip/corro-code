@@ -364,7 +364,15 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
       description: "Manage the background server",
       commands: [
         Spec.make("start", { description: "Start the background server" }),
-        Spec.make("restart", { description: "Restart the background server" }),
+        Spec.make("restart", {
+          description: "Restart the background server",
+          params: {
+            preserveTerminals: Flag.boolean("preserve-terminals").pipe(
+              Flag.withDescription("Keep persistent terminals running across the restart"),
+              Flag.withDefault(false),
+            ),
+          },
+        }),
         Spec.make("status", { description: "Show background server status" }),
         Spec.make("stop", { description: "Stop the background server" }),
         Spec.make("get", {
