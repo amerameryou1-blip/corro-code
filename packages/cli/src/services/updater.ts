@@ -15,6 +15,18 @@ declare const OPENCODE_CLI_NAME: string | undefined
 export const methods = ["curl", "npm", "pnpm", "bun", "yarn"] as const
 export type Method = (typeof methods)[number]
 
+export interface Overrides {
+  readonly current?: {
+    readonly version: string
+    readonly channel: string
+    readonly local: boolean
+  }
+  readonly fetch?: typeof globalThis.fetch
+  readonly install?: (version: string) => Effect.Effect<boolean, Error>
+  readonly restart?: () => Effect.Effect<void, Error>
+  readonly interval?: Duration.Input
+}
+
 const packageName =
   typeof OPENCODE_CLI_NAME === "string" && OPENCODE_CLI_NAME === "opencode2-node" ? "opencode-node" : "@opencode-ai/cli"
 
@@ -49,13 +61,18 @@ export function decodePolicy(text: string): Policy | undefined {
   if (typeof value === "boolean" || value === "notify") return value
 }
 
-export const layer = Layer.effect(
-  Service,
+const make = (overrides: Overrides) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
     const global = yield* Global.Service
     const appProcess = yield* AppProcess.Service
-    const channel = OPENCODE_CHANNEL.replace(/[^a-zA-Z0-9._-]/g, "-")
+    const current = overrides.current ?? {
+      version: OPENCODE_VERSION,
+      channel: OPENCODE_CHANNEL,
+      local: OPENCODE_LOCAL,
+    }
+    const fetchUpdate = overrides.fetch ?? globalThis.fetch
+    const channel = current.channel.replace(/[^a-zA-Z0-9._-]/g, "-")
     const state = yield* Ref.make<State>({ type: "current" })
     const applyLock = yield* Semaphore.make(1)
 
@@ -112,8 +129,8 @@ export const layer = Layer.effect(
     const latest = Effect.fnUntraced(function* () {
       const response = yield* Effect.tryPromise({
         try: () =>
-          fetch(`https://update.opencode.ai/api/${encodeURIComponent(channel)}/cli/npm`, {
-            headers: { "User-Agent": `opencode/${OPENCODE_VERSION}` },
+          fetchUpdate(`https://update.opencode.ai/api/${encodeURIComponent(channel)}/cli/npm`, {
+            headers: { "User-Agent": `opencode/${current.version}` },
             signal: AbortSignal.timeout(10_000),
           }),
         catch: (cause) => new Error("Failed to check for updates", { cause }),
@@ -165,11 +182,11 @@ export const layer = Layer.effect(
     })
 
     const inspect = Effect.fnUntraced(function* (): Effect.fn.Return<Inspection, Error> {
-      if (OPENCODE_LOCAL || ["1", "true"].includes(process.env.OPENCODE_DISABLE_AUTOUPDATE?.toLowerCase() ?? "")) {
+      if (current.local || ["1", "true"].includes(process.env.OPENCODE_DISABLE_AUTOUPDATE?.toLowerCase() ?? "")) {
         yield* Effect.logInfo("update check skipped", {
-          reason: OPENCODE_LOCAL ? "local-install" : "disabled",
-          version: OPENCODE_VERSION,
-          channel: OPENCODE_CHANNEL,
+          reason: current.local ? "local-install" : "disabled",
+          version: current.version,
+          channel: current.channel,
         })
         return { action: "none" }
       }
@@ -181,33 +198,34 @@ export const layer = Layer.effect(
 
       const version = yield* latest()
       yield* Effect.logInfo("update check", {
-        current: OPENCODE_VERSION,
+        current: current.version,
         latest: version,
       })
-      const next = action(OPENCODE_VERSION, version, policy)
+      const next = action(current.version, version, policy)
       if (next === "none") {
         yield* Effect.logInfo("update check done", { action: "up-to-date" })
         return { action: "none" }
       }
       if (next === "notify") {
-        yield* Effect.logInfo("OpenCode update available", { current: OPENCODE_VERSION, latest: version })
+        yield* Effect.logInfo("OpenCode update available", { current: current.version, latest: version })
         return { action: next, version }
       }
       return { action: next, version }
     })
 
-    const install = Effect.fnUntraced(function* (version: string) {
+    const liveInstall = Effect.fnUntraced(function* (version: string) {
       const detected = yield* method()
       if (!detected) {
         yield* Effect.logWarning("automatic update skipped: installation method not found")
         return false
       }
       yield* upgrade(detected, version)
-      yield* Effect.logInfo("updated OpenCode", { from: OPENCODE_VERSION, to: version, method: detected })
+      yield* Effect.logInfo("updated OpenCode", { from: current.version, to: version, method: detected })
       return true
     })
+    const install = overrides.install ?? liveInstall
 
-    const restart = Effect.fnUntraced(function* () {
+    const liveRestart = Effect.fnUntraced(function* () {
       const [command, ...args] = [...selfCommand(), "service", "restart", "--preserve-terminals"]
       if (!command) return yield* Effect.fail(new Error("Failed to resolve CLI command for restart"))
       yield* Effect.tryPromise({
@@ -223,6 +241,7 @@ export const layer = Layer.effect(
         catch: (cause) => new Error("Failed to start update restart helper", { cause }),
       })
     })
+    const restart = overrides.restart ?? liveRestart
 
     const check = Effect.fn("cli.updater.check")(
       function* () {
@@ -252,7 +271,7 @@ export const layer = Layer.effect(
               try: () => client.session.active(),
               catch: (cause) => new Error("Failed to read active sessions", { cause }),
             })
-            if (Object.keys(active.data).length > 0) return
+            if (Object.keys(active).length > 0) return
             const installed = yield* install(pending.version).pipe(
               Effect.catch((error) =>
                 Effect.logWarning("automatic update failed", { cause: error }).pipe(Effect.as(false)),
@@ -303,15 +322,20 @@ export const layer = Layer.effect(
         ),
       ).pipe(Effect.repeat(Schedule.spaced("1 second")))
 
-      return yield* Effect.all([checkServer.pipe(Effect.schedule(Schedule.spaced("10 minutes"))), subscribe], {
-        concurrency: "unbounded",
-        discard: true,
-      })
+      return yield* Effect.all(
+        [checkServer.pipe(Effect.repeat(Schedule.spaced(overrides.interval ?? "10 minutes"))), subscribe],
+        {
+          concurrency: "unbounded",
+          discard: true,
+        },
+      )
     })
 
     return Service.of({ check, monitor, method, latest, upgrade })
-  }),
-)
+  })
+
+export const layerWith = (overrides: Overrides = {}) => Layer.effect(Service, make(overrides))
+export const layer = layerWith()
 
 export * as Updater from "./updater"
 export { action, type Action, type Policy } from "./updater-action"
