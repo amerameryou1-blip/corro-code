@@ -7,6 +7,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { generateText, jsonSchema, type ModelMessage } from "ai"
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock"
+import { mergeDeep } from "remeda"
 
 describe("ProviderTransform.options - setCacheKey", () => {
   const sessionID = "test-session-123"
@@ -508,6 +509,72 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
     expect(result.include).toEqual(["reasoning.encrypted_content"])
     expect(result.textVerbosity).toBe("low")
   })
+
+  test.each([undefined, "xhigh"])(
+    "Bedrock GPT-5 requests summaries with one effort option for variant %s",
+    async (variant) => {
+      const model = {
+        ...createGpt5Model("global.openai.gpt-5.6-luna"),
+        providerID: "amazon-bedrock",
+        api: {
+          id: "global.openai.gpt-5.6-luna",
+          url: "https://bedrock-runtime.us-east-1.amazonaws.com",
+          npm: "@ai-sdk/amazon-bedrock",
+        },
+      }
+      const variants = ProviderTransform.reasoningVariants(
+        {
+          id: model.api.id,
+          name: model.name,
+          release_date: "2026-07-09",
+          attachment: true,
+          reasoning: true,
+          temperature: false,
+          tool_call: true,
+          limit: model.limit,
+          reasoning_options: [{ type: "effort", values: ["xhigh"] }],
+        },
+        model,
+      )
+      if (!variants) throw new Error("Expected reasoning variants")
+      const options = ProviderTransform.providerOptions(
+        model,
+        mergeDeep(
+          ProviderTransform.options({ model, sessionID, providerOptions: {} }),
+          variant ? variants[variant] : {},
+        ),
+      )
+      expect(options).toEqual({
+        bedrock: {
+          reasoningConfig: { type: "enabled", maxReasoningEffort: variant ?? "medium" },
+          additionalModelRequestFields: { reasoning: { summary: "auto" } },
+        },
+      })
+      const provider = createAmazonBedrock({
+        region: "us-east-1",
+        accessKeyId: "test",
+        secretAccessKey: "test",
+        fetch: Object.assign(
+          async () =>
+            Response.json({
+              output: { message: { role: "assistant", content: [{ text: "OK" }] } },
+              stopReason: "end_turn",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            }),
+          { preconnect() {} },
+        ),
+      })
+      const result = await provider(model.api.id).doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "Hello" }] }],
+        providerOptions: options,
+      })
+      expect(result.request?.body).toMatchObject({
+        additionalModelRequestFields: { reasoning: { summary: "auto" } },
+      })
+      expect(result.request?.body).not.toHaveProperty("reasoningEffort")
+      expect(result.request?.body).not.toHaveProperty("reasoningSummary")
+    },
+  )
 
   test("openai-compatible gpt-5 models omit Responses-only reasoningSummary", () => {
     const model = {

@@ -1288,7 +1288,15 @@ export function options(input: {
 
   if (input.model.api.id.includes("gpt-5") && !input.model.api.id.includes("gpt-5-chat")) {
     if (!input.model.api.id.includes("gpt-5-pro")) {
-      result["reasoningEffort"] = "medium"
+      Object.assign(
+        result,
+        input.model.api.npm === "@ai-sdk/amazon-bedrock"
+          ? {
+              ...reasoningEffort(input.model, "medium"),
+              additionalModelRequestFields: { reasoning: { summary: "auto" } },
+            }
+          : { reasoningEffort: "medium" },
+      )
       if (
         input.model.api.npm === "@ai-sdk/openai" ||
         input.model.api.npm === "@ai-sdk/azure" ||
