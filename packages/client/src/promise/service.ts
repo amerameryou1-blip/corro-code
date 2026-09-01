@@ -1,7 +1,7 @@
 import { readFile, rm } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import type { DiscoverOptions, Endpoint, Info, EnsureOptions, EnsureReason, StopOptions } from "../service.js"
+import type { DiscoverOptions, Endpoint, Info, EnsureOptions, StopOptions } from "../service.js"
 import {
   contenderFailure,
   contenderFinished,
@@ -49,7 +49,7 @@ async function ensureService(options: EnsureOptions, forceReplacement: boolean):
   let lastSpawn = 0
   let spawnDelay = timing.spawnDelay
 
-  const announce = (reason: EnsureReason, previousVersion?: string) => {
+  const announce = (reason: "missing" | "version-mismatch", previousVersion?: string) => {
     if (announced) return
     announced = true
     options.onStart?.(reason, previousVersion)
@@ -95,7 +95,7 @@ async function ensureService(options: EnsureOptions, forceReplacement: boolean):
         if (!replacing && compatible && service.state === "failed")
           throw new Error("Background service failed to start")
         if (replacing || !compatible) {
-          announce(replacing ? "replacement" : "version-mismatch", service.version)
+          announce("version-mismatch", service.version)
           if (!service.legacy && service.state === "ready")
             await PtyHandoff.prepare(options.file ?? fallback(), service.info, timing.requestTimeout)
           else {

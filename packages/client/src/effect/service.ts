@@ -2,7 +2,7 @@ import { ServiceStatus } from "@opencode-ai/protocol/groups/health"
 import { Effect, FileSystem, Option, Schedule, Schema } from "effect"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import type { DiscoverOptions, Endpoint, EnsureOptions, EnsureReason, StopOptions } from "../service.js"
+import type { DiscoverOptions, Endpoint, EnsureOptions, StopOptions } from "../service.js"
 import {
   contenderFailure,
   contenderFinished,
@@ -67,7 +67,7 @@ const ensureService = Effect.fnUntraced(function* (options: EnsureOptions, force
   let announced = false
   let lastSpawn = 0
   let spawnDelay = timing.spawnDelay
-  const announce = (reason: EnsureReason, previousVersion?: string) =>
+  const announce = (reason: "missing" | "version-mismatch", previousVersion?: string) =>
     Effect.sync(() => {
       if (announced) return
       announced = true
@@ -113,7 +113,7 @@ const ensureService = Effect.fnUntraced(function* (options: EnsureOptions, force
       if (!replacing && compatible && service.state === "failed")
         return yield* Effect.fail(new Error("Background service failed to start"))
       if (!replacing && compatible) return Option.none<LocalService>()
-      yield* announce(replacing ? "replacement" : "version-mismatch", service.version)
+      yield* announce("version-mismatch", service.version)
       if (!service.legacy && service.state === "ready")
         yield* Effect.tryPromise(() =>
           PtyHandoff.prepare(options.file ?? fallback(), service.info, timing.requestTimeout),

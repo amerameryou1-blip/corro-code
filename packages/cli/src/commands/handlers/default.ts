@@ -11,7 +11,6 @@ import { UpdatePreflight } from "../../services/update-preflight"
 import { Npm } from "@opencode-ai/util/npm"
 import { OPENCODE_CHANNEL, OPENCODE_VERSION } from "../../version"
 import { Env } from "../../env"
-import type { EnsureReason } from "@opencode-ai/client/effect/service"
 
 export default Runtime.handler(Commands, (input) =>
   Effect.gen(function* () {
@@ -20,7 +19,10 @@ export default Runtime.handler(Commands, (input) =>
     if (requestedDirectory !== undefined) process.chdir(requestedDirectory)
     const preflight = UpdatePreflight.make()
     yield* Effect.addFinalizer(() => Effect.promise(() => preflight.close()))
-    const serviceStarts = yield* Queue.unbounded<{ readonly reason: EnsureReason; readonly previousVersion?: string }>()
+    const serviceStarts = yield* Queue.unbounded<{
+      readonly reason: "missing" | "version-mismatch"
+      readonly previousVersion?: string
+    }>()
     yield* Queue.take(serviceStarts).pipe(
       Effect.flatMap((event) => Effect.logInfo("background service starting", event)),
       Effect.forever,
@@ -36,9 +38,7 @@ export default Runtime.handler(Commands, (input) =>
         process.stderr.write(
           reason === "version-mismatch"
             ? "Restarting background server (version mismatch)...\n"
-            : reason === "replacement"
-              ? "Restarting background server...\n"
-              : "Starting background server...\n",
+            : "Starting background server...\n",
         )
       },
     }).pipe(
