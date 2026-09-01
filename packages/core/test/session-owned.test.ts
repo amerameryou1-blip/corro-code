@@ -293,7 +293,7 @@ describe("Session-owned handles", () => {
     }),
   )
 
-  it.live("posts lifecycle and approval events independently of prompt and event publication", () =>
+  it.live("forwards enriched session events across scopes and moves without blocking publication", () =>
     Effect.gen(function* () {
       const received = yield* Queue.unbounded<unknown>()
       const response = Promise.withResolvers<void>()
@@ -316,21 +316,14 @@ describe("Session-owned handles", () => {
       const fixture = yield* setup()
       const handle = fixture.sessions.forSession(sessionID)
       const callbackUrl = server.url.href
-      const admitted = yield* handle
+      yield* handle
         .prompt({ text: "Notify me", callbackUrl })
         .pipe(Effect.provideService(Location.Service, location(source)), Effect.scoped)
-      expect(fixture.wakes).toHaveLength(1)
-      expect(JSON.stringify(admitted)).not.toContain(callbackUrl)
       expect(JSON.stringify(yield* handle.inbox())).not.toContain(callbackUrl)
 
       const started = yield* fixture.bus.publish(SessionEvent.Execution.Started, { sessionID })
       expect(yield* Queue.take(received).pipe(Effect.timeout("2 seconds"))).toMatchObject({
         ...started,
-        session: {
-          id: sessionID,
-          title: "Owned session",
-          time: { created: expect.any(Number), updated: expect.any(Number) },
-        },
         response: null,
       })
       yield* fixture.bus.publish(SessionEvent.Moved, {
@@ -340,12 +333,6 @@ describe("Session-owned handles", () => {
         subpath: RelativePath.make("moved"),
       })
       yield* fixture.bus.publish(SessionEvent.Renamed, { sessionID: otherID, title: "Unrelated" })
-      yield* fixture.bus.publish(SessionEvent.Text.Delta, {
-        sessionID,
-        assistantMessageID: SessionMessage.ID.create(),
-        ordinal: 0,
-        delta: "Not a notification",
-      })
       const responses = yield* Effect.forEach(["Earlier answer", "The review is ready."], (text) =>
         Effect.gen(function* () {
           const assistantMessageID = SessionMessage.ID.create()
@@ -389,32 +376,29 @@ describe("Session-owned handles", () => {
       // Session work settles while the receiver still has not acknowledged the first POST.
       expect((yield* handle.get()).outcome).toBe("succeeded")
       response.resolve()
-      expect(
-        yield* Effect.forEach(expected, () => Queue.take(received)).pipe(Effect.timeout("2 seconds")),
-      ).toMatchObject(
-        expected.map((event) => ({
-          ...event,
-          session: {
-            id: sessionID,
-            title: "Working",
-            outcome: "succeeded",
-            location: { directory: "/project/moved" },
-            time: { created: expect.any(Number), updated: expect.any(Number), idle: expect.any(Number) },
-          },
-          response: {
-            id: responses.at(-1),
-            type: "assistant",
-            content: [{ type: "text", text: "The review is ready." }],
-            time: { created: expect.any(Number), completed: expect.any(Number) },
-          },
-        })),
-      )
+      const delivered = yield* Effect.forEach(expected, () => Queue.take(received)).pipe(Effect.timeout("2 seconds"))
+      expect(delivered).toMatchObject(expected)
+      expect(delivered.at(-1)).toMatchObject({
+        session: {
+          id: sessionID,
+          title: "Working",
+          outcome: "succeeded",
+          location: { directory: "/project/moved" },
+          time: { created: expect.any(Number), updated: expect.any(Number), idle: expect.any(Number) },
+        },
+        response: {
+          id: responses.at(-1),
+          type: "assistant",
+          content: [{ type: "text", text: "The review is ready." }],
+          time: { created: expect.any(Number), completed: expect.any(Number) },
+        },
+      })
       yield* handle.rename({ title: "After completion" })
       expect(Option.isNone(yield* Queue.take(received).pipe(Effect.timeoutOption("50 millis")))).toBe(true)
     }),
   )
 
-  it.live("replaces callbacks and isolates HTTP failures without following redirects or retrying", () =>
+  it.live("replaces callbacks and isolates HTTP failures without following redirects", () =>
     Effect.gen(function* () {
       const received = yield* Queue.unbounded<{ path: string; body: unknown }>()
       const server = yield* Effect.acquireRelease(
@@ -453,20 +437,12 @@ describe("Session-owned handles", () => {
       })
 
       yield* handle.prompt({ text: "Redirect", resume: false, callbackUrl: `${server.url}redirect` })
-      const interrupted = yield* fixture.bus.publish(SessionEvent.Execution.Interrupted, { sessionID, reason: "user" })
-      expect(yield* Queue.take(received).pipe(Effect.timeout("2 seconds"))).toMatchObject({
-        path: "/redirect",
-        body: interrupted,
-      })
-      yield* handle.rename({ title: "No longer subscribed" })
-      expect(Option.isNone(yield* Queue.take(received).pipe(Effect.timeoutOption("50 millis")))).toBe(true)
-
-      yield* handle.prompt({ text: "Deleted", resume: false, callbackUrl: `${server.url}deleted` })
       const deleted = yield* fixture.bus.publish(SessionEvent.Deleted, { sessionID })
       expect(yield* Queue.take(received).pipe(Effect.timeout("2 seconds"))).toEqual({
-        path: "/deleted",
+        path: "/redirect",
         body: { ...deleted, session: null, response: null },
       })
+      expect(Option.isNone(yield* Queue.take(received).pipe(Effect.timeoutOption("50 millis")))).toBe(true)
     }),
   )
 

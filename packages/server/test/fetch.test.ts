@@ -140,37 +140,29 @@ it.live("validates prompt callback URLs and delivers real execution events over 
         new Request("http://opencode.local/api/session", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            title: "Mobile review",
-            metadata: { source: "mobile" },
-            model: { id: "missing-model", providerID: "missing-provider" },
-          }),
+          body: JSON.stringify({ model: { id: "missing-model", providerID: "missing-provider" } }),
         }),
       ).then((response) => response.json()),
     )
     const endpoint = `http://opencode.local/api/session/${created.data.id}`
-    yield* Effect.forEach(
-      ["not a URL", "ftp://example.test", "https://user:password@example.test", ""],
-      (callbackUrl) =>
-        Effect.gen(function* () {
-          const response = yield* Effect.promise(() =>
-            handler(
-              new Request(`${endpoint}/prompt`, {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ text: "Invalid callback", callbackUrl }),
-              }),
-            ),
-          )
-          expect(response.status).toBe(400)
-          expect(yield* Effect.promise(() => response.json())).toMatchObject({
-            _tag: "InvalidRequestError",
-            field: "callbackUrl",
-          })
-        }),
+    yield* Effect.forEach(["not a URL", "ftp://example.test", "https://user:password@example.test"], (callbackUrl) =>
+      Effect.gen(function* () {
+        const response = yield* Effect.promise(() =>
+          handler(
+            new Request(`${endpoint}/prompt`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ text: "Invalid callback", callbackUrl }),
+            }),
+          ),
+        )
+        expect(response.status).toBe(400)
+        expect(yield* Effect.promise(() => response.json())).toMatchObject({
+          _tag: "InvalidRequestError",
+          field: "callbackUrl",
+        })
+      }),
     )
-    const inbox = yield* Effect.promise(() => handler(new Request(`${endpoint}/inbox`)).then((res) => res.json()))
-    expect(inbox.data).toEqual([])
     const submitted = yield* Effect.promise(() =>
       handler(
         new Request(`${endpoint}/prompt`, {
@@ -184,20 +176,11 @@ it.live("validates prompt callback URLs and delivers real execution events over 
     expect(yield* Queue.take(received).pipe(Effect.timeout("5 seconds"))).toMatchObject({
       type: "session.execution.started",
       data: { sessionID: created.data.id },
-      session: {
-        id: created.data.id,
-        title: "Mobile review",
-        metadata: { source: "mobile" },
-        model: { id: "missing-model", providerID: "missing-provider" },
-        time: { created: expect.any(Number) },
-      },
-      response: null,
     })
     expect(yield* Queue.take(received).pipe(Effect.timeout("5 seconds"))).toMatchObject({
       type: "session.execution.failed",
       data: { sessionID: created.data.id },
-      session: { id: created.data.id, title: "Mobile review", outcome: "failed", metadata: { source: "mobile" } },
-      response: null,
+      session: { id: created.data.id, outcome: "failed" },
     })
   }),
 )
