@@ -955,7 +955,8 @@ test("shows jump to latest after scrolling one line above the final message", as
     },
   })
 
-  await setup.waitForFrame((frame) => frame.includes("Final visible message"))
+  // Persisting the tab adds a layout row, so wait for it before measuring the transcript.
+  await setup.waitForFrame((frame) => frame.includes(session.title) && frame.includes("Final visible message"))
   const findScrollBox = (root: Renderable): ScrollBoxRenderable | undefined =>
     root instanceof ScrollBoxRenderable && root.getRenderable("message-7")
       ? root
