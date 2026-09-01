@@ -368,7 +368,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
           description: "Restart the background server",
           params: {
             preserveTerminals: Flag.boolean("preserve-terminals").pipe(
-              Flag.withDescription("Keep terminals running across the restart"),
+              Flag.withDescription("Keep running terminals alive across the restart"),
               Flag.withDefault(false),
             ),
           },
