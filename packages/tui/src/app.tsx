@@ -42,6 +42,7 @@ import {
   type TuiApp,
 } from "./context/runtime"
 import { DialogProvider, useDialog } from "./ui/dialog"
+import { DialogConfirm } from "./ui/dialog-confirm"
 import { DialogIntegration } from "./component/dialog-integration"
 import { ErrorComponent } from "./component/error-component"
 import { PluginRouteMissing } from "./component/plugin-route-missing"
@@ -184,6 +185,10 @@ export type TuiInput = {
   }
   args: Args
   config: Config.Interface
+  updater?: {
+    apply: (version: string) => Promise<void>
+    disable: () => Promise<void>
+  }
   packages: PackageResolver
   environment?: Readonly<Record<string, string>>
   terminalHandoff?: () => Promise<
@@ -397,6 +402,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                                             directories={pluginDirectories}
                                                                           >
                                                                             <App
+                                                                              updater={input.updater}
                                                                               pair={
                                                                                 input.server.endpoint.auth
                                                                                   ? input.server.endpoint.auth
@@ -456,7 +462,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   })
 })
 
-function App(props: { pair?: DialogPairCredentials }) {
+function App(props: { pair?: DialogPairCredentials; updater?: TuiInput["updater"] }) {
   const log = useLog({ component: "app" })
   const app = useTuiApp()
   const startup = useTuiStartup()
@@ -1201,6 +1207,33 @@ function App(props: { pair?: DialogPairCredentials }) {
       variant: evt.data.variant,
       duration: evt.data.duration,
     })
+  })
+
+  event.on("installation.update-available", (evt) => {
+    const updater = props.updater
+    const restart = client.restart
+    if (!updater || !restart) return
+    dialog.replace(() => (
+      <DialogConfirm
+        title="Update ready"
+        message="An update is ready. Active sessions will be restarted."
+        label={{ confirm: "Update now", cancel: "Disable auto updates" }}
+        onConfirm={() => {
+          toast.show({ variant: "info", message: `Updating to ${evt.data.version}...`, duration: 30_000 })
+          void updater
+            .apply(evt.data.version)
+            .then(restart)
+            .then(() => toast.show({ variant: "success", message: "Update complete" }))
+            .catch(toast.error)
+        }}
+        onCancel={() => {
+          void updater
+            .disable()
+            .then(() => toast.show({ variant: "success", message: "Automatic updates disabled" }))
+            .catch(toast.error)
+        }}
+      />
+    ))
   })
 
   event.on("tui.session.select", (evt, { workspace }) => {

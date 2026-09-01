@@ -103,7 +103,7 @@ it.live("allows browser preflight requests without credentials", () =>
     if (!event.body) return yield* Effect.die(new Error("Event response has no body"))
     const reader = event.body.getReader()
     yield* Effect.promise(() => readUntil(reader, "server.connected"))
-    yield* server.events.publish(InstallationEvent.UpdateAvailable, { version: "2.0.0" })
+    yield* server.updateAvailable("2.0.0")
     yield* Effect.promise(() => readUntil(reader, "installation.update-available"))
     yield* Effect.promise(() => reader.cancel())
 

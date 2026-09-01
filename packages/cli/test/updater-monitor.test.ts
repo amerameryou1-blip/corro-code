@@ -17,6 +17,7 @@ it.live("installs and restarts after the final Session settles", () =>
       inspect: () => Effect.succeed({ action: "upgrade", version: "1.1.0" }),
       install: (version) => Deferred.succeed(installed, version).pipe(Effect.as(true)),
       restart: () => Deferred.succeed(restarted, undefined).pipe(Effect.asVoid),
+      notify: () => Effect.void,
     }).pipe(Effect.forkScoped)
     yield* wait(fixture.activeRead, () => "Updater did not check active Sessions")
     yield* wait(fixture.eventOpened, () => "Updater did not open the server event stream")

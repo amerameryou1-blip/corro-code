@@ -5,6 +5,7 @@ import { Bus } from "@opencode-ai/core/bus"
 import { SessionRestart } from "@opencode-ai/core/session/execution/restart"
 import { hasPtyConnectTicketURL } from "@opencode-ai/protocol/groups/pty"
 import { hasPersistentPtyConnectTicketURL } from "@opencode-ai/protocol/groups/persistent-pty"
+import { InstallationEvent } from "@opencode-ai/schema/installation-event"
 import { Cause, Context, Effect, Exit, Latch, Layer, Option, Ref, Scope } from "effect"
 import {
   HttpMiddleware,
@@ -118,7 +119,8 @@ export const start = Effect.fn("ServerProcess.start")(function* <E, R>(
     return {
       address: bound.http.address,
       shutdown: shutdown.await,
-      events: { publish: Context.get(context, Bus.Service).publish },
+      updateAvailable: (version: string) =>
+        Context.get(context, Bus.Service).publish(InstallationEvent.UpdateAvailable, { version }).pipe(Effect.asVoid),
     }
   }).pipe(
     Effect.catchCause((cause) => {
