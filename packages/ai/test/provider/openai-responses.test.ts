@@ -4017,7 +4017,7 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
-  it.effect("uses completed response output when item completion and its terminal item id are missing", () =>
+  it.effect("uses completed response output when output item completion is missing", () =>
     Effect.gen(function* () {
       const body = sseEvents(
         {
@@ -4032,6 +4032,7 @@ describe("OpenAI Responses route", () => {
             output: [
               {
                 type: "function_call",
+                id: "fc_item_1",
                 call_id: "call_1",
                 name: "lookup",
                 arguments: '{"query":"weather"}',
