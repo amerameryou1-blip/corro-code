@@ -1376,6 +1376,7 @@ export type ModelCompatibility = {
   maxTokensField?: ModelMaxTokensField
   requireFinishReason?: boolean
   requireAssistantAfterTool?: boolean
+  supportsFreeformTools?: boolean
 }
 
 export type ModelCost = {
