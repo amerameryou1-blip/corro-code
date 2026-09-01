@@ -6,10 +6,9 @@ import { OpenAIChat } from "@opencode-ai/ai/protocols"
 import { TestLLM } from "@opencode-ai/ai/testing"
 import { llmClient } from "@opencode-ai/core/effect/app-node-platform"
 import { makeMemoryDriver } from "@opencode-ai/core/environment/index"
-import { PluginSupervisor } from "@opencode-ai/core/plugin/supervisor"
 import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
 import { WorkspaceDriver } from "@opencode-ai/core/workspace/driver"
-import { Deferred, Effect, Fiber, Latch, Layer, Option, Ref, Schema, Stream } from "effect"
+import { Deferred, Effect, Fiber, Latch, Layer, Option, Ref, Schedule, Schema, Stream } from "effect"
 import { testEffect } from "../../core/test/lib/effect"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
 import type { OpenCodeEvent } from "../src/effect"
@@ -36,21 +35,11 @@ const location = (fixture: Fixture) =>
   fixture.sdk.Location.Ref.make({ directory: fixture.sdk.AbsolutePath.make(fixture.directory) })
 
 for (const selection of ["explicit", "default"] as const) {
-  it.live(`first generate.text waits for inline providers with ${selection} model selection`, () =>
+  it.live(`generate.text uses inline providers with ${selection} model selection`, () =>
     withEmbedded("opencode-embedded-generate-", (fixture) =>
       Effect.gen(function* () {
-        const release = yield* Latch.make()
         const llm = yield* TestLLM.Test.pipe(
           Effect.provide(TestLLM.testLayer({ fallback: TestLLM.text("ready", "answer") })),
-        )
-        const supervisor = PluginSupervisor.node.mapLayer((layer) =>
-          Layer.effect(
-            PluginSupervisor.Service,
-            Effect.gen(function* () {
-              const plugins = yield* PluginSupervisor.Service
-              return { awaitActivation: release.open.pipe(Effect.andThen(plugins.awaitActivation)) }
-            }),
-          ).pipe(Layer.provide(layer)),
         )
         const opencode = yield* fixture.sdk.OpenCode.create(
           {
@@ -72,14 +61,19 @@ for (const selection of ["explicit", "default"] as const) {
             fs: { filewatcher: false },
           },
           {
-            overrides: [
-              llmClient.replace(Layer.succeed(LLMClient.Service, llm)),
-              PluginSupervisor.node.replace(supervisor),
-            ],
+            overrides: [llmClient.replace(Layer.succeed(LLMClient.Service, llm))],
           },
         )
-        // Hold provider activation until the request reaches readiness, regardless of startup speed.
-        yield* opencode.plugin({ id: "gate-catalog", effect: () => release.await })
+        // Catalog reads no longer wait for plugin initialization.
+        yield* opencode.model.list({ location: location(fixture) }).pipe(
+          Effect.filterOrFail((result) =>
+            result.data.some(
+              (model) => model.providerID === "custom" && model.id === "fictional-chat" && model.enabled,
+            ),
+          ),
+          Effect.retry(Schedule.spaced("10 millis")),
+          Effect.timeout("2 seconds"),
+        )
 
         const result = yield* opencode.generate.text({
           prompt: "Say ready",
@@ -497,6 +491,11 @@ it.live("embedded client exposes plugin-backed web search", () =>
             })
           }),
       })
+      yield* opencode.websearch.providers({ location: location(fixture) }).pipe(
+        Effect.filterOrFail((result) => result.data.some((provider) => provider.id === providerID)),
+        Effect.retry(Schedule.spaced("10 millis")),
+        Effect.timeout("2 seconds"),
+      )
 
       const result = yield* opencode.websearch.query({
         query: "opencode",
