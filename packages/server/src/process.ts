@@ -1,6 +1,7 @@
 export * as ServerProcess from "./process"
 
 import { NodeHttpServer } from "@effect/platform-node"
+import { Bus } from "@opencode-ai/core/bus"
 import { SessionRestart } from "@opencode-ai/core/session/execution/restart"
 import { hasPtyConnectTicketURL } from "@opencode-ai/protocol/groups/pty"
 import { hasPersistentPtyConnectTicketURL } from "@opencode-ai/protocol/groups/persistent-pty"
@@ -114,7 +115,11 @@ export const start = Effect.fn("ServerProcess.start")(function* <E, R>(
       )
     yield* Ref.set(application, Option.some(transform ? transform(app) : app))
     yield* status.ready
-    return { address: bound.http.address, shutdown: shutdown.await }
+    return {
+      address: bound.http.address,
+      shutdown: shutdown.await,
+      events: { publish: Context.get(context, Bus.Service).publish },
+    }
   }).pipe(
     Effect.catchCause((cause) => {
       if (!lifecycle || Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
