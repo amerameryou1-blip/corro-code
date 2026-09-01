@@ -1003,16 +1003,18 @@ const resolveThinking = Effect.fn("AnthropicMessages.resolveThinking")(function*
 })
 
 const fromRequest = Effect.fn("AnthropicMessages.fromRequest")(function* (request: LLMRequest) {
+  yield* ProviderShared.requireFlatToolHistory("Anthropic Messages", request.messages)
   const generation = request.generation
   const toolSchemaCompatibility = request.model.compatibility?.toolSchema
   // Allocate the 4-breakpoint budget in invalidation order: tools → system →
   // messages. Tools live highest in the cache hierarchy, so when callers
   // over-mark we keep their tool hints and shed the message-tail ones first.
   const breakpoints = Cache.newBreakpoints(ANTHROPIC_BREAKPOINT_CAP)
+  const definitions = yield* ProviderShared.requireFlatTools("Anthropic Messages", request.tools)
   const tools =
-    request.tools.length === 0
+    definitions.length === 0
       ? undefined
-      : request.tools.map((tool) =>
+      : definitions.map((tool) =>
           lowerTool(
             breakpoints,
             tool,

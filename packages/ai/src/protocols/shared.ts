@@ -12,6 +12,8 @@ import {
   type LLMRequest,
   type MediaPart,
   type TextPart,
+  type ToolDefinition,
+  type ToolEntry,
   type ToolResultPart,
 } from "../schema/index.js"
 import { isRecord } from "../utils/record.js"
@@ -44,6 +46,7 @@ export const promptCacheKey = (request: LLMRequest): string | undefined => {
 export interface ToolAccumulator {
   readonly id: string
   readonly name: string
+  readonly namespace?: string
   readonly input: string
 }
 
@@ -253,6 +256,30 @@ export const invalidRequest = (message: string, cause?: unknown) =>
   new AIError({
     reason: new InvalidRequestError({ message, cause }),
   })
+
+export const requireFlatTools = Effect.fn("ProviderShared.requireFlatTools")(function* (
+  protocol: string,
+  tools: ReadonlyArray<ToolEntry>,
+) {
+  return yield* Effect.forEach(tools, (tool): Effect.Effect<ToolDefinition, AIError> => {
+    if (tool.type === "namespace") return Effect.fail(invalidRequest(`${protocol} does not support tool namespaces`))
+    return Effect.succeed(tool)
+  })
+})
+
+export const requireFlatToolHistory = Effect.fn("ProviderShared.requireFlatToolHistory")(function* (
+  protocol: string,
+  messages: LLMRequest["messages"],
+) {
+  if (
+    messages.some((message) =>
+      message.content.some(
+        (part) => (part.type === "tool-call" || part.type === "tool-result") && part.namespace !== undefined,
+      ),
+    )
+  )
+    return yield* invalidRequest(`${protocol} does not support tool namespaces in message history`)
+})
 
 export const imageResponse = Effect.fn("ProviderShared.imageResponse")(function* (
   route: string,

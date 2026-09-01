@@ -415,10 +415,7 @@ const lowerMessages = Effect.fn("BedrockConverse.lowerMessages")(function* (
 
 // System prompts share the cache-point convention: emit the text block, then
 // optionally a positional `cachePoint` marker.
-const lowerSystem = (
-  breakpoints: BedrockCache.Breakpoints,
-  system: ReadonlyArray<LLMRequest["system"][number]>,
-) => {
+const lowerSystem = (breakpoints: BedrockCache.Breakpoints, system: ReadonlyArray<LLMRequest["system"][number]>) => {
   const content = system
     .filter((part) => part.text.length > 0)
     .flatMap((part) => textWithCache(breakpoints, part.text, part.cache))
@@ -426,15 +423,17 @@ const lowerSystem = (
 }
 
 const fromRequest = Effect.fn("BedrockConverse.fromRequest")(function* (request: LLMRequest) {
+  yield* ProviderShared.requireFlatToolHistory("Bedrock Converse", request.messages)
   const toolChoice = request.toolChoice ? yield* lowerToolChoice(request.toolChoice) : undefined
+  const tools = yield* ProviderShared.requireFlatTools("Bedrock Converse", request.tools)
   const generation = request.generation
   // Bedrock-Claude shares Anthropic's 4-breakpoint cap. Spend the budget in
   // tools → system → messages order to favour the highest-impact prefixes.
   const breakpoints = BedrockCache.breakpoints()
   const toolConfig = (() => {
-    if (request.tools.length === 0) return undefined
+    if (tools.length === 0) return undefined
     return {
-      tools: lowerTools(request.model.compatibility?.toolSchema, breakpoints, request.tools),
+      tools: lowerTools(request.model.compatibility?.toolSchema, breakpoints, tools),
       // Converse has no native "none". Keep definitions stable for prompt
       // caching and omit only the unsupported choice.
       toolChoice,

@@ -166,6 +166,7 @@ export const InputItem = Schema.Union([
     id: Schema.optionalKey(Schema.String),
     call_id: Schema.String,
     name: Schema.String,
+    namespace: Schema.optionalKey(Schema.String),
     arguments: Schema.String,
   }),
   Schema.Struct({
@@ -287,6 +288,7 @@ export const StreamItem = Schema.StructWithRest(
     id: Schema.optional(Schema.String),
     call_id: Schema.optional(Schema.String),
     name: Schema.optional(Schema.String),
+    namespace: Schema.optional(Schema.String),
     arguments: Schema.optional(Schema.String),
     encrypted_content: optionalNull(Schema.String),
   }),
@@ -376,6 +378,7 @@ export type Event = Schema.Schema.Type<typeof Event>
 export interface ProviderAdapter {
   readonly id: string
   readonly name: string
+  readonly toolNamespaces?: boolean
   readonly lowerMedia?: (input: {
     readonly part: MediaPart
     readonly media: ProviderShared.NormalizedMedia
@@ -462,6 +465,7 @@ const lowerToolCall = (part: ToolCallPart, providerMetadataKey: string): OpenRes
     ...(id === undefined ? {} : { id }),
     call_id: part.id,
     name: part.name,
+    ...(part.namespace === undefined ? {} : { namespace: part.namespace }),
     arguments: ProviderShared.encodeJson(part.input),
   }
 }
@@ -742,14 +746,16 @@ export const fromRequestWithAdapter = Effect.fn("OpenResponses.fromRequestWithAd
   adapter: ProviderAdapter,
 ) {
   const generation = request.generation
+  if (adapter.toolNamespaces !== true) yield* ProviderShared.requireFlatToolHistory(adapter.name, request.messages)
+  const tools = yield* ProviderShared.requireFlatTools(adapter.name, request.tools)
   const toolSchemaCompatibility = request.model.compatibility?.toolSchema
   return {
     model: request.model.id,
     input: yield* lowerMessages(request, adapter),
     tools:
-      request.tools.length === 0
+      tools.length === 0
         ? undefined
-        : yield* Effect.forEach(request.tools, (tool) =>
+        : yield* Effect.forEach(tools, (tool) =>
             lowerTool(
               adapter.name,
               tool,
@@ -1020,11 +1026,20 @@ const onOutputItemAdded = (state: ParserState, event: Event): StepResult => {
       tools: ToolStream.start(state.tools, id, {
         id: item.call_id,
         name: item.name ?? "",
+        ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
         input: item.arguments ?? "",
         providerMetadata: metadata,
       }),
     },
-    [...events, LLMEvent.toolInputStart({ id: item.call_id, name: item.name ?? "", providerMetadata: metadata })],
+    [
+      ...events,
+      LLMEvent.toolInputStart({
+        id: item.call_id,
+        name: item.name ?? "",
+        ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+        providerMetadata: metadata,
+      }),
+    ],
   ]
 }
 
@@ -1137,13 +1152,18 @@ const onOutputItemDone = Effect.fn("OpenResponses.onOutputItemDone")(function* (
         ? fallback
         : Object.keys(state.tools).find((key) => state.tools[key]?.id === callID)
     const id = registered ?? fallback
+    const pending = registered === undefined ? undefined : state.tools[registered]
     const tools =
-      registered !== undefined
-        ? state.tools
-        : ToolStream.start(state.tools, id, {
+      pending === undefined
+        ? ToolStream.start(state.tools, id, {
             id: callID,
             name: item.name,
+            namespace: item.namespace,
             providerMetadata: metadata,
+          })
+        : ToolStream.start(state.tools, id, {
+            ...pending,
+            ...(pending.namespace === undefined && item.namespace !== undefined ? { namespace: item.namespace } : {}),
           })
     const result =
       item.arguments === undefined
@@ -1155,7 +1175,15 @@ const onOutputItemDone = Effect.fn("OpenResponses.onOutputItemDone")(function* (
     const resultEvents =
       registered !== undefined || finished.length === 0
         ? finished
-        : [LLMEvent.toolInputStart({ id: callID, name: item.name, providerMetadata: metadata }), ...finished]
+        : [
+            LLMEvent.toolInputStart({
+              id: callID,
+              name: item.name,
+              ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+              providerMetadata: metadata,
+            }),
+            ...finished,
+          ]
     const lifecycle = resultEvents.length ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
     events.push(...resultEvents)
     return [

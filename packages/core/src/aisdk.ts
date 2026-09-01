@@ -327,7 +327,11 @@ function modelFromLanguage(info: Info, language: LanguageModelV3) {
     },
     body: {
       schema: Schema.Unknown,
-      from: (request) => Effect.succeed(callOptions(request, packageName, info.modelID ?? info.id, optionKey)),
+      from: Effect.fn("AISDK.fromRequest")(function* (request) {
+        yield* ProviderShared.requireFlatToolHistory("AI SDK", request.messages)
+        const tools = yield* ProviderShared.requireFlatTools("AI SDK", request.tools)
+        return callOptions(request, packageName, info.modelID ?? info.id, optionKey, tools)
+      }),
     },
     with: () => route,
     model: (input) =>
@@ -406,6 +410,7 @@ function callOptions(
   packageName: string | undefined,
   modelID: ID,
   optionKey: string,
+  tools: ReadonlyArray<ToolDefinition>,
 ): LanguageModelV3CallOptions {
   return {
     prompt: prompt(request),
@@ -417,7 +422,7 @@ function callOptions(
     presencePenalty: request.generation?.presencePenalty,
     frequencyPenalty: request.generation?.frequencyPenalty,
     seed: request.generation?.seed,
-    tools: request.tools.map(tool),
+    tools: tools.map(tool),
     toolChoice: toolChoice(request.toolChoice),
     headers: request.http?.headers,
     providerOptions: requestProviderOptions(request.providerOptions, packageName, modelID, optionKey),
