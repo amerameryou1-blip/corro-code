@@ -144,8 +144,8 @@ const OpenResponsesFunctionCallOutputContent = Schema.Union([
   OpenResponsesInputVideo,
 ])
 
-export const FunctionCallOutput = Schema.Union([Schema.String, Schema.Array(OpenResponsesFunctionCallOutputContent)])
-export type FunctionCallOutput = Schema.Schema.Type<typeof FunctionCallOutput>
+const FunctionCallOutput = Schema.Union([Schema.String, Schema.Array(OpenResponsesFunctionCallOutputContent)])
+type FunctionCallOutput = Schema.Schema.Type<typeof FunctionCallOutput>
 
 export const InputItem = Schema.Union([
   Schema.Struct({ role: Schema.tag("system"), content: Schema.String }),

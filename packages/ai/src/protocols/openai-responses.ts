@@ -35,15 +35,49 @@ const OpenAIResponsesImageGenerationTool = Schema.Struct({
 const OpenAIResponsesCustomTool = Schema.Struct({
   type: Schema.tag("custom"),
   name: Schema.String,
-  description: Schema.String,
+  description: Schema.optional(Schema.String),
+  allowed_callers: Schema.optional(Schema.Array(Schema.Literals(["direct", "programmatic"]))),
+  defer_loading: Schema.optional(Schema.Boolean),
   format: Schema.optional(
-    Schema.Struct({
-      type: Schema.tag("grammar"),
-      syntax: Schema.Literals(["lark", "regex"]),
-      definition: Schema.String,
-    }),
+    Schema.Union([
+      Schema.Struct({ type: Schema.tag("text") }),
+      Schema.Struct({
+        type: Schema.tag("grammar"),
+        syntax: Schema.Literals(["lark", "regex"]),
+        definition: Schema.String,
+      }),
+    ]),
   ),
 })
+
+const OpenAIResponsesCustomToolCaller = optionalNull(
+  Schema.Union([
+    Schema.Struct({ type: Schema.tag("direct") }),
+    Schema.Struct({ type: Schema.tag("program"), caller_id: Schema.String }),
+  ]),
+)
+
+const OpenAIResponsesCustomToolOutput = Schema.Union([
+  Schema.String,
+  Schema.Array(
+    Schema.Union([
+      Schema.Struct({ type: Schema.tag("input_text"), text: Schema.String }),
+      Schema.Struct({
+        type: Schema.tag("input_image"),
+        image_url: Schema.optional(Schema.String),
+        file_id: Schema.optional(Schema.String),
+        detail: Schema.optional(Schema.Literals(["auto", "low", "high"])),
+      }),
+      Schema.Struct({
+        type: Schema.tag("input_file"),
+        filename: Schema.optional(Schema.String),
+        file_data: Schema.optional(Schema.String),
+        file_url: Schema.optional(Schema.String),
+        file_id: Schema.optional(Schema.String),
+      }),
+    ]),
+  ),
+])
 
 const OpenAIResponsesCustomToolItem = Schema.Union([
   Schema.Struct({
@@ -52,11 +86,15 @@ const OpenAIResponsesCustomToolItem = Schema.Union([
     call_id: Schema.String,
     name: Schema.String,
     input: Schema.String,
+    caller: Schema.optional(OpenAIResponsesCustomToolCaller),
+    namespace: Schema.optional(Schema.String),
   }),
   Schema.Struct({
     type: Schema.tag("custom_tool_call_output"),
+    id: Schema.optional(Schema.String),
     call_id: Schema.String,
-    output: OpenResponses.FunctionCallOutput,
+    output: OpenAIResponsesCustomToolOutput,
+    caller: Schema.optional(OpenAIResponsesCustomToolCaller),
   }),
 ])
 
