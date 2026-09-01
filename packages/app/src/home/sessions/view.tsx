@@ -193,6 +193,7 @@ function HomeSessionLeadingController(props: {
           revealProjectOnHover={props.revealProjectOnHover}
           open={state.open()}
           unread={state.unread()}
+          attention={state.attention()}
           loading={state.loading()}
         />
       )}
@@ -205,6 +206,7 @@ function HomeSessionLeading(props: {
   revealProjectOnHover: boolean
   open: boolean
   unread: boolean
+  attention: boolean
   loading: boolean
 }) {
   return (
@@ -224,6 +226,7 @@ function HomeSessionLeading(props: {
         directory={props.record.session.location.directory}
         revealProjectOnHover={props.revealProjectOnHover}
         unread={props.unread}
+        attention={props.attention}
         loading={props.loading}
       />
     </div>

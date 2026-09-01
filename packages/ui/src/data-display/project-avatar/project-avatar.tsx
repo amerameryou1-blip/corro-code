@@ -34,15 +34,26 @@ export interface ProjectAvatarProps extends ComponentProps<"div"> {
   src?: string
   variant?: ProjectAvatarStyle
   unread?: boolean
+  attention?: boolean
 }
 
 export function ProjectAvatar(props: ProjectAvatarProps) {
-  const [split, rest] = splitProps(props, ["fallback", "src", "variant", "unread", "class", "classList", "style"])
+  const [split, rest] = splitProps(props, [
+    "fallback",
+    "src",
+    "variant",
+    "unread",
+    "attention",
+    "class",
+    "classList",
+    "style",
+  ])
   return (
     <div
       {...rest}
       data-component="project-avatar-v2"
-      data-unread={split.unread ? "" : undefined}
+      data-unread={split.unread || split.attention ? "" : undefined}
+      data-attention={split.attention ? "" : undefined}
       classList={{
         ...split.classList,
         [split.class ?? ""]: !!split.class,
@@ -58,7 +69,7 @@ export function ProjectAvatar(props: ProjectAvatarProps) {
           {(value) => <img src={value()} draggable={false} data-slot="project-avatar-image" />}
         </Show>
       </div>
-      <Show when={split.unread}>
+      <Show when={split.unread || split.attention}>
         <span data-slot="project-avatar-unread-dot" aria-hidden="true" />
       </Show>
     </div>

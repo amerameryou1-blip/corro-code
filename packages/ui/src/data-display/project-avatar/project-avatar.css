@@ -121,6 +121,10 @@
   pointer-events: none;
 }
 
+[data-component="project-avatar-v2"][data-attention] [data-slot="project-avatar-unread-dot"] {
+  background: var(--v2-orange-600);
+}
+
 [data-slot="project-avatar-slot"] {
   display: flex;
   flex-shrink: 0;

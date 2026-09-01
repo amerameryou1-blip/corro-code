@@ -44,5 +44,5 @@ export function useSessionTabAvatarState(
     if (needsAttention()) return false
     return data.session.status(sessionId()) === "running"
   })
-  return { unread, loading }
+  return { unread, attention: needsAttention, loading }
 }

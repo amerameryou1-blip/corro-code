@@ -7,13 +7,14 @@ Saturated 16px project avatar with color variants and optional unread dot.
 
 ### API
 - Required: \`fallback\` string.
-- Optional: \`src\`, \`variant\`, \`unread\`.
+- Optional: \`src\`, \`variant\`, \`unread\`, \`attention\`.
 
 ### Variants
 - Color: orange, yellow, cyan, green, red, pink, blue, purple, gray.
 - Outline: neutral, muted style for de-emphasized projects (e.g. recently closed).
 - Image vs initial content state.
 - Unread dot with corner mask when \`unread\` is set.
+- Orange attention dot when \`attention\` is set.
 
 ### Theming
 - Uses \`--v2-avatar-bg-*\` and \`--v2-avatar-border-*\` tokens with inset box-shadow borders.
@@ -75,6 +76,14 @@ export const Unread = {
     fallback: "O",
     variant: "orange",
     unread: true,
+  },
+}
+
+export const Attention = {
+  args: {
+    fallback: "O",
+    variant: "orange",
+    attention: true,
   },
 }
 
