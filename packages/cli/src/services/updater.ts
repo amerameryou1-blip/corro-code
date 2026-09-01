@@ -255,7 +255,7 @@ export const layer = Layer.effect(
         yield* applyIfIdle()
       }).pipe(Effect.catch((cause) => Effect.logWarning("automatic update check failed", { cause })))
 
-      const listen = Effect.suspend(() =>
+      const subscribe = Effect.suspend(() =>
         Stream.fromAsyncIterable(
           client.event.subscribe(),
           (cause) => new Error("Update event stream failed", { cause }),
@@ -277,7 +277,7 @@ export const layer = Layer.effect(
         ),
       ).pipe(Effect.repeat(Schedule.spaced("1 second")))
 
-      return yield* Effect.all([checkServer.pipe(Effect.schedule(Schedule.spaced("10 minutes"))), listen], {
+      return yield* Effect.all([checkServer.pipe(Effect.schedule(Schedule.spaced("10 minutes"))), subscribe], {
         concurrency: "unbounded",
         discard: true,
       })
