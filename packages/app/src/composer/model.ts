@@ -345,6 +345,7 @@ export function createComposerModel(adapter: ComposerAdapter, options?: { queue?
         }),
       readClipboardImage: platform.readClipboardImage,
       getPathForFile: platform.getPathForFile,
+      onDragCancel: platform.onDragCancel,
       store: platform.draftStore?.putBlob,
     },
     view: {

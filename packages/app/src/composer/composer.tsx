@@ -12,7 +12,7 @@ import { formatKeybind, useCommand } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
 import type { ComposerModel } from "./model"
 
-export type ComposerDropState = { active: boolean; label: string; image: boolean; pdf: boolean }
+export type ComposerDropState = { active: boolean; label: string }
 
 export function Composer(props: {
   class?: string
@@ -36,11 +36,9 @@ export function Composer(props: {
     props.onDropStateChange?.({
       active: props.model.state.drag === "active",
       label: dropLabel(),
-      image: dropInput()?.image ?? false,
-      pdf: dropInput()?.pdf ?? false,
     }),
   )
-  onCleanup(() => props.onDropStateChange?.({ active: false, label: dropLabel(), image: false, pdf: false }))
+  onCleanup(() => props.onDropStateChange?.({ active: false, label: dropLabel() }))
 
   return (
     <div class="flex flex-col gap-3">

@@ -57,7 +57,7 @@ export function SessionScreen(props: { session: SessionModel }) {
     sideTerminalPresent: false,
     mobileTerminalCached: false,
     mobileMoveDismissed: false,
-    drop: { active: false, label: "", image: false, pdf: false },
+    drop: { active: false, label: "" },
   })
   const [elements, setElements] = createStore<{
     side?: HTMLDivElement
@@ -209,12 +209,14 @@ export function SessionScreen(props: { session: SessionModel }) {
       <div
         data-slot="session-dropzone-blur"
         data-visible={store.drop.active}
-        class="pointer-events-none absolute inset-0 z-[79] rounded-[inherit] opacity-[0.001] backdrop-blur-[3px] transition-opacity duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] will-change-[opacity,backdrop-filter] data-[visible=true]:opacity-100 motion-reduce:transition-none"
+        class="pointer-events-none absolute inset-0 z-[79] rounded-[inherit] opacity-[0.001] backdrop-blur-[1.5px] transition-opacity duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] will-change-[opacity,backdrop-filter] data-[visible=true]:opacity-100 motion-reduce:transition-none"
         style={{
           "-webkit-mask-image":
-            "radial-gradient(ellipse 60% 48% at center, black 0%, rgba(0,0,0,0.82) 42%, transparent 100%)",
+            "linear-gradient(to right, transparent 0%, black 25%, black 75%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 28%, black 72%, transparent 100%)",
+          "-webkit-mask-composite": "source-in",
           "mask-image":
-            "radial-gradient(ellipse 60% 48% at center, black 0%, rgba(0,0,0,0.82) 42%, transparent 100%)",
+            "linear-gradient(to right, transparent 0%, black 25%, black 75%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 28%, black 72%, transparent 100%)",
+          "mask-composite": "intersect",
         }}
       />
       <Show when={dropPresence.present()}>
@@ -222,17 +224,9 @@ export function SessionScreen(props: { session: SessionModel }) {
           ref={(element) => setElements("dropzone", element)}
           data-component="session-dropzone"
           data-visible={store.drop.active}
-          class="pointer-events-none absolute inset-0 z-[80] grid place-items-center overflow-hidden rounded-[inherit] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_var(--session-dropzone-wash),transparent)] opacity-100 transition-opacity duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] data-[visible=false]:opacity-0 motion-reduce:transition-none"
+          class="pointer-events-none absolute inset-0 z-[80] grid place-items-center overflow-hidden rounded-[inherit] bg-[color-mix(in_srgb,var(--v2-text-text-base)_var(--session-dropzone-wash),transparent)] opacity-100 transition-opacity duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] data-[visible=false]:opacity-0 motion-reduce:transition-none"
         >
-          <div
-            class="absolute inset-0 bg-v2-background-bg-base/55"
-            style={{
-              "-webkit-mask-image":
-                "radial-gradient(ellipse 60% 48% at center, black 0%, rgba(0,0,0,0.82) 42%, transparent 100%)",
-              "mask-image":
-                "radial-gradient(ellipse 60% 48% at center, black 0%, rgba(0,0,0,0.82) 42%, transparent 100%)",
-            }}
-          />
+          <div class="absolute inset-0 bg-v2-background-bg-base/25" />
           <div
             class="absolute inset-y-0 left-1/2 w-full -translate-x-1/2 md:max-w-200 2xl:max-w-[1000px]"
             style={{
@@ -242,10 +236,11 @@ export function SessionScreen(props: { session: SessionModel }) {
             }}
           >
             <div
+              data-slot="session-dropzone-stripes"
               class="absolute inset-0 opacity-60"
               style={{
                 background:
-                  "repeating-linear-gradient(135deg, transparent 0px, transparent 12px, color-mix(in srgb, var(--v2-background-bg-accent) var(--session-dropzone-stripe), transparent) 12px, color-mix(in srgb, var(--v2-background-bg-accent) var(--session-dropzone-stripe), transparent) 24px)",
+                  "repeating-linear-gradient(135deg, transparent 0px, transparent 12px, color-mix(in srgb, var(--v2-text-text-base) var(--session-dropzone-stripe), transparent) 12px, color-mix(in srgb, var(--v2-text-text-base) var(--session-dropzone-stripe), transparent) 24px)",
                 "-webkit-mask-image":
                   "radial-gradient(ellipse 59% 40% at center, black 0%, rgba(0,0,0,0.72) 58%, transparent 100%)",
                 "mask-image":
@@ -258,48 +253,12 @@ export function SessionScreen(props: { session: SessionModel }) {
             class="relative flex translate-y-0 flex-col items-center gap-5 opacity-100 transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] data-[visible=false]:translate-y-1 data-[visible=false]:opacity-0 motion-reduce:transition-none"
             data-visible={store.drop.active}
           >
-            <div class="flex h-10 items-center gap-0.5" aria-hidden="true">
-              <Show when={store.drop.image}>
-                <div
-                  class="flex size-9 items-center justify-center rounded-[9px] bg-[var(--session-dropzone-card)] text-v2-icon-icon-muted opacity-100 shadow-[var(--v2-elevation-raised)] transition-[opacity,transform] delay-50 duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] [[data-visible=false]_&]:translate-x-3 [[data-visible=false]_&]:rotate-[-2deg] [[data-visible=false]_&]:opacity-0 motion-reduce:transition-none"
-                  classList={{
-                    "z-0 translate-x-2 rotate-[-6deg]": store.drop.pdf,
-                    "z-0 translate-x-0.5 rotate-[-4deg]": !store.drop.pdf,
-                  }}
-                >
-                  <Icon name="photo" size="normal" class="text-v2-icon-icon-muted" />
-                </div>
-              </Show>
-              <div
-                class="flex size-9 items-center justify-center rounded-[9px] bg-[var(--session-dropzone-card)] text-v2-icon-icon-muted opacity-100 shadow-[var(--v2-elevation-raised)] transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] [[data-visible=false]_&]:scale-90 [[data-visible=false]_&]:opacity-0 motion-reduce:transition-none"
-                classList={{
-                  "z-10 -translate-y-2 rotate-[2deg]": store.drop.image && store.drop.pdf,
-                  "z-10 -translate-x-0.5 rotate-[4deg]": store.drop.image && !store.drop.pdf,
-                  "z-0 translate-x-0.5 rotate-[-4deg]": !store.drop.image && store.drop.pdf,
-                }}
-              >
-                <svg class="size-5 text-v2-icon-icon-muted" viewBox="0 0 16 16" fill="none">
-                  <path d="M12.75 8H3.25M8 12.75V3.25" stroke="currentColor" stroke-width="1" />
-                </svg>
-              </div>
-              <Show when={store.drop.pdf}>
-                <div
-                  class="flex size-9 items-center justify-center rounded-[9px] bg-[var(--session-dropzone-card)] text-v2-icon-icon-muted opacity-100 shadow-[var(--v2-elevation-raised)] transition-[opacity,transform] delay-50 duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] [[data-visible=false]_&]:-translate-x-3 [[data-visible=false]_&]:rotate-[2deg] [[data-visible=false]_&]:opacity-0 motion-reduce:transition-none"
-                  classList={{
-                    "z-20 -translate-x-1 rotate-[6deg]": store.drop.image,
-                    "z-10 -translate-x-0.5 rotate-[4deg]": !store.drop.image,
-                  }}
-                >
-                  <svg class="size-5 text-v2-icon-icon-muted" viewBox="0 0 16 16" fill="none">
-                    <path
-                      d="M8.66658 2.66667V6H11.9999M3.33325 2H8.66658L12.6666 6V14H3.33325V2Z"
-                      stroke="currentColor"
-                      stroke-width="1"
-                      stroke-linecap="square"
-                    />
-                  </svg>
-                </div>
-              </Show>
+            <div
+              data-slot="session-dropzone-upload"
+              class="flex size-10 items-center justify-center rounded-full bg-[var(--session-dropzone-card)] text-v2-icon-icon-muted shadow-[var(--v2-elevation-floating)]"
+              aria-hidden="true"
+            >
+              <Icon name="arrow-up" size="normal" class="text-v2-icon-icon-muted" />
             </div>
             <div class="text-[15px] font-[530] leading-6 text-v2-text-text-base">{store.drop.label}</div>
           </div>
