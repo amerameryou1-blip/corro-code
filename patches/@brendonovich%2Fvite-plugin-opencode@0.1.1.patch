@@ -1,0 +1,42 @@
+diff --git a/node_modules/@brendonovich/vite-plugin-opencode/.bun-tag-6275558c8a7c92ef b/.bun-tag-6275558c8a7c92ef
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 5cae5fab5558327a6782272d094bac56d73a6f06..7d308ccf38a162e4d0a85664884a7d687abb461c 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -15,10 +15,11 @@ interface PickerPlugin {
+     readonly resolveId: (id: string) => string | undefined;
+     readonly load: (id: string) => string | undefined;
+     readonly transformIndexHtml: {
+-        readonly order: "post";
++        readonly order: "pre";
+         readonly handler: () => Array<{
+             readonly tag: string;
+             readonly attrs: Readonly<Record<string, string>>;
++            readonly children: string;
+             readonly injectTo: "body";
+         }>;
+     };
+diff --git a/dist/index.js b/dist/index.js
+index 7dda18114a778b15449b93a52a1d15197474678f..a1c933e067dc124473c1e56a97c38fe6609ad793 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -887,14 +887,14 @@ setInterval(refreshSessions, 1500);
+ 			return e === m ? _(u) : void 0;
+ 		},
+ 		transformIndexHtml: {
+-			order: "post",
++			order: "pre",
+ 			handler() {
+ 				return [{
+ 					tag: "script",
+ 					attrs: {
+-						type: "module",
+-						src: `${u.slice(0, -22)}@id/__x00__${p}`
++						type: "module"
+ 					},
++					children: `import ${JSON.stringify(p)}`,
+ 					injectTo: "body"
+ 				}];
+ 			}
