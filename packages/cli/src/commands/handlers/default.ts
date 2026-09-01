@@ -86,7 +86,6 @@ export default Runtime.handler(Commands, (input) =>
       updater: service
         ? {
             apply: (version) => runPromise(updater.apply(version)),
-            disable: () => runPromise(updater.disable()),
           }
         : undefined,
       packages: {

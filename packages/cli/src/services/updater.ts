@@ -4,7 +4,7 @@ import { OpenCode } from "@opencode-ai/client"
 import { OPENCODE_CHANNEL, OPENCODE_LOCAL, OPENCODE_VERSION } from "../version"
 import { Context, Duration, Effect, FileSystem, Layer, Ref, Schedule, Semaphore, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
-import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
+import { parse, type ParseError } from "jsonc-parser"
 import { spawn } from "node:child_process"
 import path from "node:path"
 import { action, parseReleaseVersion, type Action, type Policy } from "./updater-action"
@@ -27,7 +27,6 @@ export interface Interface {
     readonly notify: (version: string) => Effect.Effect<void>
   }) => Effect.Effect<never>
   readonly apply: (version: string) => Effect.Effect<void, Error>
-  readonly disable: () => Effect.Effect<void, Error>
   readonly method: () => Effect.Effect<Method | undefined>
   readonly latest: () => Effect.Effect<string, Error>
   readonly upgrade: (method: Method, version: string) => Effect.Effect<void, Error>
@@ -332,23 +331,6 @@ const make = Effect.gen(function* () {
     if (!(yield* install(version))) return yield* Effect.fail(new Error("Installation method not found"))
   })
 
-  const disable = Effect.fn("cli.updater.disable")(function* () {
-    const file = path.join(global.config, "opencode.jsonc")
-    const text = yield* fs.readFileString(file).pipe(Effect.orElseSucceed(() => "{}\n"))
-    const next = yield* Effect.try({
-      try: () =>
-        applyEdits(
-          text,
-          modify(text, ["autoupdate"], false, { formattingOptions: { tabSize: 2, insertSpaces: true } }),
-        ),
-      catch: (cause) => new Error("Failed to disable automatic updates", { cause }),
-    })
-    const temp = file + ".tmp"
-    yield* fs.makeDirectory(global.config, { recursive: true })
-    yield* fs.writeFileString(temp, next, { mode: 0o600 })
-    yield* fs.rename(temp, file)
-  })
-
   const check = Effect.fn("cli.updater.check")(
     function* () {
       const result = yield* inspect()
@@ -367,7 +349,7 @@ const make = Effect.gen(function* () {
     return yield* monitorServer({ ...input, inspect, install, restart })
   })
 
-  return Service.of({ check, monitor, apply, disable, method, latest, upgrade })
+  return Service.of({ check, monitor, apply, method, latest, upgrade })
 })
 
 export const layer = Layer.effect(Service, make)

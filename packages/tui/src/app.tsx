@@ -42,7 +42,6 @@ import {
   type TuiApp,
 } from "./context/runtime"
 import { DialogProvider, useDialog } from "./ui/dialog"
-import { DialogConfirm } from "./ui/dialog-confirm"
 import { DialogIntegration } from "./component/dialog-integration"
 import { ErrorComponent } from "./component/error-component"
 import { PluginRouteMissing } from "./component/plugin-route-missing"
@@ -187,7 +186,6 @@ export type TuiInput = {
   config: Config.Interface
   updater?: {
     apply: (version: string) => Promise<void>
-    disable: () => Promise<void>
   }
   packages: PackageResolver
   environment?: Readonly<Record<string, string>>
@@ -501,6 +499,11 @@ function App(props: { pair?: DialogPairCredentials; updater?: TuiInput["updater"
   const [layout, updateLayout] = useStorage().store<{ verticalTabsWidth?: number }>("layout", {
     initial: { verticalTabsWidth: SESSION_SIDEBAR_WIDTH },
   })
+  const [updateNotifications, markUpdateNotification] = useStorage().store<{ versions: string[] }>(
+    "update-notifications",
+    { initial: { versions: [] } },
+  )
+  const notifying = new Set<string>()
   const tabsResize = createPaneResize({
     value: () => layout.verticalTabsWidth ?? SESSION_SIDEBAR_WIDTH,
     defaultValue: () => SESSION_SIDEBAR_WIDTH,
@@ -1213,27 +1216,31 @@ function App(props: { pair?: DialogPairCredentials; updater?: TuiInput["updater"
     const updater = props.updater
     const restart = client.restart
     if (!updater || !restart) return
-    dialog.replace(() => (
-      <DialogConfirm
-        title="Update ready"
-        message="An update is ready. Active sessions will be restarted."
-        label={{ confirm: "Update now", cancel: "Disable auto updates" }}
-        onConfirm={() => {
-          toast.show({ variant: "info", message: `Updating to ${evt.data.version}...`, duration: 30_000 })
+    const version = evt.data.version
+    if (updateNotifications.versions.includes(version) || notifying.has(version)) return
+    notifying.add(version)
+    void markUpdateNotification((draft) => {
+      draft.versions = [...draft.versions, version].slice(-100)
+    }).catch((error) => {
+      notifying.delete(version)
+      toast.error(error)
+    })
+    toast.show({
+      variant: "info",
+      message: "An update is ready. Active sessions will be restarted.",
+      duration: 30_000,
+      action: {
+        label: "Install",
+        run: () => {
+          toast.show({ variant: "info", message: `Updating to ${version}...`, duration: 30_000 })
           void updater
-            .apply(evt.data.version)
+            .apply(version)
             .then(restart)
             .then(() => toast.show({ variant: "success", message: "Update complete" }))
             .catch(toast.error)
-        }}
-        onCancel={() => {
-          void updater
-            .disable()
-            .then(() => toast.show({ variant: "success", message: "Automatic updates disabled" }))
-            .catch(toast.error)
-        }}
-      />
-    ))
+        },
+      },
+    })
   })
 
   event.on("tui.session.select", (evt, { workspace }) => {
