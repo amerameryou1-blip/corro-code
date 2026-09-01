@@ -3,6 +3,7 @@ import { createTestRenderer } from "@opentui/core/testing"
 import { InputRenderable, TextareaRenderable } from "@opentui/core"
 import { Effect, FileSystem } from "effect"
 import { Global } from "@opencode-ai/util/global"
+import { takeDraft } from "../src/component/prompt/draft-stash"
 import { createEventStream, createFetch, directory, json } from "./fixture/tui-client"
 import { tmpdir } from "./fixture/fixture"
 
@@ -213,5 +214,7 @@ test.each([
     setup.renderer.destroy()
     await task
     await server.stop()
+    takeDraft(sessionID)
+    if (scenario === "setup-mode") takeDraft(undefined)
   }
 })
