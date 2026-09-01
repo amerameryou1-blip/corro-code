@@ -218,7 +218,7 @@ export const AzurePlugin = define({
       const credential = connection
         ? yield* ctx.integration.connection.resolve(connection).pipe(Effect.orElseSucceed(() => undefined))
         : undefined
-      if (credential?.type !== "oauth" || credential.methodID !== methodID) {
+      if (!available || credential?.type !== "oauth" || credential.methodID !== methodID) {
         loaded.resource = undefined
         loaded.deployments = undefined
         return

@@ -150,6 +150,25 @@ describe("AzurePlugin", () => {
     ),
   )
 
+  it.effect("does not invoke Azure CLI at startup when it is no longer installed", () =>
+    withEnv({ PATH: "/nonexistent" }, () =>
+      Effect.gen(function* () {
+        yield* azureCredential
+        const processes = yield* AppProcess.Service
+        const commands: string[] = []
+        const fake = AppProcess.Service.of({
+          ...processes,
+          run: (command) => {
+            if (command._tag === "StandardCommand") commands.push(command.args.join(" "))
+            return processes.run(command)
+          },
+        })
+        yield* addPlugin().pipe(Effect.provideService(AppProcess.Service, fake))
+        expect(commands).toEqual([])
+      }),
+    ),
+  )
+
   it.live("registers Azure CLI authentication alongside API keys", () =>
     withEnv({ AZURE_RESOURCE_NAME: undefined, AZURE_COGNITIVE_SERVICES_RESOURCE_NAME: undefined }, () =>
       withAzureCommands(
