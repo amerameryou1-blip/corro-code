@@ -37,6 +37,8 @@ export const DEFAULT_SEARCH_TIMEOUT_MS = 30_000
 export class GlobInput extends Schema.Class<GlobInput>("FileSystem.GlobInput")({
   pattern: Schema.String,
   path: Schema.optionalKey(RelativePath),
+  hidden: Schema.optionalKey(Schema.Boolean),
+  gitignore: Schema.optionalKey(Schema.Boolean),
   limit: Schema.optionalKey(PositiveInt),
 }) {}
 

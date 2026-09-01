@@ -105,6 +105,42 @@ describe("search tools", () => {
     ),
   )
 
+  it.live("controls hidden and ignored glob results", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() => Bun.$`git init -q ${tmp.path}`)
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, ".gitignore"), "ignored.txt\n"))
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, ".hidden.txt"), "hidden\n"))
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "ignored.txt"), "ignored\n"))
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "visible.txt"), "visible\n"))
+
+          yield* withTools(tmp.path, (registry) =>
+            Effect.gen(function* () {
+              const defaults = yield* executeTool(registry, call("glob", { pattern: "**/*" }))
+              expect(defaults).toMatchObject({ status: "completed" })
+              const defaultsText = defaults.content?.[0]?.type === "text" ? defaults.content[0].text : ""
+              expect(defaultsText).toContain(path.join(tmp.path, ".hidden.txt"))
+              expect(defaultsText).toContain(path.join(tmp.path, "visible.txt"))
+              expect(defaultsText).not.toContain(path.join(tmp.path, "ignored.txt"))
+
+              const visible = yield* executeTool(registry, call("glob", { pattern: "**/*", hidden: false }))
+              expect(visible).toMatchObject({ status: "completed" })
+              const visibleText = visible.content?.[0]?.type === "text" ? visible.content[0].text : ""
+              expect(visibleText).not.toContain(path.join(tmp.path, ".hidden.txt"))
+
+              const ignored = yield* executeTool(registry, call("glob", { pattern: "**/*", gitignore: false }))
+              expect(ignored).toMatchObject({ status: "completed" })
+              const ignoredText = ignored.content?.[0]?.type === "text" ? ignored.content[0].text : ""
+              expect(ignoredText).toContain(path.join(tmp.path, "ignored.txt"))
+            }),
+          )
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   it.live("rejects an empty grep pattern", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),

@@ -4,6 +4,7 @@ import { Context, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { Entry, Match } from "@opencode-ai/schema/filesystem"
 import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
+import { Glob } from "@opencode-ai/util/glob"
 import { collectStream, waitForAbort } from "@opencode-ai/util/process"
 import { Environment } from "./environment/index.js"
 import { NonNegativeInt, PositiveInt, RelativePath } from "./schema.js"
@@ -65,6 +66,7 @@ export interface GlobInput {
   readonly pattern: string
   readonly limit: number
   readonly hidden?: boolean
+  readonly gitignore?: boolean
   readonly follow?: boolean
   readonly signal?: AbortSignal
 }
@@ -169,12 +171,16 @@ const layer = Layer.effect(
             "--no-config",
             "--files",
             ...(input.hidden ? ["--hidden"] : []),
+            ...(input.gitignore === false ? ["--no-ignore"] : []),
             ...(input.follow ? ["--follow"] : []),
-            `--glob=${input.pattern}`,
             "--glob=!**/.git/**",
             ".",
           ],
-          parse: (line) => Effect.succeed(normalizePath(line)),
+          parse: (line) => {
+            const relative = normalizePath(line)
+            const pattern = input.pattern.includes("/") ? input.pattern : `**/${input.pattern}`
+            return Effect.succeed(Glob.match(pattern, relative) ? relative : undefined)
+          },
         }).pipe(
           Effect.map((result) =>
             result.map((relative) =>
