@@ -20,7 +20,7 @@ import { PluginSupervisor } from "@opencode-ai/core/plugin/supervisor"
 import { Model } from "@opencode-ai/core/model"
 import { Provider } from "@opencode-ai/core/provider"
 import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Cause, Effect, Fiber, Layer, Logger, Option, Schedule, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Logger, Option, Schedule, Stream } from "effect"
 import { Database } from "../../src/database/database"
 import { tmpdir } from "../fixture/tmpdir"
 import { tempGlobalLayer } from "../fixture/global"
@@ -104,12 +104,6 @@ const coldNpm = makeGlobalNode({
   ),
   deps: [Global.node],
 })
-const coldIt = testEffect(
-  AppNodeBuilder.build(
-    LayerNode.group([Database.node, Bus.node, SdkPlugins.node, LocationServiceMap.node, Global.node]),
-    [Global.node.replace(tempGlobalLayer), Npm.node.replace(coldNpm)],
-  ),
-)
 describe("PluginSupervisor config", () => {
   it.live("applies selectors in order", () =>
     withLocation(
@@ -508,20 +502,6 @@ describe("PluginSupervisor config", () => {
     ),
   )
 
-  it.live("unblocks awaitActivation when plugin activation fails", () =>
-    Effect.gen(function* () {
-      const sdk = yield* SdkPlugins.Service
-      yield* sdk.register(define({ id: "duplicate-id", effect: () => Effect.void }))
-      yield* sdk.register(define({ id: "duplicate-id", effect: () => Effect.void }))
-      yield* withLocation(
-        undefined,
-        Effect.gen(function* () {
-          yield* ready().pipe(Effect.timeout("2 seconds"))
-        }),
-      )
-    }),
-  )
-
   updateIt.live("marks active package plugins as outdated after a background check", () =>
     withLocation(
       { plugins: ["outdated-plugin"] },
@@ -538,23 +518,140 @@ describe("PluginSupervisor config", () => {
       }),
     ),
   )
+})
 
-  coldIt.live("activates available plugins before a missing package finishes installing", () =>
-    withLocation(
-      { plugins: ["cold-plugin"] },
-      Effect.gen(function* () {
-        const global = yield* Global.Service
-        yield* waitForFile(path.join(global.tmp, "cold-plugin", "started"))
-        const plugins = yield* Plugin.Service
-        expect((yield* plugins.list()).map((plugin) => String(plugin.id))).toContain("opencode.provider.openai")
-        const supervisor = yield* PluginSupervisor.Service
-        expect(Option.isNone(yield* supervisor.awaitActivation.pipe(Effect.timeoutOption("20 millis")))).toBeTrue()
-        yield* Effect.promise(() => Bun.write(path.join(global.tmp, "cold-plugin", "release"), ""))
-        yield* supervisor.awaitActivation.pipe(Effect.timeout("2 seconds"))
-        expect((yield* plugins.list()).map((plugin) => String(plugin.id))).toContain("cold-plugin")
-      }),
-    ),
-  )
+describe("PluginSupervisor awaitActivation", () => {
+  for (const [mode, node] of [
+    ["default", PluginSupervisor.node],
+    ["options omitted", PluginSupervisor.configured()],
+    ["failOnError false", PluginSupervisor.configured({ failOnError: false })],
+    ["strict", PluginSupervisor.configured({ failOnError: true })],
+  ] as const) {
+    const activationIt = testEffect(
+      AppNodeBuilder.build(
+        LayerNode.group([Database.node, Bus.node, SdkPlugins.node, LocationServiceMap.node, Global.node]),
+        [Global.node.replace(tempGlobalLayer), Npm.node.replace(coldNpm), PluginSupervisor.node.replace(node)],
+      ),
+    )
+
+    activationIt.live(`settles a host/builtin generation collision (${mode})`, () => {
+      const output: string[] = []
+      return Effect.gen(function* () {
+        const sdk = yield* SdkPlugins.Service
+        // Two registrations in the host store would overwrite, not collide.
+        yield* sdk.register(define({ id: "opencode.agent", effect: () => Effect.void }))
+        yield* withLocation(
+          undefined,
+          Effect.gen(function* () {
+            const exit = yield* ready().pipe(Effect.exit, Effect.timeout("2 seconds"))
+            expect(Exit.isFailure(exit)).toBe(mode === "strict")
+            if (Exit.isFailure(exit)) {
+              expect(Cause.hasDies(exit.cause)).toBeTrue()
+              expect(Cause.pretty(exit.cause)).toContain("Duplicate plugin ID: opencode.agent")
+            }
+            expect(yield* ready().pipe(Effect.exit, Effect.timeout("2 seconds"))).toEqual(exit)
+            expect(output.filter((line) => line.includes("failed to reload plugins"))).toEqual([
+              expect.stringContaining("Duplicate plugin ID: opencode.agent"),
+            ])
+            const plugins = yield* Plugin.Service
+            expect(yield* plugins.list()).toEqual([])
+          }),
+        )
+      }).pipe(Effect.provide(Logger.layer([Logger.map(Logger.formatSimple, (line) => output.push(line))])))
+    })
+
+    if (mode !== "default" && mode !== "strict") continue
+
+    activationIt.live(`waits for package activation without cancelling it when a waiter is interrupted (${mode})`, () =>
+      withLocation(
+        { plugins: ["cold-plugin"] },
+        Effect.gen(function* () {
+          const global = yield* Global.Service
+          yield* waitForFile(path.join(global.tmp, "cold-plugin", "started"))
+          const plugins = yield* Plugin.Service
+          expect((yield* plugins.list()).map((plugin) => String(plugin.id))).toContain("opencode.provider.openai")
+          const supervisor = yield* PluginSupervisor.Service
+          const waiter = yield* supervisor.awaitActivation.pipe(Effect.forkScoped({ startImmediately: true }))
+          expect(Option.isNone(yield* Fiber.await(waiter).pipe(Effect.timeoutOption("20 millis")))).toBeTrue()
+          yield* Fiber.interrupt(waiter)
+          expect(Exit.hasInterrupts(yield* Fiber.await(waiter))).toBeTrue()
+          expect(Option.isNone(yield* supervisor.awaitActivation.pipe(Effect.timeoutOption("20 millis")))).toBeTrue()
+          yield* Effect.promise(() => Bun.write(path.join(global.tmp, "cold-plugin", "release"), ""))
+          yield* supervisor.awaitActivation.pipe(Effect.timeout("2 seconds"))
+          yield* supervisor.awaitActivation.pipe(Effect.timeout("2 seconds"))
+          expect((yield* plugins.list()).find((plugin) => plugin.id === "cold-plugin")?.state).toEqual({
+            status: "active",
+          })
+        }),
+      ),
+    )
+
+    if (mode !== "strict") continue
+
+    activationIt.live("keeps individual setup failures in inventory even with strict waits", () =>
+      withLocation(
+        { plugins: ["-*", path.join(import.meta.dir, "../plugin/fixtures/failing")] },
+        Effect.gen(function* () {
+          yield* ready().pipe(Effect.timeout("2 seconds"))
+          const plugins = yield* Plugin.Service
+          expect(yield* plugins.list()).toEqual([
+            expect.objectContaining({
+              id: "failing-plugin",
+              state: { status: "failed", error: expect.stringContaining("plugin failed") },
+            }),
+          ])
+        }),
+      ),
+    )
+
+    activationIt.live("clears a failed reload only after the latest coalesced activation settles", () => {
+      const output: string[] = []
+      return withLocation(
+        { plugins: ["cold-plugin"] },
+        Effect.gen(function* () {
+          const supervisor = yield* PluginSupervisor.Service
+          const sdk = yield* SdkPlugins.Service
+          const bus = yield* Bus.Service
+          const location = yield* Location.Service
+          const global = yield* Global.Service
+          yield* waitForFile(path.join(global.tmp, "cold-plugin", "started"))
+
+          // Every requested generation would collide with the builtin, even though the host store overwrites.
+          yield* Effect.forEach([1, 2, 3], () =>
+            sdk.register(define({ id: "opencode.agent", effect: () => Effect.void })),
+          )
+          const waiter = yield* supervisor.awaitActivation.pipe(
+            Effect.exit,
+            Effect.forkScoped({ startImmediately: true }),
+          )
+          expect(Option.isNone(yield* Fiber.await(waiter).pipe(Effect.timeoutOption("20 millis")))).toBeTrue()
+          yield* Effect.promise(() => Bun.write(path.join(global.tmp, "cold-plugin", "release"), ""))
+          const failed = yield* Fiber.join(waiter).pipe(Effect.timeout("2 seconds"))
+          expect(Exit.isFailure(failed) ? Cause.pretty(failed.cause) : "").toContain(
+            "Duplicate plugin ID: opencode.agent",
+          )
+          expect(yield* supervisor.awaitActivation.pipe(Effect.exit)).toEqual(failed)
+
+          // Wait for the repaired generation to reach the registry before testing readiness again.
+          const changed = yield* bus
+            .subscribe(Plugin.Event.Updated)
+            .pipe(Stream.take(1), Stream.runDrain, Effect.forkScoped({ startImmediately: true }))
+          yield* Effect.promise(() =>
+            Bun.write(
+              path.join(location.directory, "opencode.json"),
+              JSON.stringify({ plugins: ["-opencode.agent", "cold-plugin"] }),
+            ),
+          )
+          yield* Fiber.join(changed).pipe(Effect.timeout("2 seconds"))
+          yield* supervisor.awaitActivation.pipe(Effect.timeout("2 seconds"))
+          yield* supervisor.awaitActivation.pipe(Effect.timeout("2 seconds"))
+          expect(output.filter((line) => line.includes("failed to reload plugins"))).toEqual([
+            expect.stringContaining("Duplicate plugin ID: opencode.agent"),
+          ])
+        }),
+      ).pipe(Effect.provide(Logger.layer([Logger.map(Logger.formatSimple, (line) => output.push(line))])))
+    })
+  }
 })
 
 const ready = Effect.fnUntraced(function* () {

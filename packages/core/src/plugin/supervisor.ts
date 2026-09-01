@@ -2,7 +2,7 @@ export * as PluginSupervisor from "./supervisor.js"
 export { Service, type Interface } from "./supervisor-service.js"
 
 import { Event } from "@opencode-ai/schema/config"
-import { Cause, Effect, Latch, Layer, Stream } from "effect"
+import { Cause, Effect, Exit, Latch, Layer, Stream } from "effect"
 import path from "path"
 import { ConfigPluginSource } from "../config/plugin/source.js"
 import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
@@ -93,9 +93,8 @@ const resolve = Effect.fn("PluginSupervisor.resolve")(function* (
   }
 })
 
-export const layer = Layer.effect(
-  Service,
-  Effect.gen(function* () {
+function make(failOnError = false) {
+  return Effect.gen(function* () {
     const registry = yield* Plugin.Service
     const sdk = yield* SdkPlugins.Service
     const instance = yield* InstancePlugins.Service
@@ -107,6 +106,7 @@ export const layer = Layer.effect(
     let outdated = new Set<string>()
     let generation = 0
     let observed = 0
+    let activation = Exit.void
 
     const activate = Effect.fn("PluginSupervisor.activate")(function* () {
       const current = ++generation
@@ -184,16 +184,22 @@ export const layer = Layer.effect(
       Stream.debounce("100 millis"),
       Stream.runForEach((target) =>
         Effect.gen(function* () {
-          yield* activate().pipe(Effect.catchCause((cause) => Effect.logError("failed to reload plugins", { cause })))
+          activation = yield* Effect.exit(activate())
+          if (Exit.isFailure(activation))
+            yield* Effect.logError("failed to reload plugins", { cause: activation.cause })
           if (observed === target) yield* ready.open
         }),
       ),
       Effect.forkScoped({ startImmediately: true }),
     )
     yield* Effect.sleep("24 hours").pipe(Effect.andThen(activate()), Effect.forever, Effect.forkScoped)
-    return Service.of({ awaitActivation: ready.await })
-  }),
-)
+    return Service.of({
+      awaitActivation: failOnError ? ready.await.pipe(Effect.andThen(() => activation)) : ready.await,
+    })
+  })
+}
+
+export const layer = Layer.effect(Service, make())
 
 const nodeDeps = [
   Plugin.node,
@@ -212,3 +218,11 @@ function pluginSource(target: string): Plugin.Source {
 }
 
 export const node = makeLocationNode({ service: Service, layer, deps: nodeDeps })
+
+/**
+ * Opt into propagating failed plugin generations through awaitActivation instead of only logging them.
+ * Individual plugin setup failures remain in the registry inventory.
+ */
+export function configured(options: { readonly failOnError?: boolean } = {}) {
+  return makeLocationNode({ service: Service, layer: Layer.effect(Service, make(options.failOnError)), deps: nodeDeps })
+}
