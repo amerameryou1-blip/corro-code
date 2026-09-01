@@ -16,6 +16,7 @@ test.each([
   "multiple",
   "shell-draft",
   "history-paste",
+  "setup-mode",
 ])("failed prompt recovery preserves input after %s", async (scenario) => {
   await using state = await tmpdir()
   const setup = await createTestRenderer({ width: 100, height: 30, useThread: false, kittyKeyboard: true })
@@ -23,11 +24,17 @@ test.each([
   const ready = Promise.withResolvers<void>()
   const release = Promise.withResolvers<void>()
   const requested = Promise.withResolvers<void>()
-  const sessionID = `ses_recovery_${scenario}`
+  let sessionID = `ses_recovery_${scenario}`
   const location = { directory, project: { id: "project", directory, canonical: directory } }
   const events = createEventStream()
-  const calls = createFetch(async (url) => {
-    if (url.pathname === `/api/session/${sessionID}`)
+  const calls = createFetch(async (url, request) => {
+    if (scenario === "setup-mode" && url.pathname === "/api/session" && request.method === "POST") {
+      sessionID = (await request.json()).id
+    }
+    if (
+      url.pathname === `/api/session/${sessionID}` ||
+      (scenario === "setup-mode" && url.pathname === "/api/session" && request.method === "POST")
+    )
       return json({
         data: {
           id: sessionID,
@@ -42,8 +49,7 @@ test.each([
         },
       })
     if (url.pathname === `/api/session/${sessionID}/message`) return json({ data: [], cursor: {} })
-    if (url.pathname === `/api/session/${sessionID}/inbox` || url.pathname === `/api/session/${sessionID}/permission`)
-      return json({ data: [] })
+    if (/^\/api\/session\/[^/]+\/(inbox|permission)$/.test(url.pathname)) return json({ data: [] })
     if (url.pathname === "/api/agent")
       return json({ location, data: [{ id: "build", mode: "primary", hidden: false, permissions: [] }] })
     if (url.pathname === "/api/provider") return json({ location, data: [{ id: "demo", name: "Demo" }] })
@@ -65,13 +71,18 @@ test.each([
       config: {
         get: async () => ({
           animations: false,
-          keybinds: { "session.new": "f6", "session.tab.select.1": "f7", "prompt.stash.pop": "f8" },
+          keybinds: {
+            "session.new": "f6",
+            "session.tab.select.1": "f7",
+            "prompt.stash.pop": "f8",
+            "prompt.stash": "f9",
+          },
         }),
         update: async () => ({}),
       },
       packages: { resolve: async () => undefined },
       terminalHandoff: async () => ({ renderer: setup.renderer, mode: "dark", complete: ready.resolve }),
-      args: { sessionID },
+      args: scenario === "setup-mode" ? {} : { sessionID },
       log: () => {},
     }).pipe(Effect.provide(Global.layerWith({ state: state.path })), Effect.provide(FileSystem.layerNoop({}))),
   )
@@ -102,6 +113,24 @@ test.each([
     await requested.promise
     expect(input().plainText).toBe("")
     expect(setup.captureCharFrame()).toContain("Recover this failed prompt")
+
+    if (scenario === "setup-mode") {
+      await setup.mockInput.typeText("!")
+      await setup.waitForFrame((frame) => frame.includes("Shell"))
+      await setup.mockInput.typeText("Keep my newer draft")
+      setup.mockInput.pressKey("F9")
+      await setup.waitForFrame(() => input().plainText === "")
+      setup.mockInput.pressKey("F8")
+      await setup.waitForFrame(() => input().plainText === "Keep my newer draft")
+      setup.mockInput.pressKey("ESCAPE")
+      await setup.waitForFrame((frame) => !frame.includes("Shell"))
+      release.resolve()
+      await setup.waitForFrame((frame) => frame.includes("Fixture admission rejected"))
+      await setup.waitForFrame(() => input().plainText === "Keep my newer draft")
+      await setup.renderOnce()
+      expect(setup.captureCharFrame()).not.toContain("Shell")
+      return
+    }
 
     if (scenario === "shell-draft") {
       await setup.mockInput.typeText("!")

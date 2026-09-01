@@ -693,7 +693,7 @@ export function Prompt(props: PromptProps) {
       return input.focused
     },
     get current() {
-      return store.prompt
+      return { ...store.prompt, mode: store.mode }
     },
     focus() {
       input.focus()
