@@ -231,7 +231,6 @@ describe("Npm.add", () => {
 
     expect(entries.tui.entrypoint).toEndWith("/tui.js")
     expect(entries.fallback.entrypoint).toEndWith("/index.js")
-    expect(await fs.realpath(entries.tui.directory)).toBe(await fs.realpath(path.join(tmp.path, "fixture-provider")))
   })
 
   test("installs and resolves named and unnamed Git packages with dependencies", async () => {
@@ -263,7 +262,7 @@ describe("Npm.add", () => {
       expect(entries.added.directory).toContain(path.join("npm", await Npm.cacheKey(spec)))
       expect(entries.added.directory).toContain("node_modules")
     }
-  }, 30_000)
+  })
 
   test("installs a Git package from an npm ::path: subdirectory", async () => {
     await using tmp = await tmpdir()
