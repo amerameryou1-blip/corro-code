@@ -1271,6 +1271,32 @@ describe("Gemini route", () => {
             },
           ],
         },
+        {
+          role: "user",
+          parts: [
+            {
+              functionResponse: {
+                id: "tool_0",
+                name: "lookup",
+                response: { name: "lookup", content: "Tool result missing" },
+              },
+            },
+            {
+              functionResponse: {
+                id: "tool_1",
+                name: "lookup",
+                response: { name: "lookup", content: "Tool result missing" },
+              },
+            },
+            {
+              functionResponse: {
+                id: "tool_2",
+                name: "lookup",
+                response: { name: "lookup", content: "Tool result missing" },
+              },
+            },
+          ],
+        },
       ])
     }),
   )
@@ -1300,6 +1326,25 @@ describe("Gemini route", () => {
             {
               functionCall: { id: "tool_1", name: "lookup", args: { query: "news" } },
               thoughtSignature: "skip_thought_signature_validator",
+            },
+          ],
+        },
+        {
+          role: "user",
+          parts: [
+            {
+              functionResponse: {
+                id: "tool_0",
+                name: "lookup",
+                response: { name: "lookup", content: "Tool result missing" },
+              },
+            },
+            {
+              functionResponse: {
+                id: "tool_1",
+                name: "lookup",
+                response: { name: "lookup", content: "Tool result missing" },
+              },
             },
           ],
         },

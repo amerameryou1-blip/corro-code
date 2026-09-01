@@ -1068,6 +1068,11 @@ describe("OpenAI Chat route", () => {
             },
           ],
         },
+        {
+          role: "tool",
+          content: "Tool result missing",
+          tool_call_id: "call_1",
+        },
       ])
     }),
   )

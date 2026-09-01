@@ -351,6 +351,18 @@ describe("Bedrock Converse route", () => {
             },
           ],
         },
+        {
+          role: "user",
+          content: [
+            {
+              toolResult: {
+                toolUseId: "tool_1",
+                content: [{ text: "Tool result missing" }],
+                status: "error",
+              },
+            },
+          ],
+        },
       ])
       expect(input).toEqual(original)
       expect(call.input).toBe(input)
@@ -378,6 +390,25 @@ describe("Bedrock Converse route", () => {
           content: [
             { toolUse: { toolUseId: "tool_empty_key", name: "first", input: {} } },
             { toolUse: { toolUseId: "tool_empty_object", name: "second", input: {} } },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              toolResult: {
+                toolUseId: "tool_empty_key",
+                content: [{ text: "Tool result missing" }],
+                status: "error",
+              },
+            },
+            {
+              toolResult: {
+                toolUseId: "tool_empty_object",
+                content: [{ text: "Tool result missing" }],
+                status: "error",
+              },
+            },
           ],
         },
       ])
@@ -898,6 +929,18 @@ describe("Bedrock Converse route", () => {
             { reasoningContent: { redactedContent: "cmVkYWN0ZWQ=" } },
             { text: "Checking" },
             { toolUse: { toolUseId: "call_1", name: "lookup", input: {} } },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              toolResult: {
+                toolUseId: "call_1",
+                content: [{ text: "Tool result missing" }],
+                status: "error",
+              },
+            },
           ],
         },
       ])
