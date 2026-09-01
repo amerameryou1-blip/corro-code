@@ -41,11 +41,11 @@ export async function replace(options: EnsureOptions = {}): Promise<Endpoint> {
 
 async function ensureService(options: EnsureOptions, forceReplacement: boolean): Promise<Endpoint> {
   const timing = ensureTiming(options)
-  const replacement = forceReplacement ? await read(options.file) : undefined
   const deadline = Date.now() + timing.promiseTimeout
   const contenders = new Set<ServiceContender>()
   let timeouts: { readonly info: Info; readonly count: number } | undefined
   let announced = false
+  let replaceCurrent = forceReplacement
   let lastSpawn = 0
   let spawnDelay = timing.spawnDelay
 
@@ -78,6 +78,7 @@ async function ensureService(options: EnsureOptions, forceReplacement: boolean):
           console.warn("Background service is unresponsive; recovery cannot preserve persistent terminals")
           await PtyHandoff.clear(options.file ?? fallback())
           await terminate(registration.info, options, timing)
+          replaceCurrent = false
           timeouts = undefined
           lastSpawn = Date.now() - spawnDelay
         }
@@ -87,15 +88,15 @@ async function ensureService(options: EnsureOptions, forceReplacement: boolean):
         spawnDelay = timing.spawnDelay
         const service = registration.service
         const compatible = !service.legacy && matchesVersion(service.version, options)
-        const replacing = replacement !== undefined && same(replacement, service.info)
-        if (!replacing && compatible && service.state === "ready") {
+        if (!replaceCurrent && compatible && service.state === "ready") {
           await PtyHandoff.complete(options.file ?? fallback(), service.info)
           return service.endpoint
         }
-        if (!replacing && compatible && service.state === "failed")
+        if (!replaceCurrent && compatible && service.state === "failed")
           throw new Error("Background service failed to start")
-        if (replacing || !compatible) {
+        if (replaceCurrent || !compatible) {
           announce("version-mismatch", service.version)
+          replaceCurrent = false
           if (!service.legacy && service.state === "ready")
             await PtyHandoff.prepare(options.file ?? fallback(), service.info, timing.requestTimeout)
           else {
@@ -107,6 +108,7 @@ async function ensureService(options: EnsureOptions, forceReplacement: boolean):
           lastSpawn = 0
         }
       } else {
+        if (registration.info === undefined) replaceCurrent = false
         if (lastSpawn === 0 && registration.info !== undefined) lastSpawn = Date.now()
         const finished = [...contenders].filter(contenderFinished)
         const failure = finished.map(contenderFailure).find((error) => error !== undefined)

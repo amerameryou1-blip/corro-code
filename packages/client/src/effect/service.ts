@@ -61,10 +61,10 @@ export const replace = Effect.fn("service.replace")(function* (options: EnsureOp
 
 const ensureService = Effect.fnUntraced(function* (options: EnsureOptions, forceReplacement: boolean) {
   const timing = ensureTiming(options)
-  const replacement = forceReplacement ? yield* read(options.file) : undefined
   const contenders = new Set<ServiceContender>()
   let timeouts: { readonly info: Info; readonly count: number } | undefined
   let announced = false
+  let replaceCurrent = forceReplacement
   let lastSpawn = 0
   let spawnDelay = timing.spawnDelay
   const announce = (reason: "missing" | "version-mismatch", previousVersion?: string) =>
@@ -98,6 +98,7 @@ const ensureService = Effect.fnUntraced(function* (options: EnsureOptions, force
         yield* Effect.logWarning("Background service is unresponsive; recovery cannot preserve persistent terminals")
         yield* Effect.tryPromise(() => PtyHandoff.clear(options.file ?? fallback()))
         yield* terminate(info, options, timing)
+        replaceCurrent = false
         timeouts = undefined
         lastSpawn = Date.now() - spawnDelay
       }
@@ -105,15 +106,15 @@ const ensureService = Effect.fnUntraced(function* (options: EnsureOptions, force
     if (service !== undefined) {
       spawnDelay = timing.spawnDelay
       const compatible = !service.legacy && matchesVersion(service.version, options)
-      const replacing = replacement !== undefined && same(replacement, service.info)
-      if (!replacing && compatible && service.state === "ready") {
+      if (!replaceCurrent && compatible && service.state === "ready") {
         yield* Effect.tryPromise(() => PtyHandoff.complete(options.file ?? fallback(), service.info))
         return Option.some(service)
       }
-      if (!replacing && compatible && service.state === "failed")
+      if (!replaceCurrent && compatible && service.state === "failed")
         return yield* Effect.fail(new Error("Background service failed to start"))
-      if (!replacing && compatible) return Option.none<LocalService>()
+      if (!replaceCurrent && compatible) return Option.none<LocalService>()
       yield* announce("version-mismatch", service.version)
+      replaceCurrent = false
       if (!service.legacy && service.state === "ready")
         yield* Effect.tryPromise(() =>
           PtyHandoff.prepare(options.file ?? fallback(), service.info, timing.requestTimeout),
@@ -127,6 +128,7 @@ const ensureService = Effect.fnUntraced(function* (options: EnsureOptions, force
       lastSpawn = 0
       return Option.none<LocalService>()
     } else if (lastSpawn === 0 && info !== undefined) lastSpawn = Date.now()
+    else if (info === undefined) replaceCurrent = false
 
     const finished = [...contenders].filter(contenderFinished)
     const failure = finished.map(contenderFailure).find((error): error is Error => error !== undefined)
