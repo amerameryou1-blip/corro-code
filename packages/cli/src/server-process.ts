@@ -166,7 +166,7 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
       console.log(options.mode === "stdio" ? JSON.stringify({ url }) : `server listening on ${url}`)
       if (foreground && !environmentPassword) console.log(`server password ${password}`)
       const updater = yield* Updater.Service
-      yield* updater.check().pipe(Effect.schedule(Schedule.spaced("10 minutes")), Effect.forkScoped)
+      yield* updater.monitor({ url, password }).pipe(Effect.forkScoped)
       return yield* options.mode === "service"
         ? server.shutdown
         : options.mode === "stdio"
