@@ -328,8 +328,7 @@ function modelFromLanguage(info: Info, language: LanguageModelV3) {
     body: {
       schema: Schema.Unknown,
       from: Effect.fn("AISDK.fromRequest")(function* (request) {
-        yield* ProviderShared.requireFlatToolHistory("AI SDK", request.messages)
-        const tools = yield* ProviderShared.requireFlatTools("AI SDK", request.tools)
+        const tools = yield* ProviderShared.requireFlatToolRequest("AI SDK", request)
         return callOptions(request, packageName, info.modelID ?? info.id, optionKey, tools)
       }),
     },

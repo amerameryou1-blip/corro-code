@@ -267,7 +267,7 @@ export const requireFlatTools = Effect.fn("ProviderShared.requireFlatTools")(fun
   })
 })
 
-export const requireFlatToolHistory = Effect.fn("ProviderShared.requireFlatToolHistory")(function* (
+const requireFlatToolHistory = Effect.fn("ProviderShared.requireFlatToolHistory")(function* (
   protocol: string,
   messages: LLMRequest["messages"],
 ) {
@@ -279,6 +279,14 @@ export const requireFlatToolHistory = Effect.fn("ProviderShared.requireFlatToolH
     )
   )
     return yield* invalidRequest(`${protocol} does not support tool namespaces in message history`)
+})
+
+export const requireFlatToolRequest = Effect.fn("ProviderShared.requireFlatToolRequest")(function* (
+  protocol: string,
+  request: LLMRequest,
+) {
+  yield* requireFlatToolHistory(protocol, request.messages)
+  return yield* requireFlatTools(protocol, request.tools)
 })
 
 export const imageResponse = Effect.fn("ProviderShared.imageResponse")(function* (

@@ -166,7 +166,7 @@ export const InputItem = Schema.Union([
     id: Schema.optionalKey(Schema.String),
     call_id: Schema.String,
     name: Schema.String,
-    namespace: Schema.optionalKey(Schema.String),
+    namespace: Schema.optionalKey(Schema.UndefinedOr(Schema.String)),
     arguments: Schema.String,
   }),
   Schema.Struct({
@@ -378,7 +378,7 @@ export type Event = Schema.Schema.Type<typeof Event>
 export interface ProviderAdapter {
   readonly id: string
   readonly name: string
-  readonly toolNamespaces?: boolean
+  readonly toolNamespaceHistory?: boolean
   readonly lowerMedia?: (input: {
     readonly part: MediaPart
     readonly media: ProviderShared.NormalizedMedia
@@ -465,7 +465,7 @@ const lowerToolCall = (part: ToolCallPart, providerMetadataKey: string): OpenRes
     ...(id === undefined ? {} : { id }),
     call_id: part.id,
     name: part.name,
-    ...(part.namespace === undefined ? {} : { namespace: part.namespace }),
+    namespace: part.namespace,
     arguments: ProviderShared.encodeJson(part.input),
   }
 }
@@ -746,8 +746,10 @@ export const fromRequestWithAdapter = Effect.fn("OpenResponses.fromRequestWithAd
   adapter: ProviderAdapter,
 ) {
   const generation = request.generation
-  if (adapter.toolNamespaces !== true) yield* ProviderShared.requireFlatToolHistory(adapter.name, request.messages)
-  const tools = yield* ProviderShared.requireFlatTools(adapter.name, request.tools)
+  const tools =
+    adapter.toolNamespaceHistory === true
+      ? yield* ProviderShared.requireFlatTools(adapter.name, request.tools)
+      : yield* ProviderShared.requireFlatToolRequest(adapter.name, request)
   const toolSchemaCompatibility = request.model.compatibility?.toolSchema
   return {
     model: request.model.id,
