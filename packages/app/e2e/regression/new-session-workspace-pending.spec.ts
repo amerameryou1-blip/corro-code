@@ -141,7 +141,9 @@ for (const direction of ["ltr", "rtl"]) {
     await page.locator("html").evaluate((element, direction) => element.setAttribute("dir", direction), direction)
     const pending = await submitPending(page, mock)
     await draftFollowUp(page)
-    await page.locator('[data-component="composer-editor"]').press("ControlOrMeta+Home")
+    await page
+      .locator('[data-component="composer-editor"]')
+      .press(process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home")
     const title = page.locator("[data-session-title]").getByRole("heading", { level: 1 })
     const before = await title.boundingBox()
     const messageBefore = await pending.message.boundingBox()
@@ -224,26 +226,94 @@ for (const failure of ["worktree", "session"]) {
   })
 }
 
-test("preserves both inputs when the initial prompt cannot be sent", async ({ page }) => {
-  const mock = await openDraft(page)
-  const pending = await submitPending(page, mock)
-  await draftFollowUp(page)
-  await page.route(`**/api/session/${pending.sessionID}/prompt`, (route) =>
-    route.fulfill({
-      status: 500,
-      json: { message: "Prompt admission failed" },
-      headers,
-    }),
-  )
+for (const action of ["Retry", "Cancel"]) {
+  test(`preserves both inputs until ${action} when the initial prompt cannot be sent`, async ({ page }) => {
+    const mock = await openDraft(page)
+    const pending = await submitPending(page, mock)
+    await draftFollowUp(page)
+    const promptURL = `${server}/api/session/${pending.sessionID}/prompt`
+    const attempts: Record<string, unknown>[] = []
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.url() === promptURL) attempts.push(request.postDataJSON())
+    })
+    await page.route(promptURL, (route) =>
+      route.fulfill({ status: 500, json: { message: "Prompt admission failed" }, headers }),
+    )
 
-  mock.worktree.resolve({ status: 200, json: { directory: workspace } })
+    mock.worktree.resolve({ status: 200, json: { directory: workspace } })
 
-  await expect(pending.shimmer).toHaveCount(0)
-  await expect(page.locator('[data-component="composer-editor"]')).toHaveText(`${text}\n\n${followUp}`)
-  await expect(page.locator('[data-action="composer-submit"]')).toBeEnabled()
-  await expect.poll(() => mock.calls).toEqual(["worktree", "session", "prompt", "prompt"])
-  expect(mock.prompts).toEqual([])
-})
+    const editor = page.locator('[data-component="composer-editor"]')
+    const recovery = page.locator(`[data-component="prompt-submission"][data-submission-id="${pending.messageID}"]`)
+    const message = page.locator(`[data-component="user-message"][data-timeline-part-id="${pending.messageID}:text:0"]`)
+    await expect(recovery.getByRole("status")).toHaveText("Could not confirm prompt delivery")
+    await expect(page).toHaveURL(pending.url)
+    await expect(pending.shimmer).toHaveCount(0)
+    await expect(pending.message).toHaveCount(1)
+    await expect(message.locator('[data-slot="user-message-text"]')).toHaveText(text)
+    await expect(editor).toHaveText(followUp)
+    await expect(page.locator('[data-action="composer-submit"]')).toBeEnabled()
+    expect(mock.creates).toEqual([
+      expect.objectContaining({ id: pending.sessionID, location: { directory: workspace } }),
+    ])
+    expect(attempts).toHaveLength(4)
+    expect(attempts[0]).toMatchObject({ id: pending.messageID, text, delivery: "steer" })
+    expect(attempts).toEqual(Array(4).fill(attempts[0]))
+    expect(mock.prompts).toEqual([])
+
+    await page.locator(`[data-titlebar-tab-link][href="${sessionPath}${otherID}"]`).click()
+    await expect(page).toHaveURL(`${sessionPath}${otherID}`)
+    await expect(editor).toBeEditable()
+    await expect(editor).toHaveText("")
+    await expect(recovery).toHaveCount(0)
+    await expect(message).toHaveCount(0)
+    await editor.fill("Keep this other session's draft")
+    await page.locator(`[data-titlebar-tab-link][href="${sessionPath}${pending.sessionID}"]`).click()
+    await expect(page).toHaveURL(pending.url)
+    await expect(recovery.getByRole("status")).toHaveText("Could not confirm prompt delivery")
+    await expect(message.locator('[data-slot="user-message-text"]')).toHaveText(text)
+    await expect(editor).toHaveText(followUp)
+
+    await page.unroute(promptURL)
+    if (action === "Retry") {
+      await recovery.getByRole("button", { name: action, exact: true }).click()
+      await expect.poll(() => mock.prompts).toEqual([{ sessionID: pending.sessionID, body: attempts[0] }])
+      expect(attempts).toHaveLength(5)
+      expect(attempts[4]).toEqual(attempts[0])
+      await expect(message.locator('[data-slot="user-message-text"]')).toHaveText(text)
+    }
+    if (action === "Cancel") {
+      const cancelled = page.waitForResponse(
+        (response) =>
+          response.request().method() === "DELETE" &&
+          response.url() === `${server}/api/session/${pending.sessionID}/inbox/${pending.messageID}`,
+      )
+      await recovery.getByRole("button", { name: action, exact: true }).click()
+      expect((await cancelled).status()).toBe(204)
+      await expect(message).toHaveCount(0)
+      expect(attempts).toHaveLength(4)
+      expect(mock.prompts).toEqual([])
+    }
+    await expect(recovery).toHaveCount(0)
+    await expect(editor).toHaveText(followUp)
+    await expect(page.locator('[data-action="composer-submit"]')).toBeEnabled()
+    await page.locator('[data-action="composer-submit"]').click()
+    await expect.poll(() => mock.prompts.length).toBe(action === "Retry" ? 2 : 1)
+    const sent = mock.prompts.find((prompt) => prompt.body.text === followUp)!
+    expect(sent).toMatchObject({ sessionID: pending.sessionID, body: { id: expect.any(String), text: followUp } })
+    expect(sent.body.id).not.toBe(pending.messageID)
+    await expect(
+      page.locator(`[data-timeline-part-id="${sent.body.id}:text:0"] [data-slot="user-message-text"]`),
+    ).toHaveText(followUp)
+    await expect(pending.message).toHaveCount(action === "Retry" ? 2 : 1)
+    await expect(editor).toHaveText("")
+    await expect(page).toHaveURL(pending.url)
+    expect(mock.worktreeRequests).toHaveLength(1)
+    expect(mock.creates).toHaveLength(1)
+    await page.locator(`[data-titlebar-tab-link][href="${sessionPath}${otherID}"]`).click()
+    await expect(page).toHaveURL(`${sessionPath}${otherID}`)
+    await expect(editor).toHaveText("Keep this other session's draft")
+  })
+}
 
 test("restores the original draft when worktree creation fails", async ({ page }) => {
   const mock = await openDraft(page)

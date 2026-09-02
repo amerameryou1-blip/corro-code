@@ -145,6 +145,10 @@ async function openSession(page: Page, mock: ReturnType<typeof createQueueMock>,
   await page.goto(`/server/${base64Encode(server)}/session/${sessionID}`)
   const composer = page.locator('[data-component="composer"]')
   await expectAppVisible(composer)
+  // The editor is interactive before provider/model selection finishes loading.
+  await expect(composer.getByRole("button", { name: "Queue Model", exact: true })).toBeVisible()
+  await expect(composer.getByRole("button", { name: "Queue Model", exact: true })).toBeEnabled()
+  await expect(composer.getByRole("textbox", { name: "Prompt", exact: true })).toBeEditable()
   return {
     composer,
     input: composer.locator('[data-component="composer-editor"]'),
