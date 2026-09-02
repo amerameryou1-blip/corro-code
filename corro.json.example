@@ -9,9 +9,10 @@
         "apiKey": "{env:CORRO_JWT}"
       },
       "models": {
-        "kimi-k3": { "name": "Kimi K3 (free)" },
-        "deepseek-v4-pro-0813": { "name": "DeepSeek V4 Pro (free)" },
-        "deepseek-v4-flash-0731": { "name": "DeepSeek V4 Flash (free)" }
+        "moonshotai/kimi-k3": { "name": "Kimi K3 (free)" },
+        "deepseek-ai/deepseek-v4-flash-0731": { "name": "DeepSeek V4 Flash (free)" },
+        "minimaxai/minimax-m3": { "name": "MiniMax M3 (free)" },
+        "nvidia/nemotron-3-super-120b-a12b": { "name": "Nemotron 3 Super (free)" }
       }
     }
   }
