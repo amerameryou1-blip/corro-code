@@ -1,30 +1,30 @@
 ---
 title: المزوّدون
-description: استخدام أي موفّر LLM في Corro Code.
+description: استخدام أي موفّر LLM في OpenCode.
 ---
 
 import config from "../../../../config.mjs"
 export const console = config.console
 
-يستخدم Corro Code ‏[AI SDK](https://ai-sdk.dev/) و[Models.dev](https://models.dev) لدعم **أكثر من 75 موفّر LLM**، كما يدعم تشغيل النماذج المحلية.
+يستخدم OpenCode ‏[AI SDK](https://ai-sdk.dev/) و[Models.dev](https://models.dev) لدعم **أكثر من 75 موفّر LLM**، كما يدعم تشغيل النماذج المحلية.
 
 لإضافة مزوّد تحتاج إلى:
 
 1. أضف مفاتيح API الخاصة بالمزوّد باستخدام الأمر `/connect`.
-2. اضبط المزوّد في ملف إعدادات Corro Code.
+2. اضبط المزوّد في ملف إعدادات OpenCode.
 
 ---
 
 ### بيانات الاعتماد
 
 عند إضافة مفاتيح API الخاصة بمزوّد عبر الأمر `/connect`، يتم تخزينها
-في `~/.local/share/corro/auth.json`.
+في `~/.local/share/opencode/auth.json`.
 
 ---
 
 ### الإعدادات
 
-يمكنك تخصيص المزوّدات عبر قسم `provider` في ملف إعدادات Corro Code.
+يمكنك تخصيص المزوّدات عبر قسم `provider` في ملف إعدادات OpenCode.
 
 ---
 
@@ -32,9 +32,9 @@ export const console = config.console
 
 يمكنك تخصيص عنوان URL الأساسي لأي مزوّد عبر خيار `baseURL`. يفيد ذلك عند استخدام خدمات وسيطة (proxy) أو نقاط نهاية مخصّصة.
 
-```json title="corro.json" {6}
+```json title="opencode.json" {6}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "provider": {
     "anthropic": {
       "options": {
@@ -47,16 +47,16 @@ export const console = config.console
 
 ---
 
-## Corro Code Zen
+## OpenCode Zen
 
-Corro Code Zen هي قائمة نماذج يوفّرها فريق Corro Code وقد تم
-اختبارها والتحقق من أنها تعمل بشكل جيد مع Corro Code. [اعرف المزيد](/docs/zen).
+OpenCode Zen هي قائمة نماذج يوفّرها فريق OpenCode وقد تم
+اختبارها والتحقق من أنها تعمل بشكل جيد مع OpenCode. [اعرف المزيد](/docs/zen).
 
 :::tip
-إذا كنت جديدا، فننصح بالبدء مع Corro Code Zen.
+إذا كنت جديدا، فننصح بالبدء مع OpenCode Zen.
 :::
 
-1. شغّل الأمر `/connect` في TUI، واختر corro، ثم انتقل إلى [corro.ai/auth](https://corrocode.dev/auth).
+1. شغّل الأمر `/connect` في TUI، واختر opencode، ثم انتقل إلى [opencode.ai/auth](https://opencode.ai/auth).
 
    ```txt
    /connect
@@ -79,15 +79,15 @@ Corro Code Zen هي قائمة نماذج يوفّرها فريق Corro Code و�
    /models
    ```
 
-يعمل مثل أي مزوّد آخر في Corro Code واستخدامه اختياري بالكامل.
+يعمل مثل أي مزوّد آخر في OpenCode واستخدامه اختياري بالكامل.
 
 ---
 
-## Corro Code Go
+## OpenCode Go
 
-Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر وصولا موثوقا إلى نماذج البرمجة المفتوحة الشهيرة المقدّمة من فريق Corro Code، والتي تم اختبارها والتحقق من أنها تعمل بشكل جيد مع Corro Code.
+OpenCode Go هي خطة اشتراك منخفضة التكلفة توفّر وصولا موثوقا إلى نماذج البرمجة المفتوحة الشهيرة المقدّمة من فريق OpenCode، والتي تم اختبارها والتحقق من أنها تعمل بشكل جيد مع OpenCode.
 
-1. شغّل الأمر `/connect` في TUI، واختر `Corro Code Go`، ثم انتقل إلى [corro.ai/auth](https://corrocode.dev/zen).
+1. شغّل الأمر `/connect` في TUI، واختر `OpenCode Go`، ثم انتقل إلى [opencode.ai/auth](https://opencode.ai/zen).
 
    ```txt
    /connect
@@ -110,7 +110,7 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
    /models
    ```
 
-يعمل مثل أي مزوّد آخر في Corro Code واستخدامه اختياري بالكامل.
+يعمل مثل أي مزوّد آخر في OpenCode واستخدامه اختياري بالكامل.
 
 ---
 
@@ -154,7 +154,7 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
 
 ### Amazon Bedrock
 
-لاستخدام Amazon Bedrock مع Corro Code:
+لاستخدام Amazon Bedrock مع OpenCode:
 
 1. توجّه إلى **Model catalog** في Amazon Bedrock console واطلب
    الوصول إلى النماذج التي تريدها.
@@ -167,17 +167,17 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
 
    #### متغيرات البيئة (بدء سريع)
 
-   عيّن أحد متغيرات البيئة التالية أثناء تشغيل corro:
+   عيّن أحد متغيرات البيئة التالية أثناء تشغيل opencode:
 
    ```bash
    # الخيار 1: استخدام مفاتيح وصول AWS
-   AWS_ACCESS_KEY_ID=XXX AWS_SECRET_ACCESS_KEY=YYY corro
+   AWS_ACCESS_KEY_ID=XXX AWS_SECRET_ACCESS_KEY=YYY opencode
 
    # الخيار 2: استخدام ملف تعريف AWS مسمّى
-   AWS_PROFILE=my-profile corro
+   AWS_PROFILE=my-profile opencode
 
    # الخيار 3: استخدام رمز Bedrock المميز (bearer token)
-   AWS_BEARER_TOKEN_BEDROCK=XXX corro
+   AWS_BEARER_TOKEN_BEDROCK=XXX opencode
    ```
 
    أو أضفها إلى bash profile:
@@ -189,11 +189,11 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
 
    #### ملف الإعدادات (موصى به)
 
-   للإعداد الخاص بالمشروع أو الإعداد الدائم، استخدم `corro.json`:
+   للإعداد الخاص بالمشروع أو الإعداد الدائم، استخدم `opencode.json`:
 
-   ```json title="corro.json"
+   ```json title="opencode.json"
    {
-     "$schema": "https://corrocode.dev/config.json",
+     "$schema": "https://opencode.ai/config.json",
      "provider": {
        "amazon-bedrock": {
          "options": {
@@ -218,9 +218,9 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
 
    إذا كنت تستخدم نقاط نهاية VPC لـ Bedrock:
 
-   ```json title="corro.json"
+   ```json title="opencode.json"
    {
-     "$schema": "https://corrocode.dev/config.json",
+     "$schema": "https://opencode.ai/config.json",
      "provider": {
        "amazon-bedrock": {
          "options": {
@@ -261,9 +261,9 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
 :::note
 بالنسبة إلى ملفات تعريف الاستدلال المخصّصة، استخدم اسم النموذج واسم المزوّد في المفتاح وعيّن الخاصية `id` إلى arn. يضمن ذلك التخزين المؤقت الصحيح:
 
-```json title="corro.json"
+```json title="opencode.json"
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "provider": {
     "amazon-bedrock": {
       // ...
@@ -308,7 +308,7 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
    ```
 
 :::info
-استخدام اشتراك Claude Pro/Max داخل Corro Code غير مدعوم رسميا من [Anthropic](https://anthropic.com).
+استخدام اشتراك Claude Pro/Max داخل OpenCode غير مدعوم رسميا من [Anthropic](https://anthropic.com).
 :::
 
 ##### استخدام مفاتيح API
@@ -321,11 +321,11 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
 
 ### Atomic Chat
 
-يمكنك تكوين corro لاستخدام النماذج المحلية عبر [Atomic Chat](https://atomic.chat)، وهو تطبيق سطح مكتب يقوم بتشغيل LLMs المحلية خلف خادم API متوافق مع OpenAI (نقطة النهاية الافتراضية `http://127.0.0.1:1337/v1`).
+يمكنك تكوين opencode لاستخدام النماذج المحلية عبر [Atomic Chat](https://atomic.chat)، وهو تطبيق سطح مكتب يقوم بتشغيل LLMs المحلية خلف خادم API متوافق مع OpenAI (نقطة النهاية الافتراضية `http://127.0.0.1:1337/v1`).
 
-```json title="corro.json" "atomic-chat" {5, 6, 8, 10-14}
+```json title="opencode.json" "atomic-chat" {5, 6, 8, 10-14}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "provider": {
     "atomic-chat": {
       "npm": "@ai-sdk/openai-compatible",
@@ -370,7 +370,7 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
 2. اذهب إلى [Azure AI Foundry](https://ai.azure.com/) وانشر نموذجا.
 
    :::note
-   يجب أن يطابق اسم النشر اسم النموذج كي يعمل corro بشكل صحيح.
+   يجب أن يطابق اسم النشر اسم النموذج كي يعمل opencode بشكل صحيح.
    :::
 
 3. شغّل الأمر `/connect` وابحث عن **Azure**.
@@ -391,7 +391,7 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
 5. عيّن اسم المورد كمتغير بيئة:
 
    ```bash
-   AZURE_RESOURCE_NAME=XXX corro
+   AZURE_RESOURCE_NAME=XXX opencode
    ```
 
    أو أضفه إلى bash profile:
@@ -417,7 +417,7 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
 2. اذهب إلى [Azure AI Foundry](https://ai.azure.com/) وانشر نموذجا.
 
    :::note
-   يجب أن يطابق اسم النشر اسم النموذج كي يعمل corro بشكل صحيح.
+   يجب أن يطابق اسم النشر اسم النموذج كي يعمل opencode بشكل صحيح.
    :::
 
 3. شغّل الأمر `/connect` وابحث عن **Azure Cognitive Services**.
@@ -438,7 +438,7 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
 5. عيّن اسم المورد كمتغير بيئة:
 
    ```bash
-   AZURE_COGNITIVE_SERVICES_RESOURCE_NAME=XXX corro
+   AZURE_COGNITIVE_SERVICES_RESOURCE_NAME=XXX opencode
    ```
 
    أو أضفه إلى bash profile:
@@ -549,11 +549,11 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
    /models
    ```
 
-   يمكنك أيضا إضافة نماذج عبر إعدادات corro.
+   يمكنك أيضا إضافة نماذج عبر إعدادات opencode.
 
-   ```json title="corro.json"
+   ```json title="opencode.json"
    {
-     "$schema": "https://corrocode.dev/config.json",
+     "$schema": "https://opencode.ai/config.json",
      "provider": {
        "cloudflare-ai-gateway": {
          "models": {
@@ -728,7 +728,7 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
 
    #### استخدام Personal Access Token 1. اذهب إلى [GitLab User Settings > Access Tokens](https://gitlab.com/-/user_settings/personal_access_tokens)
    2. انقر **Add new token**
-   3. Name: `Corro Code`، Scopes: `api`
+   3. Name: `OpenCode`، Scopes: `api`
    4. انسخ الرمز (يبدأ بـ `glpat-`)
    5. أدخله في terminal
 
@@ -745,20 +745,20 @@ Corro Code Go هي خطة اشتراك منخفضة التكلفة توفّر و
 
 :::note
 يمكنك أيضا تعيين متغير البيئة 'GITLAB_TOKEN' إذا لم تكن تريد
-تخزين الرمز في مساحة تخزين مصادقة corro.
+تخزين الرمز في مساحة تخزين مصادقة opencode.
 :::
 
 ##### GitLab مستضاف ذاتيا
 
 :::note[ملاحظة امتثال]
-يستخدم Corro Code نموذجا صغيرا لبعض مهام الذكاء الاصطناعي مثل إنشاء عنوان الجلسة.
-تم ضبطه لاستخدام gpt-5-nano افتراضيا، مستضافا عبر Zen. لحصر Corro Code
+يستخدم OpenCode نموذجا صغيرا لبعض مهام الذكاء الاصطناعي مثل إنشاء عنوان الجلسة.
+تم ضبطه لاستخدام gpt-5-nano افتراضيا، مستضافا عبر Zen. لحصر OpenCode
 على استخدام مثيل GitLab المستضاف لديك فقط، أضف ما يلي إلى ملف
-`corro.json` لديك. يوصى أيضا بتعطيل مشاركة الجلسات.
+`opencode.json` لديك. يوصى أيضا بتعطيل مشاركة الجلسات.
 
 ```json
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "small_model": "gitlab/duo-chat-haiku-4-5",
   "share": "disabled"
 }
@@ -812,15 +812,15 @@ callback URL ‏`http://127.0.0.1:8080/callback` ونطاقات الصلاحيا
 export GITLAB_OAUTH_CLIENT_ID=your_application_id_here
 ```
 
-مزيد من التوثيق على صفحة [corro-gitlab-auth](https://www.npmjs.com/package/corro-gitlab-auth).
+مزيد من التوثيق على صفحة [opencode-gitlab-auth](https://www.npmjs.com/package/opencode-gitlab-auth).
 
 ##### التهيئة
 
-خصّص عبر `corro.json`:
+خصّص عبر `opencode.json`:
 
-```json title="corro.json"
+```json title="opencode.json"
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "provider": {
     "gitlab": {
       "options": {
@@ -835,10 +835,10 @@ export GITLAB_OAUTH_CLIENT_ID=your_application_id_here
 
 للوصول إلى أدوات GitLab (merge requests وissues وpipelines وCI/CD وغيرها):
 
-```json title="corro.json"
+```json title="opencode.json"
 {
-  "$schema": "https://corrocode.dev/config.json",
-  "plugin": ["corro-gitlab-plugin"]
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-gitlab-plugin"]
 }
 ```
 
@@ -848,7 +848,7 @@ export GITLAB_OAUTH_CLIENT_ID=your_application_id_here
 
 ### GitHub Copilot
 
-لاستخدام اشتراك GitHub Copilot مع corro:
+لاستخدام اشتراك GitHub Copilot مع opencode:
 
 :::note
 قد تتطلب بعض النماذج اشتراك [Pro+](https://github.com/features/copilot/plans) للاستخدام.
@@ -884,7 +884,7 @@ export GITLAB_OAUTH_CLIENT_ID=your_application_id_here
 
 ### Google Vertex AI
 
-لاستخدام Google Vertex AI مع Corro Code:
+لاستخدام Google Vertex AI مع OpenCode:
 
 1. توجّه إلى **Model Garden** في Google Cloud Console وتحقق من
    النماذج المتاحة في منطقتك.
@@ -900,10 +900,10 @@ export GITLAB_OAUTH_CLIENT_ID=your_application_id_here
      - `GOOGLE_APPLICATION_CREDENTIALS`: مسار ملف مفتاح حساب الخدمة بصيغة JSON
      - المصادقة عبر gcloud CLI: ‏`gcloud auth application-default login`
 
-   عيّنها أثناء تشغيل corro.
+   عيّنها أثناء تشغيل opencode.
 
    ```bash
-   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json GOOGLE_CLOUD_PROJECT=your-project-id corro
+   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json GOOGLE_CLOUD_PROJECT=your-project-id opencode
    ```
 
    أو أضفها إلى bash profile.
@@ -1013,13 +1013,13 @@ export GITLAB_OAUTH_CLIENT_ID=your_application_id_here
 
 #### إعدادات اختيارية
 
-إذا رأيت ميزة أو نموذجا في Helicone لم يتم ضبطه تلقائيا عبر corro، فيمكنك دائما ضبطه بنفسك.
+إذا رأيت ميزة أو نموذجا في Helicone لم يتم ضبطه تلقائيا عبر opencode، فيمكنك دائما ضبطه بنفسك.
 
 هذه هي [Helicone's Model Directory](https://helicone.ai/models)، وستحتاجها للحصول على IDs الخاصة بالنماذج التي تريد إضافتها.
 
-```jsonc title="~/.config/corro/corro.jsonc"
+```jsonc title="~/.config/opencode/opencode.jsonc"
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "provider": {
     "helicone": {
       "npm": "@ai-sdk/openai-compatible",
@@ -1045,9 +1045,9 @@ export GITLAB_OAUTH_CLIENT_ID=your_application_id_here
 
 تدعم Helicone ترويسات مخصّصة لميزات مثل التخزين المؤقت وتتبع المستخدم وإدارة الجلسات. أضفها إلى إعداد المزوّد عبر `options.headers`:
 
-```jsonc title="~/.config/corro/corro.jsonc"
+```jsonc title="~/.config/opencode/opencode.jsonc"
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "provider": {
     "helicone": {
       "npm": "@ai-sdk/openai-compatible",
@@ -1056,7 +1056,7 @@ export GITLAB_OAUTH_CLIENT_ID=your_application_id_here
         "baseURL": "https://ai-gateway.helicone.ai",
         "headers": {
           "Helicone-Cache-Enabled": "true",
-          "Helicone-User-Id": "corro",
+          "Helicone-User-Id": "opencode",
         },
       },
     },
@@ -1066,21 +1066,21 @@ export GITLAB_OAUTH_CLIENT_ID=your_application_id_here
 
 ##### تتبع الجلسات
 
-تتيح ميزة [Sessions](https://docs.helicone.ai/features/sessions) في Helicone تجميع طلبات LLM المرتبطة معا. استخدم ملحق [corro-helicone-session](https://github.com/H2Shami/corro-helicone-session) لتسجيل كل محادثة Corro Code تلقائيا كجلسة في Helicone.
+تتيح ميزة [Sessions](https://docs.helicone.ai/features/sessions) في Helicone تجميع طلبات LLM المرتبطة معا. استخدم ملحق [opencode-helicone-session](https://github.com/H2Shami/opencode-helicone-session) لتسجيل كل محادثة OpenCode تلقائيا كجلسة في Helicone.
 
 ```bash
-npm install -g corro-helicone-session
+npm install -g opencode-helicone-session
 ```
 
 أضفه إلى إعداداتك.
 
-```json title="corro.json"
+```json title="opencode.json"
 {
-  "plugin": ["corro-helicone-session"]
+  "plugin": ["opencode-helicone-session"]
 }
 ```
 
-يقوم الملحق بحقن ترويسات `Helicone-Session-Id` و`Helicone-Session-Name` ضمن طلباتك. في صفحة Sessions داخل Helicone، سترى كل محادثة Corro Code مدرجة كجلسة مستقلة.
+يقوم الملحق بحقن ترويسات `Helicone-Session-Id` و`Helicone-Session-Name` ضمن طلباتك. في صفحة Sessions داخل Helicone، سترى كل محادثة OpenCode مدرجة كجلسة مستقلة.
 
 ##### ترويسات Helicone الشائعة
 
@@ -1097,11 +1097,11 @@ npm install -g corro-helicone-session
 
 ### llama.cpp
 
-يمكنك ضبط corro لاستخدام نماذج محلية عبر أداة llama-server ضمن [llama.cpp](https://github.com/ggml-org/llama.cpp)
+يمكنك ضبط opencode لاستخدام نماذج محلية عبر أداة llama-server ضمن [llama.cpp](https://github.com/ggml-org/llama.cpp)
 
-```json title="corro.json" "llama.cpp" {5, 6, 8, 10-15}
+```json title="opencode.json" "llama.cpp" {5, 6, 8, 10-15}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "provider": {
     "llama.cpp": {
       "npm": "@ai-sdk/openai-compatible",
@@ -1164,11 +1164,11 @@ npm install -g corro-helicone-session
 
 ### LM Studio
 
-يمكنك ضبط corro لاستخدام نماذج محلية عبر LM Studio.
+يمكنك ضبط opencode لاستخدام نماذج محلية عبر LM Studio.
 
-```json title="corro.json" "lmstudio" {5, 6, 8, 10-14}
+```json title="opencode.json" "lmstudio" {5, 6, 8, 10-14}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "provider": {
     "lmstudio": {
       "npm": "@ai-sdk/openai-compatible",
@@ -1281,15 +1281,15 @@ npm install -g corro-helicone-session
 
 ### Ollama
 
-يمكنك ضبط corro لاستخدام نماذج محلية عبر Ollama.
+يمكنك ضبط opencode لاستخدام نماذج محلية عبر Ollama.
 
 :::tip
-يمكن لـ Ollama ضبط نفسه تلقائيا للعمل مع Corro Code. راجع [توثيق تكامل Ollama](https://docs.ollama.com/integrations/corro) للتفاصيل.
+يمكن لـ Ollama ضبط نفسه تلقائيا للعمل مع OpenCode. راجع [توثيق تكامل Ollama](https://docs.ollama.com/integrations/opencode) للتفاصيل.
 :::
 
-```json title="corro.json" "ollama" {5, 6, 8, 10-14}
+```json title="opencode.json" "ollama" {5, 6, 8, 10-14}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "provider": {
     "ollama": {
       "npm": "@ai-sdk/openai-compatible",
@@ -1323,13 +1323,13 @@ npm install -g corro-helicone-session
 
 ### Ollama Cloud
 
-لاستخدام Ollama Cloud مع Corro Code:
+لاستخدام Ollama Cloud مع OpenCode:
 
 1. توجّه إلى [https://ollama.com/](https://ollama.com/) وسجّل الدخول أو أنشئ حسابا.
 
 2. انتقل إلى **Settings** > **Keys** وانقر **Add API Key** لإنشاء مفتاح API جديد.
 
-3. انسخ مفتاح API لاستخدامه في Corro Code.
+3. انسخ مفتاح API لاستخدامه في OpenCode.
 
 4. شغّل الأمر `/connect` وابحث عن **Ollama Cloud**.
 
@@ -1346,7 +1346,7 @@ npm install -g corro-helicone-session
    └ enter
    ```
 
-6. **مهم**: قبل استخدام نماذج السحابة في Corro Code، يجب سحب معلومات النموذج محليا:
+6. **مهم**: قبل استخدام نماذج السحابة في OpenCode، يجب سحب معلومات النموذج محليا:
 
    ```bash
    ollama pull gpt-oss:20b-cloud
@@ -1393,19 +1393,19 @@ npm install -g corro-helicone-session
 
 ---
 
-### Corro Code Zen
+### OpenCode Zen
 
-Corro Code Zen هي قائمة من النماذج التي تم اختبارها والتحقق منها مقدّمة من فريق Corro Code. [اعرف المزيد](/docs/zen).
+OpenCode Zen هي قائمة من النماذج التي تم اختبارها والتحقق منها مقدّمة من فريق OpenCode. [اعرف المزيد](/docs/zen).
 
-1. سجّل الدخول إلى **<a href={console}>Corro Code Zen</a>** وانقر **Create API Key**.
+1. سجّل الدخول إلى **<a href={console}>OpenCode Zen</a>** وانقر **Create API Key**.
 
-2. شغّل الأمر `/connect` وابحث عن **Corro Code Zen**.
+2. شغّل الأمر `/connect` وابحث عن **OpenCode Zen**.
 
    ```txt
    /connect
    ```
 
-3. أدخل مفتاح API الخاص بـ Corro Code.
+3. أدخل مفتاح API الخاص بـ OpenCode.
 
    ```txt
    ┌ API key
@@ -1447,11 +1447,11 @@ Corro Code Zen هي قائمة من النماذج التي تم اختباره�
    /models
    ```
 
-   يمكنك أيضا إضافة نماذج إضافية عبر إعدادات corro.
+   يمكنك أيضا إضافة نماذج إضافية عبر إعدادات opencode.
 
-   ```json title="corro.json" {6}
+   ```json title="opencode.json" {6}
    {
-     "$schema": "https://corrocode.dev/config.json",
+     "$schema": "https://opencode.ai/config.json",
      "provider": {
        "openrouter": {
          "models": {
@@ -1462,11 +1462,11 @@ Corro Code Zen هي قائمة من النماذج التي تم اختباره�
    }
    ```
 
-5. يمكنك أيضا تخصيصها عبر إعدادات corro. إليك مثالا على تحديد مزوّد
+5. يمكنك أيضا تخصيصها عبر إعدادات opencode. إليك مثالا على تحديد مزوّد
 
-   ```json title="corro.json"
+   ```json title="opencode.json"
    {
-     "$schema": "https://corrocode.dev/config.json",
+     "$schema": "https://opencode.ai/config.json",
      "provider": {
        "openrouter": {
          "models": {
@@ -1514,7 +1514,7 @@ Corro Code Zen هي قائمة من النماذج التي تم اختباره�
    أو عيّن متغير البيئة `AICORE_SERVICE_KEY`:
 
    ```bash
-   AICORE_SERVICE_KEY='{"clientid":"...","clientsecret":"...","url":"...","serviceurls":{"AI_API_URL":"..."}}' corro
+   AICORE_SERVICE_KEY='{"clientid":"...","clientsecret":"...","url":"...","serviceurls":{"AI_API_URL":"..."}}' opencode
    ```
 
    أو أضفه إلى bash profile:
@@ -1526,7 +1526,7 @@ Corro Code Zen هي قائمة من النماذج التي تم اختباره�
 4. اختياريا، عيّن deployment ID وresource group:
 
    ```bash
-   AICORE_DEPLOYMENT_ID=your-deployment-id AICORE_RESOURCE_GROUP=your-resource-group corro
+   AICORE_DEPLOYMENT_ID=your-deployment-id AICORE_RESOURCE_GROUP=your-resource-group opencode
    ```
 
    :::note
@@ -1711,11 +1711,11 @@ Corro Code Zen هي قائمة من النماذج التي تم اختباره�
    /models
    ```
 
-يمكنك أيضا تخصيص النماذج عبر إعدادات corro. إليك مثالا على تحديد ترتيب توجيه المزوّدات.
+يمكنك أيضا تخصيص النماذج عبر إعدادات opencode. إليك مثالا على تحديد ترتيب توجيه المزوّدات.
 
-```json title="corro.json"
+```json title="opencode.json"
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "provider": {
     "vercel": {
       "models": {
@@ -1821,11 +1821,11 @@ Corro Code Zen هي قائمة من النماذج التي تم اختباره�
    /models
    ```
 
-   يمكنك أيضا إضافة نماذج إضافية عبر إعدادات corro.
+   يمكنك أيضا إضافة نماذج إضافية عبر إعدادات opencode.
 
-   ```json title="corro.json" {6}
+   ```json title="opencode.json" {6}
    {
-     "$schema": "https://corrocode.dev/config.json",
+     "$schema": "https://opencode.ai/config.json",
      "provider": {
        "zenmux": {
          "models": {
@@ -1843,7 +1843,7 @@ Corro Code Zen هي قائمة من النماذج التي تم اختباره�
 لإضافة أي مزوّد **OpenAI-compatible** غير موجود ضمن الأمر `/connect`:
 
 :::tip
-يمكنك استخدام أي مزوّد OpenAI-compatible مع corro. معظم مزوّدي الذكاء الاصطناعي الحديثة يقدّمون APIs متوافقة مع OpenAI.
+يمكنك استخدام أي مزوّد OpenAI-compatible مع opencode. معظم مزوّدي الذكاء الاصطناعي الحديثة يقدّمون APIs متوافقة مع OpenAI.
 :::
 
 1. شغّل الأمر `/connect` ومرّر للأسفل حتى **Other**.
@@ -1882,18 +1882,18 @@ Corro Code Zen هي قائمة من النماذج التي تم اختباره�
 
    ┌  Add credential
    │
-   ▲  This only stores a credential for myprovider - you will need to configure it in corro.json, check the docs for examples.
+   ▲  This only stores a credential for myprovider - you will need to configure it in opencode.json, check the docs for examples.
    │
    ◇  Enter your API key
    │  sk-...
    └
    ```
 
-4. أنشئ أو حدّث ملف `corro.json` في دليل مشروعك:
+4. أنشئ أو حدّث ملف `opencode.json` في دليل مشروعك:
 
-   ```json title="corro.json" ""myprovider"" {5-15}
+   ```json title="opencode.json" ""myprovider"" {5-15}
    {
-     "$schema": "https://corrocode.dev/config.json",
+     "$schema": "https://opencode.ai/config.json",
      "provider": {
        "myprovider": {
          "npm": "@ai-sdk/openai-compatible",
@@ -1929,9 +1929,9 @@ Corro Code Zen هي قائمة من النماذج التي تم اختباره�
 
 إليك مثالا يضبط خيارات `apiKey` و`headers` وخيارات `limit` الخاصة بالنموذج.
 
-```json title="corro.json" {9,11,17-20}
+```json title="opencode.json" {9,11,17-20}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "provider": {
     "myprovider": {
       "npm": "@ai-sdk/openai-compatible",
@@ -1964,7 +1964,7 @@ Corro Code Zen هي قائمة من النماذج التي تم اختباره�
 - **limit.context**: الحد الأقصى لرموز الإدخال التي يقبلها النموذج.
 - **limit.output**: الحد الأقصى للرموز التي يمكن للنموذج توليدها.
 
-تسمح حقول `limit` لـ Corro Code بفهم مقدار السياق المتبقي لديك. تسحب المزوّدات القياسية هذه القيم تلقائيا من models.dev.
+تسمح حقول `limit` لـ OpenCode بفهم مقدار السياق المتبقي لديك. تسحب المزوّدات القياسية هذه القيم تلقائيا من models.dev.
 
 ---
 
@@ -1972,12 +1972,12 @@ Corro Code Zen هي قائمة من النماذج التي تم اختباره�
 
 إذا كنت تواجه مشكلة في تهيئة مزوّد، فتحقق مما يلي:
 
-1. **تحقق من إعداد auth**: شغّل `corro auth list` لمعرفة ما إذا كانت بيانات الاعتماد
+1. **تحقق من إعداد auth**: شغّل `opencode auth list` لمعرفة ما إذا كانت بيانات الاعتماد
    الخاصة بالمزوّد قد أضيفت إلى إعداداتك.
 
    لا ينطبق هذا على مزوّدات مثل Amazon Bedrock التي تعتمد على متغيرات البيئة لـ auth.
 
-2. للمزوّدات المخصّصة، راجع إعدادات corro وتأكد من:
-   - أن provider ID المستخدم في الأمر `/connect` يطابق الـ ID في إعدادات corro.
+2. للمزوّدات المخصّصة، راجع إعدادات opencode وتأكد من:
+   - أن provider ID المستخدم في الأمر `/connect` يطابق الـ ID في إعدادات opencode.
    - استخدام حزمة npm الصحيحة للمزوّد. على سبيل المثال استخدم `@ai-sdk/cerebras` لـ Cerebras. ولكل المزوّدات الأخرى المتوافقة مع OpenAI استخدم `@ai-sdk/openai-compatible`.
    - استخدام نقطة نهاية API الصحيحة في الحقل `options.baseURL`.

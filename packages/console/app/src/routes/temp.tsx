@@ -164,7 +164,7 @@ export default function Home() {
             <a href="https://github.com/anomalyco/opencode">{i18n.t("footer.github")}</a>
           </div>
           <div data-slot="cell">
-            <a href="https://corrocode.dev/discord">{i18n.t("footer.discord")}</a>
+            <a href="https://opencode.ai/discord">{i18n.t("footer.discord")}</a>
           </div>
         </footer>
       </div>

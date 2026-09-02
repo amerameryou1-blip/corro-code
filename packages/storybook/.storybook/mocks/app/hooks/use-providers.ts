@@ -25,8 +25,8 @@ const provider = {
 }
 
 const popular = [
-  { id: "opencode", name: "Corro Code Zen", models: {} },
-  { id: "opencode-go", name: "Corro Code Go", models: {} },
+  { id: "opencode", name: "OpenCode Zen", models: {} },
+  { id: "opencode-go", name: "OpenCode Go", models: {} },
   { id: "openai", name: "OpenAI", models: {} },
   provider,
   { id: "google", name: "Google", models: {} },

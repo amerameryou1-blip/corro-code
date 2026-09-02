@@ -160,17 +160,17 @@ export function findDrift(source: Dictionary, target: Dictionary, locale?: Local
 
 export function sessionIDFromEvents(output: string) {
   const match = output.match(/"sessionID"\s*:\s*"([^"]+)"/)
-  if (!match?.[1]) throw new Error("Corro Code did not report a session ID.")
+  if (!match?.[1]) throw new Error("OpenCode did not report a session ID.")
   return match[1]
 }
 
 export function sessionModels(value: unknown) {
   if (!isRecord(value) || !Array.isArray(value.messages))
-    throw new Error("Corro Code returned an invalid session export.")
+    throw new Error("OpenCode returned an invalid session export.")
   return value.messages.flatMap((message) => {
     if (!isRecord(message) || !isRecord(message.info) || message.info.role !== "assistant") return []
     if (typeof message.info.providerID !== "string" || typeof message.info.modelID !== "string") {
-      throw new Error("Corro Code session export omitted the assistant model.")
+      throw new Error("OpenCode session export omitted the assistant model.")
     }
     return [
       {
@@ -196,7 +196,7 @@ export function modelVariants(output: string, model: string) {
 
 export function translationConfig(agent: string, model: string, targets: string[]) {
   return {
-    $schema: "https://corrocode.dev/config.json",
+    $schema: "https://opencode.ai/config.json",
     model,
     default_agent: agent,
     share: "disabled" as const,
@@ -253,10 +253,10 @@ Usage: bun run translate:app -- <locale|all> [options]
 Synchronizes product app translations with the English app, UI, and desktop dictionaries.
 
 Options:
-  -c, --concurrency <count>  Maximum parallel Corro Code runs for 'all' (default: 4)
-      --model <provider/id>  Corro Code model (default: opencode/gpt-5.5)
+  -c, --concurrency <count>  Maximum parallel OpenCode runs for 'all' (default: 4)
+      --model <provider/id>  OpenCode model (default: opencode/gpt-5.5)
       --variant <name>       Model variant (default: xhigh)
-      --dry-run              Report drift without running Corro Code
+      --dry-run              Report drift without running OpenCode
       --check                Exit nonzero when translation drift exists
   -h, --help                 Show this help message
 

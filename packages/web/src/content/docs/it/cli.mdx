@@ -1,30 +1,30 @@
 ---
 title: CLI
-description: Opzioni e comandi della CLI di Corro Code.
+description: Opzioni e comandi della CLI di OpenCode.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-La CLI di Corro Code, per impostazione predefinita, avvia la [TUI](/docs/tui) quando viene eseguita senza argomenti.
+La CLI di OpenCode, per impostazione predefinita, avvia la [TUI](/docs/tui) quando viene eseguita senza argomenti.
 
 ```bash
-corro
+opencode
 ```
 
-Ma accetta anche i comandi documentati in questa pagina. Questo ti permette di interagire con Corro Code in modo programmatico.
+Ma accetta anche i comandi documentati in questa pagina. Questo ti permette di interagire con OpenCode in modo programmatico.
 
 ```bash
-corro run "Explain how closures work in JavaScript"
+opencode run "Explain how closures work in JavaScript"
 ```
 
 ---
 
 ### tui
 
-Avvia l'interfaccia testuale di Corro Code (interfaccia utente da terminale).
+Avvia l'interfaccia testuale di OpenCode (interfaccia utente da terminale).
 
 ```bash
-corro [project]
+opencode [project]
 ```
 
 #### Flag
@@ -44,36 +44,36 @@ corro [project]
 
 ## Comandi
 
-La CLI di Corro Code include anche i seguenti comandi.
+La CLI di OpenCode include anche i seguenti comandi.
 
 ---
 
 ### agent
 
-Gestisci gli agenti per Corro Code.
+Gestisci gli agenti per OpenCode.
 
 ```bash
-corro agent [command]
+opencode agent [command]
 ```
 
 ---
 
 ### attach
 
-Collega un terminale a un backend server di Corro Code già in esecuzione avviato tramite i comandi `serve` o `web`.
+Collega un terminale a un backend server di OpenCode già in esecuzione avviato tramite i comandi `serve` o `web`.
 
 ```bash
-corro attach [url]
+opencode attach [url]
 ```
 
-Questo consente di usare la TUI con un backend Corro Code remoto. Per esempio:
+Questo consente di usare la TUI con un backend OpenCode remoto. Per esempio:
 
 ```bash
 # Start the backend server for web/mobile access
-corro web --port 4096 --hostname 0.0.0.0
+opencode web --port 4096 --hostname 0.0.0.0
 
 # In un altro terminale, collega la TUI al backend in esecuzione
-corro attach http://10.20.30.40:4096
+opencode attach http://10.20.30.40:4096
 ```
 
 #### Flag
@@ -85,7 +85,7 @@ corro attach http://10.20.30.40:4096
 | <nobr><code>{"--session"}</code></nobr>  | `-s`  | ID sessione da continuare                                                                       |
 | <nobr><code>{"--fork"}</code></nobr>     |       | Crea un fork della sessione durante la continuazione (usa con `--continue` o `--session`)       |
 | <nobr><code>{"--password"}</code></nobr> | `-p`  | Password per l'autenticazione di base (predefinita: `OPENCODE_SERVER_PASSWORD`)                 |
-| <nobr><code>{"--username"}</code></nobr> | `-u`  | Nome utente per l'autenticazione di base (predefinito: `OPENCODE_SERVER_USERNAME` o `corro`) |
+| <nobr><code>{"--username"}</code></nobr> | `-u`  | Nome utente per l'autenticazione di base (predefinito: `OPENCODE_SERVER_USERNAME` o `opencode`) |
 
 ---
 
@@ -94,7 +94,7 @@ corro attach http://10.20.30.40:4096
 Crea un nuovo agente con configurazione personalizzata.
 
 ```bash
-corro agent create
+opencode agent create
 ```
 
 Questo comando ti guida nella creazione di un nuovo agente con un system prompt personalizzato e configurazione degli strumenti.
@@ -106,7 +106,7 @@ Questo comando ti guida nella creazione di un nuovo agente con un system prompt 
 Elenca tutti gli agenti disponibili.
 
 ```bash
-corro agent list
+opencode agent list
 ```
 
 ---
@@ -116,20 +116,20 @@ corro agent list
 Comando per gestire le credenziali e il login dei provider.
 
 ```bash
-corro auth [command]
+opencode auth [command]
 ```
 
 ---
 
 #### login
 
-Corro Code si basa sull'elenco provider di [Models.dev](https://models.dev), quindi puoi usare `corro auth login` per configurare le API key per qualunque provider tu voglia usare. Le credenziali vengono salvate in `~/.local/share/corro/auth.json`.
+OpenCode si basa sull'elenco provider di [Models.dev](https://models.dev), quindi puoi usare `opencode auth login` per configurare le API key per qualunque provider tu voglia usare. Le credenziali vengono salvate in `~/.local/share/opencode/auth.json`.
 
 ```bash
-corro auth login
+opencode auth login
 ```
 
-Quando Corro Code si avvia, carica i provider dal file delle credenziali e, se presenti, anche eventuali key definite nell'ambiente o in un file `.env` nel progetto.
+Quando OpenCode si avvia, carica i provider dal file delle credenziali e, se presenti, anche eventuali key definite nell'ambiente o in un file `.env` nel progetto.
 
 ---
 
@@ -138,13 +138,13 @@ Quando Corro Code si avvia, carica i provider dal file delle credenziali e, se p
 Elenca tutti i provider autenticati come salvati nel file delle credenziali.
 
 ```bash
-corro auth list
+opencode auth list
 ```
 
 Oppure la versione corta.
 
 ```bash
-corro auth ls
+opencode auth ls
 ```
 
 ---
@@ -154,7 +154,7 @@ corro auth ls
 Esegue il logout da un provider rimuovendolo dal file delle credenziali.
 
 ```bash
-corro auth logout
+opencode auth logout
 ```
 
 ---
@@ -164,7 +164,7 @@ corro auth logout
 Gestisci l'agente GitHub per l'automazione dei repository.
 
 ```bash
-corro github [command]
+opencode github [command]
 ```
 
 ---
@@ -174,7 +174,7 @@ corro github [command]
 Installa l'agente GitHub nel tuo repository.
 
 ```bash
-corro github install
+opencode github install
 ```
 
 Questo configura il workflow GitHub Actions necessario e ti guida nel processo di configurazione. [Scopri di più](/docs/github).
@@ -186,7 +186,7 @@ Questo configura il workflow GitHub Actions necessario e ti guida nel processo d
 Esegui l'agente GitHub. Tipicamente usato in GitHub Actions.
 
 ```bash
-corro github run
+opencode github run
 ```
 
 ##### Flag
@@ -203,7 +203,7 @@ corro github run
 Gestisci i server Model Context Protocol.
 
 ```bash
-corro mcp [command]
+opencode mcp [command]
 ```
 
 ---
@@ -213,7 +213,7 @@ corro mcp [command]
 Aggiungi un server MCP alla tua configurazione.
 
 ```bash
-corro mcp add
+opencode mcp add
 ```
 
 Questo comando ti guida nell'aggiunta di un server MCP locale o remoto.
@@ -225,13 +225,13 @@ Questo comando ti guida nell'aggiunta di un server MCP locale o remoto.
 Elenca tutti i server MCP configurati e il loro stato di connessione.
 
 ```bash
-corro mcp list
+opencode mcp list
 ```
 
 Oppure la versione corta.
 
 ```bash
-corro mcp ls
+opencode mcp ls
 ```
 
 ---
@@ -241,7 +241,7 @@ corro mcp ls
 Autentica con un server MCP con OAuth abilitato.
 
 ```bash
-corro mcp auth [name]
+opencode mcp auth [name]
 ```
 
 Se non fornisci un nome server, ti verrà chiesto di selezionare tra i server OAuth-capable disponibili.
@@ -249,13 +249,13 @@ Se non fornisci un nome server, ti verrà chiesto di selezionare tra i server OA
 Puoi anche elencare i server OAuth-capable e il loro stato di autenticazione.
 
 ```bash
-corro mcp auth list
+opencode mcp auth list
 ```
 
 Oppure la versione corta.
 
 ```bash
-corro mcp auth ls
+opencode mcp auth ls
 ```
 
 ---
@@ -265,7 +265,7 @@ corro mcp auth ls
 Rimuovi le credenziali OAuth per un server MCP.
 
 ```bash
-corro mcp logout [name]
+opencode mcp logout [name]
 ```
 
 ---
@@ -275,7 +275,7 @@ corro mcp logout [name]
 Esegui debug di problemi di connessione OAuth per un server MCP.
 
 ```bash
-corro mcp debug <name>
+opencode mcp debug <name>
 ```
 
 ---
@@ -285,7 +285,7 @@ corro mcp debug <name>
 Elenca tutti i modelli disponibili dai provider configurati.
 
 ```bash
-corro models [provider]
+opencode models [provider]
 ```
 
 Questo comando mostra tutti i modelli disponibili tra i provider configurati nel formato `provider/model`.
@@ -295,7 +295,7 @@ Questo comando mostra tutti i modelli disponibili tra i provider configurati nel
 Puoi anche passare opzionalmente un ID provider per filtrare i modelli a quel provider.
 
 ```bash
-corro models anthropic
+opencode models anthropic
 ```
 
 #### Flag
@@ -305,36 +305,36 @@ corro models anthropic
 | <nobr><code>{"--refresh"}</code></nobr> | Aggiorna la cache modelli da models.dev            |
 | <nobr><code>{"--verbose"}</code></nobr> | Output più verboso (include metadati come i costi) |
 
-Usa `--refresh` per aggiornare l'elenco modelli in cache. È utile quando nuovi modelli vengono aggiunti a un provider e vuoi vederli in Corro Code.
+Usa `--refresh` per aggiornare l'elenco modelli in cache. È utile quando nuovi modelli vengono aggiunti a un provider e vuoi vederli in OpenCode.
 
 ```bash
-corro models --refresh
+opencode models --refresh
 ```
 
 ---
 
 ### run
 
-Esegui corro in modalità non interattiva passando un prompt direttamente.
+Esegui opencode in modalità non interattiva passando un prompt direttamente.
 
 ```bash
-corro run [message..]
+opencode run [message..]
 ```
 
 È utile per scripting, automazione o quando vuoi una risposta rapida senza avviare la TUI completa. Per esempio:
 
-```bash "corro run"
-corro run Explain the use of context in Go
+```bash "opencode run"
+opencode run Explain the use of context in Go
 ```
 
-Puoi anche collegarti a una istanza `corro serve` già in esecuzione per evitare i cold boot dei server MCP ad ogni esecuzione:
+Puoi anche collegarti a una istanza `opencode serve` già in esecuzione per evitare i cold boot dei server MCP ad ogni esecuzione:
 
 ```bash
 # Avvia un server headless in un terminale
-corro serve
+opencode serve
 
 # In un altro terminale, esegui comandi che si collegano ad esso
-corro run --attach http://localhost:4096 "Explain async/await in JavaScript"
+opencode run --attach http://localhost:4096 "Explain async/await in JavaScript"
 ```
 
 #### Flag
@@ -351,9 +351,9 @@ corro run --attach http://localhost:4096 "Explain async/await in JavaScript"
 | <nobr><code>{"--file"}</code></nobr>     | `-f`  | File da allegare al messaggio                                                                   |
 | <nobr><code>{"--format"}</code></nobr>   |       | Formato: default (formattato) o json (eventi JSON grezzi)                                       |
 | <nobr><code>{"--title"}</code></nobr>    |       | Titolo sessione (usa prompt troncato se non viene fornito un valore)                            |
-| <nobr><code>{"--attach"}</code></nobr>   |       | Attach a un server corro in esecuzione (es. http://localhost:4096)                           |
+| <nobr><code>{"--attach"}</code></nobr>   |       | Attach a un server opencode in esecuzione (es. http://localhost:4096)                           |
 | <nobr><code>{"--password"}</code></nobr> | `-p`  | Password per l'autenticazione di base (predefinita: `OPENCODE_SERVER_PASSWORD`)                 |
-| <nobr><code>{"--username"}</code></nobr> | `-u`  | Nome utente per l'autenticazione di base (predefinito: `OPENCODE_SERVER_USERNAME` o `corro`) |
+| <nobr><code>{"--username"}</code></nobr> | `-u`  | Nome utente per l'autenticazione di base (predefinito: `OPENCODE_SERVER_USERNAME` o `opencode`) |
 | <nobr><code>{"--dir"}</code></nobr>      |       | Directory di esecuzione, o percorso sul server remoto durante il collegamento                   |
 | <nobr><code>{"--variant"}</code></nobr>  |       | Variante del modello (sforzo di ragionamento specifico del provider)                            |
 | <nobr><code>{"--thinking"}</code></nobr> |       | Mostra blocchi di pensiero                                                                      |
@@ -363,13 +363,13 @@ corro run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-Avvia un server Corro Code headless per accesso via API. Vedi le [server docs](/docs/server) per l'interfaccia HTTP completa.
+Avvia un server OpenCode headless per accesso via API. Vedi le [server docs](/docs/server) per l'interfaccia HTTP completa.
 
 ```bash
-corro serve
+opencode serve
 ```
 
-Avvia un server HTTP che espone accesso API alle funzionalità di corro senza la TUI. Imposta `OPENCODE_SERVER_PASSWORD` per abilitare HTTP basic auth (username di default `corro`).
+Avvia un server HTTP che espone accesso API alle funzionalità di opencode senza la TUI. Imposta `OPENCODE_SERVER_PASSWORD` per abilitare HTTP basic auth (username di default `opencode`).
 
 #### Flag
 
@@ -384,20 +384,20 @@ Avvia un server HTTP che espone accesso API alle funzionalità di corro senza la
 
 ### session
 
-Gestisci le sessioni Corro Code.
+Gestisci le sessioni OpenCode.
 
 ```bash
-corro session [command]
+opencode session [command]
 ```
 
 ---
 
 #### list
 
-Elenca tutte le sessioni Corro Code.
+Elenca tutte le sessioni OpenCode.
 
 ```bash
-corro session list
+opencode session list
 ```
 
 ##### Flag
@@ -411,10 +411,10 @@ corro session list
 
 ### stats
 
-Mostra statistiche di utilizzo token e costo per le sessioni Corro Code.
+Mostra statistiche di utilizzo token e costo per le sessioni OpenCode.
 
 ```bash
-corro stats
+opencode stats
 ```
 
 #### Flag
@@ -433,7 +433,7 @@ corro stats
 Esporta i dati di sessione come JSON.
 
 ```bash
-corro export [sessionID]
+opencode export [sessionID]
 ```
 
 Se non fornisci un ID sessione, ti verrà chiesto di selezionare tra le sessioni disponibili.
@@ -442,30 +442,30 @@ Se non fornisci un ID sessione, ti verrà chiesto di selezionare tra le sessioni
 
 ### import
 
-Importa i dati di sessione da un file JSON o da un URL di condivisione Corro Code.
+Importa i dati di sessione da un file JSON o da un URL di condivisione OpenCode.
 
 ```bash
-corro import <file>
+opencode import <file>
 ```
 
-Puoi importare da un file locale o da un URL di condivisione Corro Code.
+Puoi importare da un file locale o da un URL di condivisione OpenCode.
 
 ```bash
-corro import session.json
-corro import https://opncd.ai/s/abc123
+opencode import session.json
+opencode import https://opncd.ai/s/abc123
 ```
 
 ---
 
 ### web
 
-Avvia un server Corro Code headless con interfaccia web.
+Avvia un server OpenCode headless con interfaccia web.
 
 ```bash
-corro web
+opencode web
 ```
 
-Avvia un server HTTP e apre un browser per accedere a Corro Code tramite interfaccia web. Imposta `OPENCODE_SERVER_PASSWORD` per abilitare HTTP basic auth (username di default `corro`).
+Avvia un server HTTP e apre un browser per accedere a OpenCode tramite interfaccia web. Imposta `OPENCODE_SERVER_PASSWORD` per abilitare HTTP basic auth (username di default `opencode`).
 
 #### Flag
 
@@ -483,7 +483,7 @@ Avvia un server HTTP e apre un browser per accedere a Corro Code tramite interfa
 Avvia un server ACP (Agent Client Protocol).
 
 ```bash
-corro acp
+opencode acp
 ```
 
 Questo comando avvia un server ACP che comunica via stdin/stdout usando nd-JSON.
@@ -500,10 +500,10 @@ Questo comando avvia un server ACP che comunica via stdin/stdout usando nd-JSON.
 
 ### uninstall
 
-Disinstalla Corro Code e rimuove tutti i file correlati.
+Disinstalla OpenCode e rimuove tutti i file correlati.
 
 ```bash
-corro uninstall
+opencode uninstall
 ```
 
 #### Flag
@@ -519,22 +519,22 @@ corro uninstall
 
 ### upgrade
 
-Aggiorna corro all'ultima versione o a una versione specifica.
+Aggiorna opencode all'ultima versione o a una versione specifica.
 
 ```bash
-corro upgrade [target]
+opencode upgrade [target]
 ```
 
 Per aggiornare all'ultima versione:
 
 ```bash
-corro upgrade
+opencode upgrade
 ```
 
 Per aggiornare a una versione specifica:
 
 ```bash
-corro upgrade v0.1.48
+opencode upgrade v0.1.48
 ```
 
 #### Flag
@@ -547,7 +547,7 @@ corro upgrade v0.1.48
 
 ## Flag globali
 
-La CLI di corro accetta i seguenti flag globali.
+La CLI di opencode accetta i seguenti flag globali.
 
 | Flag                                       | Breve | Descrizione                            |
 | ------------------------------------------ | ----- | -------------------------------------- |
@@ -560,7 +560,7 @@ La CLI di corro accetta i seguenti flag globali.
 
 ## Variabili d'ambiente
 
-Corro Code può essere configurato tramite variabili d'ambiente.
+OpenCode può essere configurato tramite variabili d'ambiente.
 
 | Variabile                             | Tipo    | Descrizione                                                 |
 | ------------------------------------- | ------- | ----------------------------------------------------------- |
@@ -586,7 +586,7 @@ Corro Code può essere configurato tramite variabili d'ambiente.
 | `OPENCODE_CLIENT`                     | string  | Identificatore client (default `cli`)                       |
 | `OPENCODE_ENABLE_EXA`                 | boolean | Abilita gli strumenti di web search Exa                     |
 | `OPENCODE_SERVER_PASSWORD`            | string  | Abilita basic auth per `serve`/`web`                        |
-| `OPENCODE_SERVER_USERNAME`            | string  | Sovrascrive lo username basic auth (default `corro`)     |
+| `OPENCODE_SERVER_USERNAME`            | string  | Sovrascrive lo username basic auth (default `opencode`)     |
 | `OPENCODE_MODELS_URL`                 | string  | URL personalizzato per recuperare la configurazione modelli |
 
 ---

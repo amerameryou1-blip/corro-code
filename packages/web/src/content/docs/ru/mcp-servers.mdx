@@ -3,7 +3,7 @@ title: MCP-серверы
 description: Добавьте локальные и удаленные инструменты MCP.
 ---
 
-Вы можете добавить внешние инструменты в corro, используя _Model Context Protocol_ или MCP. corro поддерживает как локальные, так и удаленные серверы.
+Вы можете добавить внешние инструменты в opencode, используя _Model Context Protocol_ или MCP. opencode поддерживает как локальные, так и удаленные серверы.
 
 После добавления инструменты MCP автоматически становятся доступными для LLM наряду со встроенными инструментами.
 
@@ -23,11 +23,11 @@ description: Добавьте локальные и удаленные инст�
 
 ## Включение
 
-Вы можете определить серверы MCP в своем [corro Config](https://corrocode.dev/docs/config/) в разделе `mcp`. Добавьте каждому MCP уникальное имя. Вы можете обратиться к этому MCP по имени при запросе LLM.
+Вы можете определить серверы MCP в своем [opencode Config](https://opencode.ai/docs/config/) в разделе `mcp`. Добавьте каждому MCP уникальное имя. Вы можете обратиться к этому MCP по имени при запросе LLM.
 
-```jsonc title="corro.jsonc" {6}
+```jsonc title="opencode.jsonc" {6}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "name-of-mcp-server": {
       // ...
@@ -46,13 +46,13 @@ description: Добавьте локальные и удаленные инст�
 
 ### Переопределение удаленных настроек по умолчанию
 
-Организации могут предоставлять серверы MCP по умолчанию через свою конечную точку `.well-known/corro`. Эти серверы могут быть отключены по умолчанию, что позволяет пользователям выбирать те, которые им нужны.
+Организации могут предоставлять серверы MCP по умолчанию через свою конечную точку `.well-known/opencode`. Эти серверы могут быть отключены по умолчанию, что позволяет пользователям выбирать те, которые им нужны.
 
 Чтобы включить определенный сервер из удаленной конфигурации вашей организации, добавьте его в локальную конфигурацию с помощью `enabled: true`:
 
-```json title="corro.json"
+```json title="opencode.json"
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "jira": {
       "type": "remote",
@@ -71,9 +71,9 @@ description: Добавьте локальные и удаленные инст�
 
 Добавьте локальные серверы MCP с помощью `type` в `"local"` внутри объекта MCP.
 
-```jsonc title="corro.jsonc" {15}
+```jsonc title="opencode.jsonc" {15}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "my-local-mcp-server": {
       "type": "local",
@@ -92,9 +92,9 @@ description: Добавьте локальные и удаленные инст�
 
 Например, вот как можно добавить тестовый сервер [`@modelcontextprotocol/server-everything`](https://www.npmjs.com/package/@modelcontextprotocol/server-everything) MCP.
 
-```jsonc title="corro.jsonc"
+```jsonc title="opencode.jsonc"
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "mcp_everything": {
       "type": "local",
@@ -130,9 +130,9 @@ use the mcp_everything tool to add the number 3 and 4
 
 Добавьте удаленные серверы MCP, установив для `type` значение `"remote"`.
 
-```json title="corro.json"
+```json title="opencode.json"
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "my-remote-mcp": {
       "type": "remote",
@@ -165,7 +165,7 @@ use the mcp_everything tool to add the number 3 and 4
 
 ## OAuth
 
-corro автоматически обрабатывает аутентификацию OAuth для удаленных серверов MCP. Когда серверу требуется аутентификация, corro:
+opencode автоматически обрабатывает аутентификацию OAuth для удаленных серверов MCP. Когда серверу требуется аутентификация, opencode:
 
 1. Обнаружьте ответ 401 и инициируйте поток OAuth.
 2. Используйте **Динамическую регистрацию клиента (RFC 7591)**, если это поддерживается сервером.
@@ -177,9 +177,9 @@ corro автоматически обрабатывает аутентифика
 
 Для большинства серверов MCP с поддержкой OAuth не требуется никакой специальной настройки. Просто настройте удаленный сервер:
 
-```json title="corro.json"
+```json title="opencode.json"
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "my-oauth-server": {
       "type": "remote",
@@ -189,7 +189,7 @@ corro автоматически обрабатывает аутентифика
 }
 ```
 
-Если сервер требует аутентификации, corro предложит вам пройти аутентификацию при первой попытке его использования. Если нет, вы можете [вручную запустить поток ](#authenticating) с помощью `corro mcp auth <server-name>`.
+Если сервер требует аутентификации, opencode предложит вам пройти аутентификацию при первой попытке его использования. Если нет, вы можете [вручную запустить поток ](#authenticating) с помощью `opencode mcp auth <server-name>`.
 
 ---
 
@@ -197,9 +197,9 @@ corro автоматически обрабатывает аутентифика
 
 Если у вас есть учетные данные клиента от поставщика сервера MCP, вы можете их настроить:
 
-```json title="corro.json" {7-11}
+```json title="opencode.json" {7-11}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "my-oauth-server": {
       "type": "remote",
@@ -223,22 +223,22 @@ corro автоматически обрабатывает аутентифика
 Аутентификация с помощью определенного сервера MCP:
 
 ```bash
-corro mcp auth my-oauth-server
+opencode mcp auth my-oauth-server
 ```
 
 Перечислите все серверы MCP и их статус аутентификации:
 
 ```bash
-corro mcp list
+opencode mcp list
 ```
 
 Удалить сохраненные учетные данные:
 
 ```bash
-corro mcp logout my-oauth-server
+opencode mcp logout my-oauth-server
 ```
 
-Команда `mcp auth` откроет ваш браузер для авторизации. После того как вы авторизуетесь, corro надежно сохранит токены в `~/.local/share/corro/mcp-auth.json`.
+Команда `mcp auth` откроет ваш браузер для авторизации. После того как вы авторизуетесь, opencode надежно сохранит токены в `~/.local/share/opencode/mcp-auth.json`.
 
 ---
 
@@ -246,9 +246,9 @@ corro mcp logout my-oauth-server
 
 Если вы хотите отключить автоматический OAuth для сервера (например, для серверов, которые вместо этого используют ключи API), установите для `oauth` значение `false`:
 
-```json title="corro.json" {7}
+```json title="opencode.json" {7}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "my-api-key-server": {
       "type": "remote",
@@ -279,10 +279,10 @@ corro mcp logout my-oauth-server
 
 ```bash
 # View auth status for all OAuth-capable servers
-corro mcp auth list
+opencode mcp auth list
 
 # Debug connection and OAuth flow for a specific server
-corro mcp debug my-oauth-server
+opencode mcp debug my-oauth-server
 ```
 
 Команда `mcp debug` показывает текущий статус аутентификации, проверяет соединение HTTP и пытается выполнить поток обнаружения OAuth.
@@ -291,7 +291,7 @@ corro mcp debug my-oauth-server
 
 ## Управление
 
-Ваши MCP доступны в виде инструментов corro наряду со встроенными инструментами. Таким образом, вы можете управлять ими через конфигурацию corro, как и любым другим инструментом.
+Ваши MCP доступны в виде инструментов opencode наряду со встроенными инструментами. Таким образом, вы можете управлять ими через конфигурацию opencode, как и любым другим инструментом.
 
 ---
 
@@ -299,9 +299,9 @@ corro mcp debug my-oauth-server
 
 Это означает, что вы можете включать или отключать их глобально.
 
-```json title="corro.json" {14}
+```json title="opencode.json" {14}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "my-mcp-foo": {
       "type": "local",
@@ -320,9 +320,9 @@ corro mcp debug my-oauth-server
 
 Мы также можем использовать шаблон glob, чтобы отключить все соответствующие MCP.
 
-```json title="corro.json" {14}
+```json title="opencode.json" {14}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "my-mcp-foo": {
       "type": "local",
@@ -350,9 +350,9 @@ corro mcp debug my-oauth-server
 1. Отключите его как инструмент глобально.
 2. В вашей [конфигурации агента](/docs/agents#tools) включите сервер MCP в качестве инструмента.
 
-```json title="corro.json" {11, 14-18}
+```json title="opencode.json" {11, 14-18}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "my-mcp": {
       "type": "local",
@@ -404,9 +404,9 @@ corro mcp debug my-oauth-server
 
 Добавьте [сервер Sentry MCP](https://mcp.sentry.dev) для взаимодействия с вашими проектами и проблемами Sentry.
 
-```json title="corro.json" {4-8}
+```json title="opencode.json" {4-8}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "sentry": {
       "type": "remote",
@@ -420,10 +420,10 @@ corro mcp debug my-oauth-server
 После добавления конфигурации пройдите аутентификацию с помощью Sentry:
 
 ```bash
-corro mcp auth sentry
+opencode mcp auth sentry
 ```
 
-Откроется окно браузера для завершения процесса OAuth и подключения corro к вашей учетной записи Sentry.
+Откроется окно браузера для завершения процесса OAuth и подключения opencode к вашей учетной записи Sentry.
 
 После аутентификации вы можете использовать инструменты Sentry в своих подсказках для запроса данных о проблемах, проектах и ​​ошибках.
 
@@ -437,9 +437,9 @@ Show me the latest unresolved issues in my project. use sentry
 
 Добавьте [сервер Context7 MCP](https://github.com/upstash/context7) для поиска в документах.
 
-```json title="corro.json" {4-7}
+```json title="opencode.json" {4-7}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "context7": {
       "type": "remote",
@@ -451,9 +451,9 @@ Show me the latest unresolved issues in my project. use sentry
 
 Если вы зарегистрировали бесплатную учетную запись, вы можете использовать свой ключ API и получить более высокие ограничения скорости.
 
-```json title="corro.json" {7-9}
+```json title="opencode.json" {7-9}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "context7": {
       "type": "remote",
@@ -486,9 +486,9 @@ When you need to search docs, use `context7` tools.
 
 Добавьте сервер MCP [Grep от Vercel](https://grep.app) для поиска по фрагментам кода на GitHub.
 
-```json title="corro.json" {4-7}
+```json title="opencode.json" {4-7}
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "gh_grep": {
       "type": "remote",

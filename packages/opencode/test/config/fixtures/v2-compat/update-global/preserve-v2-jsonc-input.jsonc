@@ -1,5 +1,5 @@
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   // The V1 update must keep comments and native settings.
   "username": "before",
   "mcp": {

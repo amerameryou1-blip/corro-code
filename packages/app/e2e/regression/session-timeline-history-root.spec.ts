@@ -65,7 +65,7 @@ for (const scenario of scenarios) {
         all: [
           {
             id: "opencode",
-            name: "Corro Code",
+            name: "OpenCode",
             models: {
               "claude-opus-4-6": {
                 id: "claude-opus-4-6",

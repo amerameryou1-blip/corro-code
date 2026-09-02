@@ -1,5 +1,5 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
-import { Corro Code, type OpenCodeClient } from "@opencode-ai/client/promise"
+import { OpenCode, type OpenCodeClient } from "@opencode-ai/client/promise"
 import type { ServerConnection } from "@/context/server"
 import { decode64 } from "@/utils/base64"
 
@@ -45,7 +45,7 @@ export function createApiForServer(input: {
   server: ServerConnection.HttpBase
   fetch?: typeof globalThis.fetch
 }): OpenCodeClient {
-  return Corro Code.make({
+  return OpenCode.make({
     baseUrl: input.server.url,
     fetch: input.fetch,
     headers: input.server.password

@@ -465,7 +465,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://corrocode.dev/",
+            "HTTP-Referer": "https://opencode.ai/",
             "X-Title": "opencode",
             "X-Source": "opencode",
           },
@@ -476,7 +476,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://corrocode.dev/",
+            "HTTP-Referer": "https://opencode.ai/",
             "X-Title": "opencode",
           },
         },
@@ -486,7 +486,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: provider.source === "config",
         options: {
           headers: {
-            "HTTP-Referer": "https://corrocode.dev/",
+            "HTTP-Referer": "https://opencode.ai/",
             "X-Title": "opencode",
             "X-BILLING-INVOKE-ORIGIN": "Corro Code",
           },
@@ -497,7 +497,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "http-referer": "https://corrocode.dev/",
+            "http-referer": "https://opencode.ai/",
             "x-title": "opencode",
           },
         },
@@ -602,7 +602,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://corrocode.dev/",
+            "HTTP-Referer": "https://opencode.ai/",
             "X-Title": "opencode",
           },
         },
@@ -892,7 +892,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://corrocode.dev/",
+            "HTTP-Referer": "https://opencode.ai/",
             "X-Title": "opencode",
           },
         },

@@ -3,7 +3,7 @@ title: Fejlfinding
 description: Almindelige problemer, og hvordan de løses.
 ---
 
-For at fejlfinde problemer med Corro Code, start med at tjekke logfilerne og de lokale data, den gemmer på disken.
+For at fejlfinde problemer med OpenCode, start med at tjekke logfilerne og de lokale data, den gemmer på disken.
 
 ---
 
@@ -11,21 +11,21 @@ For at fejlfinde problemer med Corro Code, start med at tjekke logfilerne og de 
 
 Logfiler skrives til:
 
-- **macOS/Linux**: `~/.local/share/corro/log/`
-- **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.local\share\corro\log`
+- **macOS/Linux**: `~/.local/share/opencode/log/`
+- **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.local\share\opencode\log`
 
 Logfiler navngives med tidsstempler (f.eks. `2025-01-09T123456.log`) og de sidste 10 logfiler beholdes.
 
-Du kan angive logniveauet med kommandolinjeflaget `--log-level` for at få mere detaljeret fejlfindingsinformation. For eksempel `corro --log-level DEBUG`.
+Du kan angive logniveauet med kommandolinjeflaget `--log-level` for at få mere detaljeret fejlfindingsinformation. For eksempel `opencode --log-level DEBUG`.
 
 ---
 
 ## Lagring
 
-corro gemmer sessionsdata og andre applikationsdata på disken på:
+opencode gemmer sessionsdata og andre applikationsdata på disken på:
 
-- **macOS/Linux**: `~/.local/share/corro/`
-- **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.local\share\corro`
+- **macOS/Linux**: `~/.local/share/opencode/`
+- **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.local\share\opencode`
 
 Denne mappe indeholder:
 
@@ -39,13 +39,13 @@ Denne mappe indeholder:
 
 ## Desktop-app
 
-Corro Code Desktop kører en lokal Corro Code-server (`corro-cli` sidevognen) i baggrunden. De fleste problemer er forårsaget af et plugin, der fungerer dårligt, en ødelagt cache eller en dårlig serverindstilling.
+OpenCode Desktop kører en lokal OpenCode-server (`opencode-cli` sidevognen) i baggrunden. De fleste problemer er forårsaget af et plugin, der fungerer dårligt, en ødelagt cache eller en dårlig serverindstilling.
 
 ### Hurtige tjek
 
 - Afslut og start appen på ny.
 - Hvis appen viser en fejlskærm, klikker du på **Start på ny** og kopierer fejldetaljerne.
-- Kun macOS: `Corro Code`-menu -> **Genindlæs webvisning** (hjælper hvis UI er tom/frosset).
+- Kun macOS: `OpenCode`-menu -> **Genindlæs webvisning** (hjælper hvis UI er tom/frosset).
 
 ---
 
@@ -57,28 +57,28 @@ Hvis skrivebordsappen går ned ved opstart, hænger eller opfører sig mærkelig
 
 Åbn den globale konfigurationsfil og se efter en `plugin`-nøgle.
 
-- **macOS/Linux**: `~/.config/corro/corro.jsonc` (eller `~/.config/corro/corro.json`)
-- **macOS/Linux** (ældre installationer): `~/.local/share/corro/corro.jsonc`
-- **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.config\corro\corro.jsonc`
+- **macOS/Linux**: `~/.config/opencode/opencode.jsonc` (eller `~/.config/opencode/opencode.json`)
+- **macOS/Linux** (ældre installationer): `~/.local/share/opencode/opencode.jsonc`
+- **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.config\opencode\opencode.jsonc`
 
 Hvis du har konfigureret plugins, deaktiver dem midlertidigt ved at fjerne nøglen eller sætte den til et tomt array:
 
 ```jsonc
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "plugin": [],
 }
 ```
 
 #### Tjek plugin-mapper
 
-Corro Code kan også indlæse lokale plugins fra disken. Flyt disse midlertidigt væk (eller giv mappen nyt navn) og start skrivebordsappen på ny:
+OpenCode kan også indlæse lokale plugins fra disken. Flyt disse midlertidigt væk (eller giv mappen nyt navn) og start skrivebordsappen på ny:
 
 - **Globale plugins**
-  - **macOS/Linux**: `~/.config/corro/plugins/`
-  - **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.config\corro\plugins`
+  - **macOS/Linux**: `~/.config/opencode/plugins/`
+  - **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.config\opencode\plugins`
 - **Projektplugins** (kun hvis du bruger konfiguration per projekt)
-  - `<your-project>/.corro/plugins/`
+  - `<your-project>/.opencode/plugins/`
 
 Hvis appen begynder at fungere igen, aktiverer du plugins én ad gangen for at finde ud af, hvilken som forårsager problemet.
 
@@ -86,22 +86,22 @@ Hvis appen begynder at fungere igen, aktiverer du plugins én ad gangen for at f
 
 ### Ryd cachen
 
-Hvis deaktivering af plugins ikke hjælper (eller en plugin-installation sidder fast), tøm cachen så Corro Code kan genopbygge den.
+Hvis deaktivering af plugins ikke hjælper (eller en plugin-installation sidder fast), tøm cachen så OpenCode kan genopbygge den.
 
-1. Afslut Corro Code Desktop helt.
+1. Afslut OpenCode Desktop helt.
 2. Slet cache-mappen:
 
-- **macOS**: Finder -> `Cmd+Shift+G` -> indsæt `~/.cache/corro`
-- **Linux**: slet `~/.cache/corro` (eller kør `rm -rf ~/.cache/corro`)
-- **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.cache\corro`
+- **macOS**: Finder -> `Cmd+Shift+G` -> indsæt `~/.cache/opencode`
+- **Linux**: slet `~/.cache/opencode` (eller kør `rm -rf ~/.cache/opencode`)
+- **Windows**: Tryk `WIN+R` og indsæt `%USERPROFILE%\.cache\opencode`
 
-3. Start Corro Code Desktop på ny.
+3. Start OpenCode Desktop på ny.
 
 ---
 
 ### Løs problemer med serverforbindelse
 
-Corro Code Desktop kan enten starte sin egen lokale server (standard) eller forbinde til en server URL, du har konfigureret.
+OpenCode Desktop kan enten starte sin egen lokale server (standard) eller forbinde til en server URL, du har konfigureret.
 
 Hvis du ser en **"Forbindelse mislykkedes"**-dialogboks (eller appen kommer aldrig forbi splash-skærmen), se efter en brugerdefineret server URL.
 
@@ -111,7 +111,7 @@ Fra startskærmen klikker du på servernavnet (med statusprikken) for at åbne s
 
 #### Fjern `server.port` / `server.hostname` fra din konfiguration
 
-Hvis `corro.json(c)` indeholder en `server`-del, fjern den midlertidigt og start skrivebordsappen på ny.
+Hvis `opencode.json(c)` indeholder en `server`-del, fjern den midlertidigt og start skrivebordsappen på ny.
 
 #### Tjek miljøvariabler
 
@@ -132,21 +132,21 @@ På Linux kan nogle Wayland-opsætninger forårsage tomme vinduer eller komposit
 
 ### Windows: WebView2-runtime
 
-På Windows kræver Corro Code Desktop Microsoft Edge **WebView2 Runtime**. Hvis appen åbnes i et tomt vindue eller ikke starter, installer/opdater WebView2 og prøv igen.
+På Windows kræver OpenCode Desktop Microsoft Edge **WebView2 Runtime**. Hvis appen åbnes i et tomt vindue eller ikke starter, installer/opdater WebView2 og prøv igen.
 
 ---
 
 ### Windows: Generelle ydeevneproblemer
 
-Hvis du oplever langsom ydeevne, problemer med filadgang eller terminalproblemer på Windows, kan du prøve at bruge [WSL (Windows Subsystem for Linux)](/docs/windows-wsl). WSL giver et Linux-miljø som fungerer mere sømløst med funktionerne i Corro Code.
+Hvis du oplever langsom ydeevne, problemer med filadgang eller terminalproblemer på Windows, kan du prøve at bruge [WSL (Windows Subsystem for Linux)](/docs/windows-wsl). WSL giver et Linux-miljø som fungerer mere sømløst med funktionerne i OpenCode.
 
 ---
 
 ### Meddelelser vises ikke
 
-Corro Code Desktop viser kun systemvarsler når:
+OpenCode Desktop viser kun systemvarsler når:
 
-- varsler er aktiveret for Corro Code i dine OS-indstillinger, og
+- varsler er aktiveret for OpenCode i dine OS-indstillinger, og
 - appvinduet ikke er fokuseret.
 
 ---
@@ -155,11 +155,11 @@ Corro Code Desktop viser kun systemvarsler når:
 
 Hvis appen ikke starter og du ikke kan slette indstillingerne fra UI, nulstil skrivebordsappens gemte tilstand.
 
-1. Afslut Corro Code Desktop.
-2. Find og slet disse filer (de findes i Corro Code Desktop-appens datamappe):
+1. Afslut OpenCode Desktop.
+2. Find og slet disse filer (de findes i OpenCode Desktop-appens datamappe):
 
-- `corro.settings.dat` (skrivebordsstandardserver URL)
-- `corro.global.dat` og `corro.workspace.*.dat` (UI tilstand som nylige servere/projekter)
+- `opencode.settings.dat` (skrivebordsstandardserver URL)
+- `opencode.global.dat` og `opencode.workspace.*.dat` (UI tilstand som nylige servere/projekter)
 
 Sådan finder du mappen hurtigt:
 
@@ -171,13 +171,13 @@ Sådan finder du mappen hurtigt:
 
 ## Få hjælp
 
-Hvis du oplever problemer med Corro Code:
+Hvis du oplever problemer med OpenCode:
 
 1. **Rapporter problemer på GitHub**
 
    Den bedste måde at rapportere fejl eller bede om funktioner på er gennem vores GitHub-repo:
 
-   [**github.com/anomalyco/corro/issues**](https://github.com/anomalyco/corro/issues)
+   [**github.com/anomalyco/opencode/issues**](https://github.com/anomalyco/opencode/issues)
 
    Før du opretter et nyt issue, søg i eksisterende issues for at se om dit problem allerede er rapporteret.
 
@@ -185,7 +185,7 @@ Hvis du oplever problemer med Corro Code:
 
    For hjælp i realtid og fællesskabsdiskussion, bliv en del af vores Discord-server:
 
-   [**corro.ai/discord**](https://corrocode.dev/discord)
+   [**opencode.ai/discord**](https://opencode.ai/discord)
 
 ---
 
@@ -195,11 +195,11 @@ Her er nogle almindelige problemer og hvordan du kan løse dem.
 
 ---
 
-### Corro Code vil ikke starte
+### OpenCode vil ikke starte
 
 1. Tjek logfilerne for fejlmeddelelser
 2. Prøv at køre med `--print-logs` for at se output i terminalen
-3. Sørg for at du har den nyeste version med `corro upgrade`
+3. Sørg for at du har den nyeste version med `opencode upgrade`
 
 ---
 
@@ -225,9 +225,9 @@ Eksempler:
 
 - `openai/gpt-4.1`
 - `openrouter/google/gemini-2.5-flash`
-- `corro/kimi-k2`
+- `opencode/kimi-k2`
 
-For at finde ud af hvilke modeller du har adgang til, kør `corro models`
+For at finde ud af hvilke modeller du har adgang til, kør `opencode models`
 
 ---
 
@@ -241,10 +241,10 @@ For at løse dette:
 2. Hvis problemet vedvarer, prøv at tømme den gemte konfiguration:
 
    ```bash
-   rm -rf ~/.local/share/corro
+   rm -rf ~/.local/share/opencode
    ```
 
-   På Windows, tryk `WIN+R` og slet: `%USERPROFILE%\.local\share\corro`
+   På Windows, tryk `WIN+R` og slet: `%USERPROFILE%\.local\share\opencode`
 
 3. Godkend på ny med din udbyder ved at bruge kommandoen `/connect` i TUI.
 
@@ -252,21 +252,21 @@ For at løse dette:
 
 ### AI_APICallError og udbyderpakkeproblemer
 
-Hvis du støder på API-kaldsfejl, kan dette skyldes forældede udbyderpakker. corro installerer dynamisk udbyderpakker (OpenAI, Anthropic, Google, etc.) efter behov og cacher dem lokalt.
+Hvis du støder på API-kaldsfejl, kan dette skyldes forældede udbyderpakker. opencode installerer dynamisk udbyderpakker (OpenAI, Anthropic, Google, etc.) efter behov og cacher dem lokalt.
 
 For at løse problemer med udbyderpakke:
 
 1. Tøm udbyderens pakkecache:
 
    ```bash
-   rm -rf ~/.cache/corro
+   rm -rf ~/.cache/opencode
    ```
 
-   På Windows, tryk `WIN+R` og slet: `%USERPROFILE%\.cache\corro`
+   På Windows, tryk `WIN+R` og slet: `%USERPROFILE%\.cache\opencode`
 
-2. Start corro på ny for at installere de nyeste udbyderpakker på ny
+2. Start opencode på ny for at installere de nyeste udbyderpakker på ny
 
-Dette vil tvinge corro til at downloade de nyeste versioner af udbyderpakkerne, som ofte løser kompatibilitetsproblemer med modelparametre og API-ændringer.
+Dette vil tvinge opencode til at downloade de nyeste versioner af udbyderpakkerne, som ofte løser kompatibilitetsproblemer med modelparametre og API-ændringer.
 
 ---
 
@@ -297,4 +297,4 @@ Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
 export DISPLAY=:99.0
 ```
 
-corro vil opdage om du bruger Wayland og foretrække `wl-clipboard`, ellers vil den prøve at finde udklipsholderværktøjer i rækkefølgen: `xclip` og `xsel`.
+opencode vil opdage om du bruger Wayland og foretrække `wl-clipboard`, ellers vil den prøve at finde udklipsholderværktøjer i rækkefølgen: `xclip` og `xsel`.

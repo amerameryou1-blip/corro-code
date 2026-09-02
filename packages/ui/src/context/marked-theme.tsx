@@ -1,7 +1,7 @@
 import type { ThemeRegistrationResolved } from "@pierre/diffs"
 
 export const OpenCodeTheme = {
-  name: "Corro Code",
+  name: "OpenCode",
   bg: "var(--color-background-stronger)",
   fg: "var(--text-base)",
   colors: {

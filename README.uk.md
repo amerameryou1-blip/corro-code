@@ -1,17 +1,17 @@
 <p align="center">
-  <a href="https://corrocode.dev">
+  <a href="https://opencode.ai">
     <picture>
       <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
       <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="Corro Code logo">
+      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
     </picture>
   </a>
 </p>
 <p align="center">AI-агент для програмування з відкритим кодом.</p>
 <p align="center">
-  <a href="https://corrocode.dev/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/corro-ai"><img alt="npm" src="https://img.shields.io/npm/v/corro-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/corro/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/corro/publish.yml?style=flat-square&branch=dev" /></a>
+  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
+  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
+  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
 </p>
 
 <p align="center">
@@ -39,7 +39,7 @@
   <a href="README.vi.md">Tiếng Việt</a>
 </p>
 
-[![Corro Code Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://corrocode.dev)
+[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
 
 ---
 
@@ -47,18 +47,18 @@
 
 ```bash
 # YOLO
-curl -fsSL https://corrocode.dev/install | bash
+curl -fsSL https://opencode.ai/install | bash
 
 # Менеджери пакетів
-npm i -g corro-ai@latest        # або bun/pnpm/yarn
-scoop install corro             # Windows
-choco install corro             # Windows
-brew install anomalyco/tap/corro # macOS і Linux (рекомендовано, завжди актуально)
-brew install corro              # macOS і Linux (офіційна формула Homebrew, оновлюється рідше)
-sudo pacman -S corro            # Arch Linux (Stable)
-paru -S corro-bin               # Arch Linux (Latest from AUR)
-mise use -g corro               # Будь-яка ОС
-nix run nixpkgs#corro           # або github:anomalyco/corro для найновішої dev-гілки
+npm i -g opencode-ai@latest        # або bun/pnpm/yarn
+scoop install opencode             # Windows
+choco install opencode             # Windows
+brew install anomalyco/tap/opencode # macOS і Linux (рекомендовано, завжди актуально)
+brew install opencode              # macOS і Linux (офіційна формула Homebrew, оновлюється рідше)
+sudo pacman -S opencode            # Arch Linux (Stable)
+paru -S opencode-bin               # Arch Linux (Latest from AUR)
+mise use -g opencode               # Будь-яка ОС
+nix run nixpkgs#opencode           # або github:anomalyco/opencode для найновішої dev-гілки
 ```
 
 > [!TIP]
@@ -66,20 +66,20 @@ nix run nixpkgs#corro           # або github:anomalyco/corro для найн�
 
 ### Десктопний застосунок (BETA)
 
-Corro Code також доступний як десктопний застосунок. Завантажуйте напряму зі [сторінки релізів](https://github.com/anomalyco/corro/releases) або [corro.ai/download](https://corrocode.dev/download).
+OpenCode також доступний як десктопний застосунок. Завантажуйте напряму зі [сторінки релізів](https://github.com/anomalyco/opencode/releases) або [opencode.ai/download](https://opencode.ai/download).
 
 | Платформа             | Завантаження                       |
 | --------------------- | ---------------------------------- |
-| macOS (Apple Silicon) | `corro-desktop-mac-arm64.dmg`   |
-| macOS (Intel)         | `corro-desktop-mac-x64.dmg`     |
-| Windows               | `corro-desktop-windows-x64.exe` |
+| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
+| macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
+| Windows               | `opencode-desktop-windows-x64.exe` |
 | Linux                 | `.deb`, `.rpm` або AppImage        |
 
 ```bash
 # macOS (Homebrew)
-brew install --cask corro-desktop
+brew install --cask opencode-desktop
 # Windows (Scoop)
-scoop bucket add extras; scoop install extras/corro-desktop
+scoop bucket add extras; scoop install extras/opencode-desktop
 ```
 
 #### Каталог встановлення
@@ -89,17 +89,17 @@ scoop bucket add extras; scoop install extras/corro-desktop
 1. `$OPENCODE_INSTALL_DIR` - Користувацький каталог встановлення
 2. `$XDG_BIN_DIR` - Шлях, сумісний зі специфікацією XDG Base Directory
 3. `$HOME/bin` - Стандартний каталог користувацьких бінарників (якщо існує або його можна створити)
-4. `$HOME/.corro/bin` - Резервний варіант за замовчуванням
+4. `$HOME/.opencode/bin` - Резервний варіант за замовчуванням
 
 ```bash
 # Приклади
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://corrocode.dev/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://corrocode.dev/install | bash
+OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
+XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
 ```
 
 ### Агенти
 
-Corro Code містить два вбудовані агенти, між якими можна перемикатися клавішею `Tab`.
+OpenCode містить два вбудовані агенти, між якими можна перемикатися клавішею `Tab`.
 
 - **build** - Агент за замовчуванням із повним доступом для завдань розробки
 - **plan** - Агент лише для читання для аналізу та дослідження коду
@@ -110,21 +110,21 @@ Corro Code містить два вбудовані агенти, між яки�
 Також доступний допоміжний агент **general** для складного пошуку та багатокрокових завдань.
 Він використовується всередині системи й може бути викликаний у повідомленнях через `@general`.
 
-Дізнайтеся більше про [agents](https://corrocode.dev/docs/agents).
+Дізнайтеся більше про [agents](https://opencode.ai/docs/agents).
 
 ### Документація
 
-Щоб дізнатися більше про налаштування Corro Code, [**перейдіть до нашої документації**](https://corrocode.dev/docs).
+Щоб дізнатися більше про налаштування OpenCode, [**перейдіть до нашої документації**](https://opencode.ai/docs).
 
 ### Внесок
 
-Якщо ви хочете зробити внесок в Corro Code, будь ласка, прочитайте нашу [документацію для контриб'юторів](./CONTRIBUTING.md) перед надсиланням pull request.
+Якщо ви хочете зробити внесок в OpenCode, будь ласка, прочитайте нашу [документацію для контриб'юторів](./CONTRIBUTING.md) перед надсиланням pull request.
 
-### Проєкти на базі Corro Code
+### Проєкти на базі OpenCode
 
-Якщо ви працюєте над проєктом, пов'язаним з Corro Code, і використовуєте "corro" у назві, наприклад "corro-dashboard" або "corro-mobile", додайте примітку до свого README.
-Уточніть, що цей проєкт не створений командою Corro Code і жодним чином не афілійований із нами.
+Якщо ви працюєте над проєктом, пов'язаним з OpenCode, і використовуєте "opencode" у назві, наприклад "opencode-dashboard" або "opencode-mobile", додайте примітку до свого README.
+Уточніть, що цей проєкт не створений командою OpenCode і жодним чином не афілійований із нами.
 
 ---
 
-**Приєднуйтеся до нашої спільноти** [Discord](https://discord.gg/corro) | [X.com](https://x.com/corro)
+**Приєднуйтеся до нашої спільноти** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)

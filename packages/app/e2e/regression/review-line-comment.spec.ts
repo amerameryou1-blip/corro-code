@@ -3,7 +3,7 @@ import { base64Encode } from "@opencode-ai/core/util/encode"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectAppVisible, expectSessionTitle } from "../utils/waits"
 
-const directory = "C:/Corro Code/ReviewLineCommentRegression"
+const directory = "C:/OpenCode/ReviewLineCommentRegression"
 const sessionID = "ses_review_line_comment_regression"
 const title = "Review line comment regression"
 

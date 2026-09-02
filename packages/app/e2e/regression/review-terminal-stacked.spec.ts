@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
 
-const directory = "C:/Corro Code/ReviewTerminalStacked"
+const directory = "C:/OpenCode/ReviewTerminalStacked"
 const projectID = "proj_review_terminal_stacked"
 const sessionID = "ses_review_terminal_stacked"
 const title = "Review terminal stacked"
@@ -39,7 +39,7 @@ test("keeps the review tree and terminal sized when both panels are open", async
       all: [
         {
           id: "opencode",
-          name: "Corro Code",
+          name: "OpenCode",
           models: { test: { id: "test", name: "Test", limit: { context: 200_000 } } },
         },
       ],

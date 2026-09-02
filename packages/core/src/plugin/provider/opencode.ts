@@ -13,7 +13,7 @@ import { ConfigProviderV1 } from "../../v1/config/provider"
 import { ConfigProviderOptionsV1 } from "../../v1/config/provider-options"
 import { ConfigV1 } from "../../v1/config/config"
 
-const defaultServer = "https://corrocode.dev/console"
+const defaultServer = "https://opencode.ai/console"
 const clientID = "opencode-cli"
 const methodID = Integration.MethodID.make("device")
 const RemoteResponse = Schema.Struct({ config: ConfigV1.Info })
@@ -40,7 +40,7 @@ function oauth(http: HttpClient.HttpClient) {
     method: {
       id: methodID,
       type: "oauth",
-      label: "Corro Code Console account",
+      label: "OpenCode Console account",
     },
     authorize: () =>
       Effect.gen(function* () {
@@ -101,7 +101,7 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
       providers = credential
         ? yield* fetchProviders(http, credential).pipe(
             Effect.catch((cause) =>
-              Effect.logWarning("failed to load Corro Code provider config", { cause }).pipe(Effect.as(undefined)),
+              Effect.logWarning("failed to load OpenCode provider config", { cause }).pipe(Effect.as(undefined)),
             ),
           )
         : undefined
@@ -109,7 +109,7 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
 
     yield* ctx.integration.transform((draft) => {
       draft.update("opencode", (integration) => {
-        integration.name = "Corro Code"
+        integration.name = "OpenCode"
       })
       draft.method.update(oauth(http))
       draft.method.update({ integrationID: "opencode", method: { type: "key", label: "API key (service account)" } })

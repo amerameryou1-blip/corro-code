@@ -22,7 +22,7 @@ describe("timeline fixture validation", () => {
     ).toThrow()
     expect(() =>
       validateTimelineEvent({
-        directory: "C:/Corro Code/TimelineStability",
+        directory: "C:/OpenCode/TimelineStability",
         payload: {
           id: "evt_invalid_status",
           type: "session.status",

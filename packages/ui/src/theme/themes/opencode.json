@@ -1,6 +1,6 @@
 {
-  "$schema": "https://corrocode.dev/desktop-theme.json",
-  "name": "Corro Code",
+  "$schema": "https://opencode.ai/desktop-theme.json",
+  "name": "OpenCode",
   "id": "opencode",
   "light": {
     "palette": {

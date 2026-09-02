@@ -1,4 +1,4 @@
-import type { TuiPlugin, TuiPluginApi } from "@corro-ai/plugin/tui"
+import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, Show } from "solid-js"
 import { abbreviateHome } from "../../runtime"
@@ -11,7 +11,7 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
   const theme = () => props.api.theme.current
   const has = createMemo(() =>
     props.api.state.provider.some(
-      (item) => item.id !== "corro" || Object.values(item.models).some((model) => model.cost?.input !== 0),
+      (item) => item.id !== "opencode" || Object.values(item.models).some((model) => model.cost?.input !== 0),
     ),
   )
   const done = createMemo(() => props.api.kv.get("dismissed_getting_started", false))

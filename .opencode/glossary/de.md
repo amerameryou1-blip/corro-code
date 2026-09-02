@@ -2,12 +2,12 @@
 
 ## Sources
 
-- PR #9817: https://github.com/anomalyco/corro/pull/9817
+- PR #9817: https://github.com/anomalyco/opencode/pull/9817
 
 ## Do Not Translate (Locale Additions)
 
-- `Corro Code` (preserve casing in prose; keep `corro` only in commands, package names, paths, or code)
-- `Corro Code CLI`
+- `OpenCode` (preserve casing in prose; keep `opencode` only in commands, package names, paths, or code)
+- `OpenCode CLI`
 - `CLI`, `TUI`, `MCP`, `OAuth`
 - Commands, flags, file paths, and code literals (keep exactly as written)
 

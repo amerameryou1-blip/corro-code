@@ -1,28 +1,28 @@
 ---
 title: الويب
-description: استخدام Corro Code في متصفحك.
+description: استخدام OpenCode في متصفحك.
 ---
 
-يمكن تشغيل Corro Code كتطبيق ويب داخل متصفحك، ليمنحك تجربة البرمجة القوية بالذكاء الاصطناعي نفسها دون الحاجة إلى terminal.
+يمكن تشغيل OpenCode كتطبيق ويب داخل متصفحك، ليمنحك تجربة البرمجة القوية بالذكاء الاصطناعي نفسها دون الحاجة إلى terminal.
 
-![Corro Code Web - جلسة جديدة](../../../assets/web/web-homepage-new-session.png)
+![OpenCode Web - جلسة جديدة](../../../assets/web/web-homepage-new-session.png)
 
 ## البدء
 
 ابدأ تشغيل واجهة الويب عبر تنفيذ:
 
 ```bash
-corro web
+opencode web
 ```
 
-يؤدي ذلك إلى تشغيل خادم محلي على `127.0.0.1` بمنفذ عشوائي متاح، ويفتح Corro Code تلقائيا في المتصفح الافتراضي لديك.
+يؤدي ذلك إلى تشغيل خادم محلي على `127.0.0.1` بمنفذ عشوائي متاح، ويفتح OpenCode تلقائيا في المتصفح الافتراضي لديك.
 
 :::caution
 إذا لم يتم تعيين `OPENCODE_SERVER_PASSWORD` فسيكون الخادم دون حماية. هذا مناسب للاستخدام المحلي، لكنه يجب أن يكون مُعينا عند إتاحة الوصول عبر الشبكة.
 :::
 
 :::tip[مستخدمو Windows]
-لأفضل تجربة، شغّل `corro web` من [WSL](/docs/windows-wsl) بدلا من PowerShell. يضمن ذلك وصولا صحيحا إلى نظام الملفات وتكاملا أفضل مع terminal.
+لأفضل تجربة، شغّل `opencode web` من [WSL](/docs/windows-wsl) بدلا من PowerShell. يضمن ذلك وصولا صحيحا إلى نظام الملفات وتكاملا أفضل مع terminal.
 :::
 
 ---
@@ -33,21 +33,21 @@ corro web
 
 ### المنفذ
 
-افتراضيا، يختار Corro Code منفذا متاحا. يمكنك تحديد منفذ:
+افتراضيا، يختار OpenCode منفذا متاحا. يمكنك تحديد منفذ:
 
 ```bash
-corro web --port 4096
+opencode web --port 4096
 ```
 
 ### اسم المضيف
 
-افتراضيا، يرتبط الخادم بـ `127.0.0.1` (للاستخدام المحلي فقط). لجعل Corro Code متاحا على شبكتك:
+افتراضيا، يرتبط الخادم بـ `127.0.0.1` (للاستخدام المحلي فقط). لجعل OpenCode متاحا على شبكتك:
 
 ```bash
-corro web --hostname 0.0.0.0
+opencode web --hostname 0.0.0.0
 ```
 
-عند استخدام `0.0.0.0` سيعرض Corro Code كلا من عناوين الوصول المحلي وعناوين الشبكة:
+عند استخدام `0.0.0.0` سيعرض OpenCode كلا من عناوين الوصول المحلي وعناوين الشبكة:
 
 ```
   Local access:       http://localhost:4096
@@ -59,15 +59,15 @@ corro web --hostname 0.0.0.0
 فعّل mDNS لجعل خادمك قابلا للاكتشاف على الشبكة المحلية:
 
 ```bash
-corro web --mdns
+opencode web --mdns
 ```
 
-يضبط ذلك تلقائيا اسم المضيف إلى `0.0.0.0` ويعلن عن الخادم باسم `corro.local`.
+يضبط ذلك تلقائيا اسم المضيف إلى `0.0.0.0` ويعلن عن الخادم باسم `opencode.local`.
 
 يمكنك تخصيص اسم نطاق mDNS لتشغيل عدة نسخ على الشبكة نفسها:
 
 ```bash
-corro web --mdns --mdns-domain myproject.local
+opencode web --mdns --mdns-domain myproject.local
 ```
 
 ### CORS
@@ -75,7 +75,7 @@ corro web --mdns --mdns-domain myproject.local
 للسماح بنطاقات إضافية عبر CORS (مفيد للواجهات الأمامية المخصصة):
 
 ```bash
-corro web --cors https://example.com
+opencode web --cors https://example.com
 ```
 
 ### المصادقة
@@ -83,28 +83,28 @@ corro web --cors https://example.com
 لحماية الوصول، عيّن كلمة مرور عبر متغير البيئة `OPENCODE_SERVER_PASSWORD`:
 
 ```bash
-OPENCODE_SERVER_PASSWORD=secret corro web
+OPENCODE_SERVER_PASSWORD=secret opencode web
 ```
 
-اسم المستخدم الافتراضي هو `corro`، ويمكن تغييره عبر `OPENCODE_SERVER_USERNAME`.
+اسم المستخدم الافتراضي هو `opencode`، ويمكن تغييره عبر `OPENCODE_SERVER_USERNAME`.
 
 ---
 
 ## استخدام واجهة الويب
 
-بعد التشغيل، تتيح لك واجهة الويب الوصول إلى جلسات Corro Code الخاصة بك.
+بعد التشغيل، تتيح لك واجهة الويب الوصول إلى جلسات OpenCode الخاصة بك.
 
 ### الجلسات
 
 اعرض جلساتك وأدرها من الصفحة الرئيسية. يمكنك رؤية الجلسات النشطة وبدء جلسات جديدة.
 
-![Corro Code Web - جلسة نشطة](../../../assets/web/web-homepage-active-session.png)
+![OpenCode Web - جلسة نشطة](../../../assets/web/web-homepage-active-session.png)
 
 ### حالة الخادم
 
 انقر على "See Servers" لعرض الخوادم المتصلة وحالتها.
 
-![Corro Code Web - See Servers (عرض الخوادم)](../../../assets/web/web-homepage-see-servers.png)
+![OpenCode Web - See Servers (عرض الخوادم)](../../../assets/web/web-homepage-see-servers.png)
 
 ---
 
@@ -114,10 +114,10 @@ OPENCODE_SERVER_PASSWORD=secret corro web
 
 ```bash
 # ابدأ خادم الويب
-corro web --port 4096
+opencode web --port 4096
 
 # في محطة طرفية أخرى، اربط TUI
-corro attach http://localhost:4096
+opencode attach http://localhost:4096
 ```
 
 يتيح لك ذلك استخدام واجهة الويب وterminal في الوقت نفسه، مع مشاركة الجلسات والحالة نفسها.
@@ -126,7 +126,7 @@ corro attach http://localhost:4096
 
 ## ملف الإعدادات
 
-يمكنك أيضا ضبط إعدادات الخادم داخل ملف الإعدادات `corro.json`:
+يمكنك أيضا ضبط إعدادات الخادم داخل ملف الإعدادات `opencode.json`:
 
 ```json
 {

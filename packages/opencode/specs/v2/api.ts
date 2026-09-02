@@ -1,9 +1,9 @@
 // @ts-nocheck
 
-import { Corro Code } from "@opencode-ai/core"
+import { OpenCode } from "@opencode-ai/core"
 import { ReadTool } from "@opencode-ai/core/tools"
 
-const opencode = Corro Code.make({})
+const opencode = OpenCode.make({})
 
 opencode.tool.add(ReadTool)
 

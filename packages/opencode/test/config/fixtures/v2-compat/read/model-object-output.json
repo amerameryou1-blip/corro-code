@@ -1,4 +1,4 @@
 {
-  "$schema": "https://corrocode.dev/config.json",
+  "$schema": "https://opencode.ai/config.json",
   "model": "anthropic/claude-sonnet"
 }

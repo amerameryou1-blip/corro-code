@@ -1,6 +1,6 @@
-# Corro Code Desktop
+# OpenCode Desktop
 
-The Corro Code Desktop app, built with Electron.
+The OpenCode Desktop app, built with Electron.
 
 ## Development
 

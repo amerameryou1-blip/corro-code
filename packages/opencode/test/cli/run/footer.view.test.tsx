@@ -59,7 +59,7 @@ function model(input: {
     providerID: "opencode",
     api: {
       id: "opencode",
-      url: "https://corrocode.dev",
+      url: "https://opencode.ai",
       npm: "@ai-sdk/openai-compatible",
     },
     name: input.name,

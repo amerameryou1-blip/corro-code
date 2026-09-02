@@ -1,30 +1,30 @@
 ---
 title: CLI
-description: Corro Code CLI のオプションとコマンド。
+description: OpenCode CLI のオプションとコマンド。
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-Corro Code CLI は、引数なしで実行すると、デフォルトで [TUI](/docs/tui) を開始します。
+OpenCode CLI は、引数なしで実行すると、デフォルトで [TUI](/docs/tui) を開始します。
 
 ```bash
-corro
+opencode
 ```
 
-ただし、このページに記載されているようにコマンドも受け入れます。これにより、Corro Code をプログラム的に操作できるようになります。
+ただし、このページに記載されているようにコマンドも受け入れます。これにより、OpenCode をプログラム的に操作できるようになります。
 
 ```bash
-corro run "Explain how closures work in JavaScript"
+opencode run "Explain how closures work in JavaScript"
 ```
 
 ---
 
 ### tui
 
-Corro Code ターミナルユーザーインターフェイスを開始します。
+OpenCode ターミナルユーザーインターフェイスを開始します。
 
 ```bash
-corro [project]
+opencode [project]
 ```
 
 #### フラグ
@@ -44,36 +44,36 @@ corro [project]
 
 ## コマンド
 
-Corro Code CLI には次のコマンドもあります。
+OpenCode CLI には次のコマンドもあります。
 
 ---
 
 ### agent
 
-Corro Code のエージェントを管理します。
+OpenCode のエージェントを管理します。
 
 ```bash
-corro agent [command]
+opencode agent [command]
 ```
 
 ---
 
 ### attach
 
-`serve` または `web` コマンドを使用して起動された、すでに実行中の Corro Code バックエンドサーバーにターミナルを接続します。
+`serve` または `web` コマンドを使用して起動された、すでに実行中の OpenCode バックエンドサーバーにターミナルを接続します。
 
 ```bash
-corro attach [url]
+opencode attach [url]
 ```
 
-これにより、リモート Corro Code バックエンドで TUI を使用できるようになります。例えば：
+これにより、リモート OpenCode バックエンドで TUI を使用できるようになります。例えば：
 
 ```bash
 # Start the backend server for web/mobile access
-corro web --port 4096 --hostname 0.0.0.0
+opencode web --port 4096 --hostname 0.0.0.0
 
 # In another terminal, attach the TUI to the running backend
-corro attach http://10.20.30.40:4096
+opencode attach http://10.20.30.40:4096
 ```
 
 #### フラグ
@@ -85,7 +85,7 @@ corro attach http://10.20.30.40:4096
 | <nobr><code>{"--session"}</code></nobr>  | `-s`     | 続行するセッション ID                                                             |
 | <nobr><code>{"--fork"}</code></nobr>     |          | 続行時にセッションをフォーク（`--continue` または `--session` と使用）            |
 | <nobr><code>{"--password"}</code></nobr> | `-p`     | Basic 認証パスワード（デフォルトは `OPENCODE_SERVER_PASSWORD`）                   |
-| <nobr><code>{"--username"}</code></nobr> | `-u`     | Basic 認証ユーザー名（デフォルトは `OPENCODE_SERVER_USERNAME` または `corro`） |
+| <nobr><code>{"--username"}</code></nobr> | `-u`     | Basic 認証ユーザー名（デフォルトは `OPENCODE_SERVER_USERNAME` または `opencode`） |
 
 ---
 
@@ -94,7 +94,7 @@ corro attach http://10.20.30.40:4096
 カスタム構成で新しいエージェントを作成します。
 
 ```bash
-corro agent create
+opencode agent create
 ```
 
 このコマンドは、カスタムシステムプロンプトとツール構成を使用して新しいエージェントを作成する手順を示します。
@@ -106,7 +106,7 @@ corro agent create
 利用可能なエージェントをすべてリストします。
 
 ```bash
-corro agent list
+opencode agent list
 ```
 
 ---
@@ -116,20 +116,20 @@ corro agent list
 プロバイダーの資格情報とログインを管理するコマンド。
 
 ```bash
-corro auth [command]
+opencode auth [command]
 ```
 
 ---
 
 #### login
 
-Corro Code は [Models.dev](https://models.dev) のプロバイダーリストを利用しているため、`corro auth login` を使用して、使用したいプロバイダーの API キーを構成できます。これは `~/.local/share/corro/auth.json` に保存されます。
+OpenCode は [Models.dev](https://models.dev) のプロバイダーリストを利用しているため、`opencode auth login` を使用して、使用したいプロバイダーの API キーを構成できます。これは `~/.local/share/opencode/auth.json` に保存されます。
 
 ```bash
-corro auth login
+opencode auth login
 ```
 
-Corro Code が起動すると、認証情報ファイルからプロバイダーがロードされます。また、環境またはプロジェクト内の `.env` ファイルで定義されたキーがあるかどうかも確認します。
+OpenCode が起動すると、認証情報ファイルからプロバイダーがロードされます。また、環境またはプロジェクト内の `.env` ファイルで定義されたキーがあるかどうかも確認します。
 
 ---
 
@@ -138,13 +138,13 @@ Corro Code が起動すると、認証情報ファイルからプロバイダー
 認証情報ファイルに保存されているすべての認証されたプロバイダーをリストします。
 
 ```bash
-corro auth list
+opencode auth list
 ```
 
 またはショートバージョン。
 
 ```bash
-corro auth ls
+opencode auth ls
 ```
 
 ---
@@ -154,7 +154,7 @@ corro auth ls
 資格情報ファイルからプロバイダーをクリアすることで、プロバイダーからログアウトします。
 
 ```bash
-corro auth logout
+opencode auth logout
 ```
 
 ---
@@ -164,7 +164,7 @@ corro auth logout
 リポジトリ自動化のための GitHub エージェントを管理します。
 
 ```bash
-corro github [command]
+opencode github [command]
 ```
 
 ---
@@ -174,7 +174,7 @@ corro github [command]
 GitHub エージェントをリポジトリにインストールします。
 
 ```bash
-corro github install
+opencode github install
 ```
 
 これにより、必要な GitHub Actions ワークフローが設定され、構成プロセスがガイドされます。 [詳細はこちら](/docs/github)。
@@ -186,7 +186,7 @@ corro github install
 GitHub エージェントを実行します。これは通常、GitHub Actions で使用されます。
 
 ```bash
-corro github run
+opencode github run
 ```
 
 ##### フラグ
@@ -203,7 +203,7 @@ corro github run
 モデルコンテキストプロトコルサーバーを管理します。
 
 ```bash
-corro mcp [command]
+opencode mcp [command]
 ```
 
 ---
@@ -213,7 +213,7 @@ corro mcp [command]
 MCP サーバーを構成に追加します。
 
 ```bash
-corro mcp add
+opencode mcp add
 ```
 
 このコマンドは、ローカルまたはリモートの MCP サーバーを追加する手順を示します。
@@ -225,13 +225,13 @@ corro mcp add
 構成されているすべての MCP サーバーとその接続ステータスをリストします。
 
 ```bash
-corro mcp list
+opencode mcp list
 ```
 
 または、短いバージョンを使用してください。
 
 ```bash
-corro mcp ls
+opencode mcp ls
 ```
 
 ---
@@ -241,7 +241,7 @@ corro mcp ls
 OAuth 対応の MCP サーバーで認証します。
 
 ```bash
-corro mcp auth [name]
+opencode mcp auth [name]
 ```
 
 サーバー名を指定しない場合は、利用可能な OAuth 対応サーバーから選択するように求められます。
@@ -249,13 +249,13 @@ corro mcp auth [name]
 OAuth 対応サーバーとその認証ステータスを一覧表示することもできます。
 
 ```bash
-corro mcp auth list
+opencode mcp auth list
 ```
 
 または、短いバージョンを使用してください。
 
 ```bash
-corro mcp auth ls
+opencode mcp auth ls
 ```
 
 ---
@@ -265,7 +265,7 @@ corro mcp auth ls
 MCP サーバーの OAuth 資格情報を削除します。
 
 ```bash
-corro mcp logout [name]
+opencode mcp logout [name]
 ```
 
 ---
@@ -275,7 +275,7 @@ corro mcp logout [name]
 MCP サーバーの OAuth 接続の問題をデバッグします。
 
 ```bash
-corro mcp debug <name>
+opencode mcp debug <name>
 ```
 
 ---
@@ -285,7 +285,7 @@ corro mcp debug <name>
 構成されたプロバイダーから利用可能なすべてのモデルをリストします。
 
 ```bash
-corro models [provider]
+opencode models [provider]
 ```
 
 このコマンドは、構成されたプロバイダー全体で利用可能なすべてのモデルを `provider/model` の形式で表示します。
@@ -295,7 +295,7 @@ corro models [provider]
 オプションでプロバイダー ID を渡して、そのプロバイダーによってモデルをフィルターできます。
 
 ```bash
-corro models anthropic
+opencode models anthropic
 ```
 
 #### フラグ
@@ -305,36 +305,36 @@ corro models anthropic
 | <nobr><code>{"--refresh"}</code></nobr> | models.dev からモデルキャッシュを更新します。                   |
 | <nobr><code>{"--verbose"}</code></nobr> | より詳細なモデル出力を使用します (コストなどのメタデータを含む) |
 
-`--refresh` フラグを使用して、キャッシュされたモデルリストを更新します。これは、新しいモデルがプロバイダーに追加され、それを Corro Code で確認したい場合に便利です。
+`--refresh` フラグを使用して、キャッシュされたモデルリストを更新します。これは、新しいモデルがプロバイダーに追加され、それを OpenCode で確認したい場合に便利です。
 
 ```bash
-corro models --refresh
+opencode models --refresh
 ```
 
 ---
 
 ### run
 
-プロンプトを直接渡して、非対話モードで corro を実行します。
+プロンプトを直接渡して、非対話モードで opencode を実行します。
 
 ```bash
-corro run [message..]
+opencode run [message..]
 ```
 
 これは、スクリプト作成、自動化、または完全な TUI を起動せずに迅速な回答が必要な場合に便利です。例えば。
 
-```bash "corro run"
-corro run Explain the use of context in Go
+```bash "opencode run"
+opencode run Explain the use of context in Go
 ```
 
-実行中の `corro serve` インスタンスにアタッチして、実行ごとの MCP サーバーのコールドブート時間を回避することもできます。
+実行中の `opencode serve` インスタンスにアタッチして、実行ごとの MCP サーバーのコールドブート時間を回避することもできます。
 
 ```bash
 # Start a headless server in one terminal
-corro serve
+opencode serve
 
 # In another terminal, run commands that attach to it
-corro run --attach http://localhost:4096 "Explain async/await in JavaScript"
+opencode run --attach http://localhost:4096 "Explain async/await in JavaScript"
 ```
 
 #### フラグ
@@ -351,9 +351,9 @@ corro run --attach http://localhost:4096 "Explain async/await in JavaScript"
 | <nobr><code>{"--file"}</code></nobr>     | `-f`     | メッセージに添付するファイル                                                              |
 | <nobr><code>{"--format"}</code></nobr>   |          | 形式: デフォルト (フォーマット済み) または json (生の JSON イベント)                      |
 | <nobr><code>{"--title"}</code></nobr>    |          | セッションのタイトル (値が指定されていない場合は、切り詰められたプロンプトが使用されます) |
-| <nobr><code>{"--attach"}</code></nobr>   |          | 実行中の corro サーバー (http://localhost:4096 など) に接続します。                    |
+| <nobr><code>{"--attach"}</code></nobr>   |          | 実行中の opencode サーバー (http://localhost:4096 など) に接続します。                    |
 | <nobr><code>{"--password"}</code></nobr> | `-p`     | Basic 認証パスワード（デフォルトは `OPENCODE_SERVER_PASSWORD`）                           |
-| <nobr><code>{"--username"}</code></nobr> | `-u`     | Basic 認証ユーザー名（デフォルトは `OPENCODE_SERVER_USERNAME` または `corro`）         |
+| <nobr><code>{"--username"}</code></nobr> | `-u`     | Basic 認証ユーザー名（デフォルトは `OPENCODE_SERVER_USERNAME` または `opencode`）         |
 | <nobr><code>{"--dir"}</code></nobr>      |          | 実行ディレクトリ、またはアタッチ時のリモートサーバー上のパス                              |
 | <nobr><code>{"--variant"}</code></nobr>  |          | モデルバリアント（プロバイダー固有の推論レベル）                                          |
 | <nobr><code>{"--thinking"}</code></nobr> |          | 思考ブロックを表示                                                                        |
@@ -363,13 +363,13 @@ corro run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-API アクセスのためにヘッドレス Corro Code サーバーを起動します。完全な HTTP インターフェイスについては、[サーバーのドキュメント](/docs/server) を確認してください。
+API アクセスのためにヘッドレス OpenCode サーバーを起動します。完全な HTTP インターフェイスについては、[サーバーのドキュメント](/docs/server) を確認してください。
 
 ```bash
-corro serve
+opencode serve
 ```
 
-これにより、TUI インターフェイスを使用せずに corro 機能への API アクセスを提供する HTTP サーバーが起動します。 `OPENCODE_SERVER_PASSWORD` を設定して HTTP 基本認証を有効にします (ユーザー名のデフォルトは `corro`)。
+これにより、TUI インターフェイスを使用せずに opencode 機能への API アクセスを提供する HTTP サーバーが起動します。 `OPENCODE_SERVER_PASSWORD` を設定して HTTP 基本認証を有効にします (ユーザー名のデフォルトは `opencode`)。
 
 #### フラグ
 
@@ -384,20 +384,20 @@ corro serve
 
 ### session
 
-Corro Code セッションを管理します。
+OpenCode セッションを管理します。
 
 ```bash
-corro session [command]
+opencode session [command]
 ```
 
 ---
 
 #### list
 
-すべての Corro Code セッションをリストします。
+すべての OpenCode セッションをリストします。
 
 ```bash
-corro session list
+opencode session list
 ```
 
 ##### フラグ
@@ -411,10 +411,10 @@ corro session list
 
 ### stats
 
-Corro Code セッションのトークンの使用状況とコストの統計を表示します。
+OpenCode セッションのトークンの使用状況とコストの統計を表示します。
 
 ```bash
-corro stats
+opencode stats
 ```
 
 #### フラグ
@@ -433,7 +433,7 @@ corro stats
 セッションデータを JSON としてエクスポートします。
 
 ```bash
-corro export [sessionID]
+opencode export [sessionID]
 ```
 
 セッション ID を指定しない場合は、利用可能なセッションから選択するように求められます。
@@ -442,30 +442,30 @@ corro export [sessionID]
 
 ### import
 
-JSON ファイルまたは Corro Code 共有 URL からセッションデータをインポートします。
+JSON ファイルまたは OpenCode 共有 URL からセッションデータをインポートします。
 
 ```bash
-corro import <file>
+opencode import <file>
 ```
 
-ローカルファイルまたは Corro Code 共有 URL からインポートできます。
+ローカルファイルまたは OpenCode 共有 URL からインポートできます。
 
 ```bash
-corro import session.json
-corro import https://opncd.ai/s/abc123
+opencode import session.json
+opencode import https://opncd.ai/s/abc123
 ```
 
 ---
 
 ### web
 
-Web インターフェイスを使用してヘッドレス Corro Code サーバーを起動します。
+Web インターフェイスを使用してヘッドレス OpenCode サーバーを起動します。
 
 ```bash
-corro web
+opencode web
 ```
 
-これにより、HTTP サーバーが起動し、Web ブラウザが開き、Web インターフェイスを通じて Corro Code にアクセスします。 `OPENCODE_SERVER_PASSWORD` を設定して HTTP 基本認証を有効にします (ユーザー名のデフォルトは `corro`)。
+これにより、HTTP サーバーが起動し、Web ブラウザが開き、Web インターフェイスを通じて OpenCode にアクセスします。 `OPENCODE_SERVER_PASSWORD` を設定して HTTP 基本認証を有効にします (ユーザー名のデフォルトは `opencode`)。
 
 #### フラグ
 
@@ -483,7 +483,7 @@ corro web
 ACP (エージェントクライアントプロトコル) サーバーを起動します。
 
 ```bash
-corro acp
+opencode acp
 ```
 
 このコマンドは、nd-JSON を使用して stdin/stdout 経由で通信する ACP サーバーを起動します。
@@ -500,10 +500,10 @@ corro acp
 
 ### uninstall
 
-Corro Code をアンインストールし、関連ファイルをすべて削除します。
+OpenCode をアンインストールし、関連ファイルをすべて削除します。
 
 ```bash
-corro uninstall
+opencode uninstall
 ```
 
 #### フラグ
@@ -519,22 +519,22 @@ corro uninstall
 
 ### upgrade
 
-corro を最新バージョンまたは特定のバージョンに更新します。
+opencode を最新バージョンまたは特定のバージョンに更新します。
 
 ```bash
-corro upgrade [target]
+opencode upgrade [target]
 ```
 
 最新バージョンにアップグレードするには。
 
 ```bash
-corro upgrade
+opencode upgrade
 ```
 
 特定のバージョンにアップグレードするには。
 
 ```bash
-corro upgrade v0.1.48
+opencode upgrade v0.1.48
 ```
 
 #### フラグ
@@ -547,7 +547,7 @@ corro upgrade v0.1.48
 
 ## グローバルフラグ
 
-corro CLI は次のグローバルフラグを受け取ります。
+opencode CLI は次のグローバルフラグを受け取ります。
 
 | フラグ                                     | ショート | 説明                                  |
 | ------------------------------------------ | -------- | ------------------------------------- |
@@ -560,7 +560,7 @@ corro CLI は次のグローバルフラグを受け取ります。
 
 ## 環境変数
 
-Corro Code は環境変数を使用して構成できます。
+OpenCode は環境変数を使用して構成できます。
 
 | 変数                                  | タイプ   | 説明                                                                |
 | ------------------------------------- | -------- | ------------------------------------------------------------------- |
@@ -585,7 +585,7 @@ Corro Code は環境変数を使用して構成できます。
 | `OPENCODE_CLIENT`                     | 文字列   | クライアント識別子 (デフォルトは `cli`)                             |
 | `OPENCODE_ENABLE_EXA`                 | ブール値 | Exa Web 検索ツールを有効にする                                      |
 | `OPENCODE_SERVER_PASSWORD`            | 文字列   | `serve`/`web` の基本認証を有効にする                                |
-| `OPENCODE_SERVER_USERNAME`            | 文字列   | 基本認証ユーザー名 (デフォルト `corro`) をオーバーライドします。 |
+| `OPENCODE_SERVER_USERNAME`            | 文字列   | 基本認証ユーザー名 (デフォルト `opencode`) をオーバーライドします。 |
 | `OPENCODE_MODELS_URL`                 | 文字列   | モデル設定を取得するためのカスタム URL                              |
 
 ---

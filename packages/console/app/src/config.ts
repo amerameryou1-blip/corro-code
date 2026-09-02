@@ -3,7 +3,7 @@
  */
 export const config = {
   // Base URL
-  baseUrl: "https://corrocode.dev",
+  baseUrl: "https://opencode.ai",
 
   // GitHub
   github: {

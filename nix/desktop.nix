@@ -45,11 +45,11 @@ stdenv.mkDerivation (finalAttrs: {
 
   desktopItems = lib.optional stdenv.hostPlatform.isLinux (makeDesktopItem {
     name = "ai.opencode.desktop";
-    desktopName = "Corro Code";
+    desktopName = "OpenCode";
     exec = "opencode-desktop %U";
     icon = "ai.opencode.desktop";
     # Electron 41 derives X11 WM_CLASS from app.name.
-    startupWMClass = "Corro Code";
+    startupWMClass = "OpenCode";
     categories = [ "Development" ];
   });
 
@@ -104,7 +104,7 @@ stdenv.mkDerivation (finalAttrs: {
   + lib.optionalString stdenv.hostPlatform.isDarwin ''
     mkdir -p $out/Applications
     mv dist/mac*/*.app $out/Applications
-    makeWrapper "$out/Applications/Corro Code.app/Contents/MacOS/Corro Code" $out/bin/opencode-desktop
+    makeWrapper "$out/Applications/OpenCode.app/Contents/MacOS/OpenCode" $out/bin/opencode-desktop
   ''
   + lib.optionalString stdenv.hostPlatform.isLinux ''
     mkdir -p $out/opt/opencode-desktop
@@ -136,7 +136,7 @@ stdenv.mkDerivation (finalAttrs: {
   ];
 
   meta = {
-    description = "Corro Code Desktop App";
+    description = "OpenCode Desktop App";
     mainProgram = "opencode-desktop";
     inherit (opencode.meta) homepage license platforms;
   };

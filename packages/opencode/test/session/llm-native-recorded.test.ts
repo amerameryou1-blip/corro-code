@@ -160,7 +160,7 @@ const RECORDED_SCENARIOS = [
   },
   {
     id: "opencode-proxy",
-    name: "Corro Code proxy",
+    name: "OpenCode proxy",
     providerID: ProviderV2.ID.opencode,
     modelID: "gpt-5.2-codex",
     cassette: "session/native-zen-tool-loop",
@@ -170,7 +170,7 @@ const RECORDED_SCENARIOS = [
     config: (model) =>
       providerConfig({
         providerID: ProviderV2.ID.opencode,
-        name: "Corro Code Zen",
+        name: "OpenCode Zen",
         env: ["OPENCODE_CONSOLE_TOKEN"],
         npm: "@ai-sdk/openai-compatible",
         api: zenURL(process.env.OPENCODE_RECORD_ZEN_CONNECTION ?? "fixture"),
@@ -291,7 +291,7 @@ const writeConfig = (directory: string, scenario: RecordedScenario, model: Model
   Effect.promise(() =>
     Bun.write(
       path.join(directory, "opencode.json"),
-      JSON.stringify({ $schema: "https://corrocode.dev/config.json", ...scenario.config(model) }),
+      JSON.stringify({ $schema: "https://opencode.ai/config.json", ...scenario.config(model) }),
     ),
   )
 

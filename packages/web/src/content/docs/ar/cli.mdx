@@ -1,30 +1,30 @@
 ---
 title: CLI
-description: أوامر وخيارات CLI في Corro Code.
+description: أوامر وخيارات CLI في OpenCode.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-يبدأ CLI الخاص بـ Corro Code افتراضيا واجهة [TUI](/docs/tui) عند تشغيله بدون أي معاملات.
+يبدأ CLI الخاص بـ OpenCode افتراضيا واجهة [TUI](/docs/tui) عند تشغيله بدون أي معاملات.
 
 ```bash
-corro
+opencode
 ```
 
-كما يدعم أيضا أوامر موثقة في هذه الصفحة، ما يتيح لك التفاعل مع Corro Code برمجيا.
+كما يدعم أيضا أوامر موثقة في هذه الصفحة، ما يتيح لك التفاعل مع OpenCode برمجيا.
 
 ```bash
-corro run "Explain how closures work in JavaScript"
+opencode run "Explain how closures work in JavaScript"
 ```
 
 ---
 
 ### tui
 
-بدء واجهة المستخدم terminal (TUI) الخاصة بـ Corro Code.
+بدء واجهة المستخدم terminal (TUI) الخاصة بـ OpenCode.
 
 ```bash
-corro [project]
+opencode [project]
 ```
 
 #### الخيارات
@@ -44,36 +44,36 @@ corro [project]
 
 ## الأوامر
 
-يتضمن CLI الخاص بـ Corro Code أيضا الأوامر التالية.
+يتضمن CLI الخاص بـ OpenCode أيضا الأوامر التالية.
 
 ---
 
 ### agent
 
-إدارة وكلاء Corro Code.
+إدارة وكلاء OpenCode.
 
 ```bash
-corro agent [command]
+opencode agent [command]
 ```
 
 ---
 
 ### attach
 
-إرفاق terminal بخادم الواجهة الخلفية لـ Corro Code قيد التشغيل بالفعل، والذي تم تشغيله عبر الأمرين `serve` أو `web`.
+إرفاق terminal بخادم الواجهة الخلفية لـ OpenCode قيد التشغيل بالفعل، والذي تم تشغيله عبر الأمرين `serve` أو `web`.
 
 ```bash
-corro attach [url]
+opencode attach [url]
 ```
 
-يتيح ذلك استخدام واجهة TUI مع واجهة خلفية لـ Corro Code تعمل عن بعد. على سبيل المثال:
+يتيح ذلك استخدام واجهة TUI مع واجهة خلفية لـ OpenCode تعمل عن بعد. على سبيل المثال:
 
 ```bash
 # ابدأ خادم الواجهة الخلفية للوصول عبر الويب/الجوال
-corro web --port 4096 --hostname 0.0.0.0
+opencode web --port 4096 --hostname 0.0.0.0
 
 # في محطة طرفية (terminal) أخرى، اربط TUI بالواجهة الخلفية قيد التشغيل
-corro attach http://10.20.30.40:4096
+opencode attach http://10.20.30.40:4096
 ```
 
 #### الرايات
@@ -85,7 +85,7 @@ corro attach http://10.20.30.40:4096
 | <nobr><code>{"--session"}</code></nobr>  | `-s`    | معرّف الجلسة للمتابعة                                                             |
 | <nobr><code>{"--fork"}</code></nobr>     |         | تفريع الجلسة عند المتابعة (استخدمه مع `--continue` أو `--session`)                |
 | <nobr><code>{"--password"}</code></nobr> | `-p`    | كلمة مرور المصادقة الأساسية (الافتراضي `OPENCODE_SERVER_PASSWORD`)                |
-| <nobr><code>{"--username"}</code></nobr> | `-u`    | اسم مستخدم المصادقة الأساسية (الافتراضي `OPENCODE_SERVER_USERNAME` أو `corro`) |
+| <nobr><code>{"--username"}</code></nobr> | `-u`    | اسم مستخدم المصادقة الأساسية (الافتراضي `OPENCODE_SERVER_USERNAME` أو `opencode`) |
 
 ---
 
@@ -94,7 +94,7 @@ corro attach http://10.20.30.40:4096
 إنشاء وكيل جديد بإعدادات مخصصة.
 
 ```bash
-corro agent create
+opencode agent create
 ```
 
 سيرشدك هذا الأمر خلال إنشاء وكيل جديد مع موجه نظام مخصص وإعدادات الأدوات.
@@ -106,7 +106,7 @@ corro agent create
 عرض جميع الوكلاء المتاحين.
 
 ```bash
-corro agent list
+opencode agent list
 ```
 
 ---
@@ -116,20 +116,20 @@ corro agent list
 أمر لإدارة بيانات الاعتماد وتسجيل الدخول لمزودي الخدمة.
 
 ```bash
-corro auth [command]
+opencode auth [command]
 ```
 
 ---
 
 #### login
 
-يعتمد Corro Code على قائمة المزودين في [Models.dev](https://models.dev)، لذا يمكنك استخدام `corro auth login` لتهيئة مفاتيح API لأي مزود ترغب باستخدامه. يتم حفظ ذلك في `~/.local/share/corro/auth.json`.
+يعتمد OpenCode على قائمة المزودين في [Models.dev](https://models.dev)، لذا يمكنك استخدام `opencode auth login` لتهيئة مفاتيح API لأي مزود ترغب باستخدامه. يتم حفظ ذلك في `~/.local/share/opencode/auth.json`.
 
 ```bash
-corro auth login
+opencode auth login
 ```
 
-عند تشغيل Corro Code يقوم بتحميل المزودين من ملف بيانات الاعتماد، وكذلك أي مفاتيح معرّفة في متغيرات البيئة لديك أو في ملف `.env` ضمن مشروعك.
+عند تشغيل OpenCode يقوم بتحميل المزودين من ملف بيانات الاعتماد، وكذلك أي مفاتيح معرّفة في متغيرات البيئة لديك أو في ملف `.env` ضمن مشروعك.
 
 ---
 
@@ -138,13 +138,13 @@ corro auth login
 يسرد جميع المزودين الذين تم توثيقهم كما هم محفوظون في ملف بيانات الاعتماد.
 
 ```bash
-corro auth list
+opencode auth list
 ```
 
 أو النسخة المختصرة.
 
 ```bash
-corro auth ls
+opencode auth ls
 ```
 
 ---
@@ -154,7 +154,7 @@ corro auth ls
 يسجلك خارج مزود عبر حذفه من ملف بيانات الاعتماد.
 
 ```bash
-corro auth logout
+opencode auth logout
 ```
 
 ---
@@ -164,7 +164,7 @@ corro auth logout
 إدارة وكيل GitHub لأتمتة المستودع.
 
 ```bash
-corro github [command]
+opencode github [command]
 ```
 
 ---
@@ -174,7 +174,7 @@ corro github [command]
 تثبيت وكيل GitHub في مستودعك.
 
 ```bash
-corro github install
+opencode github install
 ```
 
 يقوم ذلك بإعداد سير عمل GitHub Actions اللازم ويرشدك خلال عملية التهيئة. [اعرف المزيد](/docs/github).
@@ -186,7 +186,7 @@ corro github install
 تشغيل وكيل GitHub. يُستخدم هذا عادة ضمن GitHub Actions.
 
 ```bash
-corro github run
+opencode github run
 ```
 
 ##### الرايات
@@ -203,7 +203,7 @@ corro github run
 إدارة خوادم Model Context Protocol.
 
 ```bash
-corro mcp [command]
+opencode mcp [command]
 ```
 
 ---
@@ -213,7 +213,7 @@ corro mcp [command]
 إضافة خادم MCP إلى تهيئتك.
 
 ```bash
-corro mcp add
+opencode mcp add
 ```
 
 سيرشدك هذا الأمر خلال إضافة خادم MCP محلي أو بعيد.
@@ -225,13 +225,13 @@ corro mcp add
 عرض جميع خوادم MCP المُهيأة وحالة اتصالها.
 
 ```bash
-corro mcp list
+opencode mcp list
 ```
 
 أو استخدم النسخة المختصرة.
 
 ```bash
-corro mcp ls
+opencode mcp ls
 ```
 
 ---
@@ -241,7 +241,7 @@ corro mcp ls
 إجراء المصادقة مع خادم MCP يدعم OAuth.
 
 ```bash
-corro mcp auth [name]
+opencode mcp auth [name]
 ```
 
 إذا لم تُحدِّد اسم خادم، فسيُطلب منك الاختيار من الخوادم المتاحة الداعمة لـ OAuth.
@@ -249,13 +249,13 @@ corro mcp auth [name]
 يمكنك أيضا عرض الخوادم الداعمة لـ OAuth وحالة المصادقة الخاصة بها.
 
 ```bash
-corro mcp auth list
+opencode mcp auth list
 ```
 
 أو استخدم النسخة المختصرة.
 
 ```bash
-corro mcp auth ls
+opencode mcp auth ls
 ```
 
 ---
@@ -265,7 +265,7 @@ corro mcp auth ls
 إزالة بيانات اعتماد OAuth لخادم MCP.
 
 ```bash
-corro mcp logout [name]
+opencode mcp logout [name]
 ```
 
 ---
@@ -275,7 +275,7 @@ corro mcp logout [name]
 تشخيص مشاكل اتصال OAuth لخادم MCP.
 
 ```bash
-corro mcp debug <name>
+opencode mcp debug <name>
 ```
 
 ---
@@ -285,7 +285,7 @@ corro mcp debug <name>
 عرض جميع النماذج المتاحة من المزودين المُهيأين.
 
 ```bash
-corro models [provider]
+opencode models [provider]
 ```
 
 يعرض هذا الأمر جميع النماذج المتاحة عبر المزودين المُهيأين لديك بصيغة `provider/model`.
@@ -295,7 +295,7 @@ corro models [provider]
 يمكنك اختياريا تمرير معرّف مزود لتصفية النماذج حسب ذلك المزود.
 
 ```bash
-corro models anthropic
+opencode models anthropic
 ```
 
 #### الرايات
@@ -305,36 +305,36 @@ corro models anthropic
 | <nobr><code>{"--refresh"}</code></nobr> | تحديث ذاكرة التخزين المؤقت للنماذج من models.dev              |
 | <nobr><code>{"--verbose"}</code></nobr> | استخدام مخرجات أكثر تفصيلا للنماذج (تشمل بيانات مثل التكاليف) |
 
-استخدم الراية `--refresh` لتحديث قائمة النماذج المخزنة مؤقتا. يفيد ذلك عند إضافة نماذج جديدة إلى مزود وتريد رؤيتها في Corro Code.
+استخدم الراية `--refresh` لتحديث قائمة النماذج المخزنة مؤقتا. يفيد ذلك عند إضافة نماذج جديدة إلى مزود وتريد رؤيتها في OpenCode.
 
 ```bash
-corro models --refresh
+opencode models --refresh
 ```
 
 ---
 
 ### run
 
-تشغيل corro في وضع غير تفاعلي عبر تمرير موجه مباشرة.
+تشغيل opencode في وضع غير تفاعلي عبر تمرير موجه مباشرة.
 
 ```bash
-corro run [message..]
+opencode run [message..]
 ```
 
 هذا مفيد للبرمجة النصية والأتمتة، أو عندما تريد إجابة سريعة دون تشغيل واجهة TUI كاملة. على سبيل المثال.
 
-```bash "corro run"
-corro run Explain the use of context in Go
+```bash "opencode run"
+opencode run Explain the use of context in Go
 ```
 
-يمكنك أيضا الإرفاق بمثيل `corro serve` قيد التشغيل لتجنّب زمن الإقلاع البارد لخوادم MCP في كل تشغيل:
+يمكنك أيضا الإرفاق بمثيل `opencode serve` قيد التشغيل لتجنّب زمن الإقلاع البارد لخوادم MCP في كل تشغيل:
 
 ```bash
 # ابدأ خادمًا بلا واجهة في محطة طرفية واحدة
-corro serve
+opencode serve
 
 # في محطة طرفية أخرى، شغّل الأوامر التي ترتبط به
-corro run --attach http://localhost:4096 "Explain async/await in JavaScript"
+opencode run --attach http://localhost:4096 "Explain async/await in JavaScript"
 ```
 
 #### الرايات
@@ -351,9 +351,9 @@ corro run --attach http://localhost:4096 "Explain async/await in JavaScript"
 | <nobr><code>{"--file"}</code></nobr>     | `-f`    | ملف/ملفات لإرفاقها بالرسالة                                                       |
 | <nobr><code>{"--format"}</code></nobr>   |         | التنسيق: default (منسق) أو json (أحداث JSON خام)                                  |
 | <nobr><code>{"--title"}</code></nobr>    |         | عنوان للجلسة (يستخدم موجهًا مقتطعًا إن لم تُحدَّد قيمة)                           |
-| <nobr><code>{"--attach"}</code></nobr>   |         | الإرفاق بخادم corro قيد التشغيل (مثل http://localhost:4096)                    |
+| <nobr><code>{"--attach"}</code></nobr>   |         | الإرفاق بخادم opencode قيد التشغيل (مثل http://localhost:4096)                    |
 | <nobr><code>{"--password"}</code></nobr> | `-p`    | كلمة مرور المصادقة الأساسية (الافتراضي `OPENCODE_SERVER_PASSWORD`)                |
-| <nobr><code>{"--username"}</code></nobr> | `-u`    | اسم مستخدم المصادقة الأساسية (الافتراضي `OPENCODE_SERVER_USERNAME` أو `corro`) |
+| <nobr><code>{"--username"}</code></nobr> | `-u`    | اسم مستخدم المصادقة الأساسية (الافتراضي `OPENCODE_SERVER_USERNAME` أو `opencode`) |
 | <nobr><code>{"--dir"}</code></nobr>      |         | دليل التشغيل، أو المسار على الخادم البعيد عند الإرفاق                             |
 | <nobr><code>{"--variant"}</code></nobr>  |         | متغير النموذج (جهد الاستدلال الخاص بالمزود)                                       |
 | <nobr><code>{"--thinking"}</code></nobr> |         | عرض كتل التفكير                                                                   |
@@ -363,13 +363,13 @@ corro run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-بدء خادم Corro Code بدون واجهة للوصول عبر API. راجع [توثيق الخادم](/docs/server) لواجهة HTTP الكاملة.
+بدء خادم OpenCode بدون واجهة للوصول عبر API. راجع [توثيق الخادم](/docs/server) لواجهة HTTP الكاملة.
 
 ```bash
-corro serve
+opencode serve
 ```
 
-يشغّل هذا خادم HTTP يوفّر وصولا عبر API لوظائف corro دون واجهة TUI. اضبط `OPENCODE_SERVER_PASSWORD` لتفعيل مصادقة HTTP الأساسية (اسم المستخدم الافتراضي `corro`).
+يشغّل هذا خادم HTTP يوفّر وصولا عبر API لوظائف opencode دون واجهة TUI. اضبط `OPENCODE_SERVER_PASSWORD` لتفعيل مصادقة HTTP الأساسية (اسم المستخدم الافتراضي `opencode`).
 
 #### الرايات
 
@@ -384,20 +384,20 @@ corro serve
 
 ### session
 
-إدارة جلسات Corro Code.
+إدارة جلسات OpenCode.
 
 ```bash
-corro session [command]
+opencode session [command]
 ```
 
 ---
 
 #### list
 
-عرض جميع جلسات Corro Code.
+عرض جميع جلسات OpenCode.
 
 ```bash
-corro session list
+opencode session list
 ```
 
 ##### الرايات
@@ -411,10 +411,10 @@ corro session list
 
 ### stats
 
-عرض إحصاءات استخدام الرموز والتكلفة لجلسات Corro Code لديك.
+عرض إحصاءات استخدام الرموز والتكلفة لجلسات OpenCode لديك.
 
 ```bash
-corro stats
+opencode stats
 ```
 
 #### الرايات
@@ -433,7 +433,7 @@ corro stats
 تصدير بيانات الجلسة بصيغة JSON.
 
 ```bash
-corro export [sessionID]
+opencode export [sessionID]
 ```
 
 إذا لم تُقدّم معرّف جلسة، فسيُطلب منك الاختيار من الجلسات المتاحة.
@@ -442,30 +442,30 @@ corro export [sessionID]
 
 ### import
 
-استيراد بيانات الجلسة من ملف JSON أو رابط مشاركة Corro Code.
+استيراد بيانات الجلسة من ملف JSON أو رابط مشاركة OpenCode.
 
 ```bash
-corro import <file>
+opencode import <file>
 ```
 
-يمكنك الاستيراد من ملف محلي أو من رابط مشاركة Corro Code.
+يمكنك الاستيراد من ملف محلي أو من رابط مشاركة OpenCode.
 
 ```bash
-corro import session.json
-corro import https://opncd.ai/s/abc123
+opencode import session.json
+opencode import https://opncd.ai/s/abc123
 ```
 
 ---
 
 ### web
 
-بدء خادم Corro Code بدون واجهة مع واجهة ويب.
+بدء خادم OpenCode بدون واجهة مع واجهة ويب.
 
 ```bash
-corro web
+opencode web
 ```
 
-يشغّل هذا خادم HTTP ويفتح متصفح ويب للوصول إلى Corro Code عبر واجهة ويب. اضبط `OPENCODE_SERVER_PASSWORD` لتفعيل مصادقة HTTP الأساسية (اسم المستخدم الافتراضي `corro`).
+يشغّل هذا خادم HTTP ويفتح متصفح ويب للوصول إلى OpenCode عبر واجهة ويب. اضبط `OPENCODE_SERVER_PASSWORD` لتفعيل مصادقة HTTP الأساسية (اسم المستخدم الافتراضي `opencode`).
 
 #### الرايات
 
@@ -483,7 +483,7 @@ corro web
 بدء خادم ACP (Agent Client Protocol).
 
 ```bash
-corro acp
+opencode acp
 ```
 
 يشغّل هذا الأمر خادم ACP يتواصل عبر stdin/stdout باستخدام nd-JSON.
@@ -500,10 +500,10 @@ corro acp
 
 ### uninstall
 
-إلغاء تثبيت Corro Code وإزالة جميع الملفات ذات الصلة.
+إلغاء تثبيت OpenCode وإزالة جميع الملفات ذات الصلة.
 
 ```bash
-corro uninstall
+opencode uninstall
 ```
 
 #### الرايات
@@ -519,22 +519,22 @@ corro uninstall
 
 ### upgrade
 
-تحديث corro إلى أحدث إصدار أو إلى إصدار محدد.
+تحديث opencode إلى أحدث إصدار أو إلى إصدار محدد.
 
 ```bash
-corro upgrade [target]
+opencode upgrade [target]
 ```
 
 للترقية إلى أحدث إصدار.
 
 ```bash
-corro upgrade
+opencode upgrade
 ```
 
 للترقية إلى إصدار محدد.
 
 ```bash
-corro upgrade v0.1.48
+opencode upgrade v0.1.48
 ```
 
 #### الرايات
@@ -547,7 +547,7 @@ corro upgrade v0.1.48
 
 ## الخيارات العامة
 
-يدعم سطر أوامر corro الخيارات العامة التالية.
+يدعم سطر أوامر opencode الخيارات العامة التالية.
 
 | الراية                                     | المختصر | الوصف                                  |
 | ------------------------------------------ | ------- | -------------------------------------- |
@@ -560,7 +560,7 @@ corro upgrade v0.1.48
 
 ## متغيرات البيئة
 
-يمكن تهيئة Corro Code باستخدام متغيرات البيئة.
+يمكن تهيئة OpenCode باستخدام متغيرات البيئة.
 
 | المتغير                               | النوع   | الوصف                                                     |
 | ------------------------------------- | ------- | --------------------------------------------------------- |
@@ -585,7 +585,7 @@ corro upgrade v0.1.48
 | `OPENCODE_CLIENT`                     | string  | معرّف العميل (الافتراضي `cli`)                            |
 | `OPENCODE_ENABLE_EXA`                 | boolean | تفعيل أدوات بحث الويب من Exa                              |
 | `OPENCODE_SERVER_PASSWORD`            | string  | تفعيل المصادقة الأساسية لخادمي `serve`/`web`              |
-| `OPENCODE_SERVER_USERNAME`            | string  | تجاوز اسم مستخدم المصادقة الأساسية (الافتراضي `corro`) |
+| `OPENCODE_SERVER_USERNAME`            | string  | تجاوز اسم مستخدم المصادقة الأساسية (الافتراضي `opencode`) |
 | `OPENCODE_MODELS_URL`                 | string  | رابط مخصص لجلب تهيئة النماذج                              |
 
 ---

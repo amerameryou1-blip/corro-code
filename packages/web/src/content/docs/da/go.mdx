@@ -7,11 +7,11 @@ import config from "../../../../config.mjs"
 export const console = config.console
 export const email = `mailto:${config.email}`
 
-Corro Code Go er et lavprisabonnement til **$10/måned**, der giver dig pålidelig adgang til populære åbne kodningsmodeller.
+OpenCode Go er et lavprisabonnement til **$10/måned**, der giver dig pålidelig adgang til populære åbne kodningsmodeller.
 
-Go fungerer som enhver anden udbyder i Corro Code. Du abonnerer på Corro Code Go og
+Go fungerer som enhver anden udbyder i OpenCode. Du abonnerer på OpenCode Go og
 får din API-nøgle. Det er **helt valgfrit**, og du behøver ikke at bruge det for at
-bruge Corro Code.
+bruge OpenCode.
 
 Det er primært udviklet til internationale brugere og giver stabil global adgang.
 
@@ -27,7 +27,7 @@ Det kan dog være svært at få pålidelig adgang til dem med lav latenstid. Udb
 varierer i kvalitet og tilgængelighed.
 
 :::tip
-Vi testede en udvalgt gruppe af modeller og udbydere, der fungerer godt med Corro Code.
+Vi testede en udvalgt gruppe af modeller og udbydere, der fungerer godt med OpenCode.
 :::
 
 For at løse dette, gjorde vi et par ting:
@@ -39,22 +39,22 @@ For at løse dette, gjorde vi et par ting:
 3. Til sidst benchmarkede vi kombinationen af model og udbyder, og kom frem til
    en liste, som vi trygt kan anbefale.
 
-Corro Code Go giver dig adgang til disse modeller for **$10/måned**.
+OpenCode Go giver dig adgang til disse modeller for **$10/måned**.
 
 ---
 
 ## Sådan fungerer det
 
-Corro Code Go fungerer som enhver anden udbyder i Corro Code.
+OpenCode Go fungerer som enhver anden udbyder i OpenCode.
 
-1. Du logger ind på **<a href={console}>Corro Code Zen</a>**, abonnerer på Go, og
+1. Du logger ind på **<a href={console}>OpenCode Zen</a>**, abonnerer på Go, og
    kopierer din API-nøgle.
-2. Du kører kommandoen `/connect` i TUI'en, vælger `Corro Code Go`, og indsætter
+2. Du kører kommandoen `/connect` i TUI'en, vælger `OpenCode Go`, og indsætter
    din API-nøgle.
 3. Kør `/models` i TUI'en for at se listen over tilgængelige modeller gennem Go.
 
 :::note
-Kun ét medlem per arbejdsområde kan abonnere på Corro Code Go.
+Kun ét medlem per arbejdsområde kan abonnere på OpenCode Go.
 :::
 
 Den nuværende liste over modeller inkluderer:
@@ -91,7 +91,7 @@ Listen over modeller kan ændre sig, efterhånden som vi tester og tilføjer nye
 
 ## Forbrugsgrænser
 
-Corro Code Go inkluderer følgende grænser:
+OpenCode Go inkluderer følgende grænser:
 
 - **5-timers grænse** — forbrug for $12
 - **Ugentlig grænse** — forbrug for $30
@@ -232,36 +232,36 @@ Du kan også få adgang til Go-modeller gennem følgende API-endpoints.
 
 | Model                        | Model ID                     | Endpoint                                         | AI SDK Package              |
 | ---------------------------- | ---------------------------- | ------------------------------------------------ | --------------------------- |
-| Grok 4.6                     | grok-4.6                     | `https://corrocode.dev/zen/go/v1/responses`        | `@ai-sdk/openai`            |
-| GPT 5.6 Luna                 | gpt-5.6-luna                 | `https://corrocode.dev/zen/go/v1/responses`        | `@ai-sdk/openai`            |
-| GLM-5.3-Flash                | glm-5.3-flash                | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
-| GLM-5.3                      | glm-5.3                      | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
-| GLM-5.2                      | glm-5.2                      | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
-| GLM-5.1                      | glm-5.1                      | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
-| Kimi K3                      | kimi-k3                      | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
-| Kimi K2.7 Code               | kimi-k2.7-code               | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
-| Kimi K2.6                    | kimi-k2.6                    | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
-| LongCat-2.0                  | longcat-2.0                  | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
-| DeepSeek V4 Pro              | deepseek-v4-pro              | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
-| DeepSeek V4 Flash            | deepseek-v4-flash            | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
-| DeepSeek V4 Flash Vision Exp | deepseek-v4-flash-vision-exp | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
-| MiMo-V2.5                    | mimo-v2.5                    | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
-| MiMo-V2.5-Pro                | mimo-v2.5-pro                | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
-| MiniMax M3                   | minimax-m3                   | `https://corrocode.dev/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
-| MiniMax M2.7                 | minimax-m2.7                 | `https://corrocode.dev/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
-| MiniMax M2.5                 | minimax-m2.5                 | `https://corrocode.dev/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
-| Muse Spark 1.2 Contributor   | muse-spark-1.2-contributor   | `https://corrocode.dev/zen/go/v1/responses`        | `@ai-sdk/openai`            |
-| Qwen3.8 Max                  | qwen3.8-max                  | `https://corrocode.dev/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
-| Qwen3.8 Flash                | qwen3.8-flash                | `https://corrocode.dev/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
-| Qwen3.7 Max                  | qwen3.7-max                  | `https://corrocode.dev/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
-| Qwen3.7 Plus                 | qwen3.7-plus                 | `https://corrocode.dev/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
-| Qwen3.6 Plus                 | qwen3.6-plus                 | `https://corrocode.dev/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
-| Hy4 preview                  | hy4-preview                  | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
-| Hy3                          | hy3                          | `https://corrocode.dev/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| Grok 4.6                     | grok-4.6                     | `https://opencode.ai/zen/go/v1/responses`        | `@ai-sdk/openai`            |
+| GPT 5.6 Luna                 | gpt-5.6-luna                 | `https://opencode.ai/zen/go/v1/responses`        | `@ai-sdk/openai`            |
+| GLM-5.3-Flash                | glm-5.3-flash                | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| GLM-5.3                      | glm-5.3                      | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| GLM-5.2                      | glm-5.2                      | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| GLM-5.1                      | glm-5.1                      | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| Kimi K3                      | kimi-k3                      | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| Kimi K2.7 Code               | kimi-k2.7-code               | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| Kimi K2.6                    | kimi-k2.6                    | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| LongCat-2.0                  | longcat-2.0                  | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| DeepSeek V4 Pro              | deepseek-v4-pro              | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| DeepSeek V4 Flash            | deepseek-v4-flash            | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| DeepSeek V4 Flash Vision Exp | deepseek-v4-flash-vision-exp | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| MiMo-V2.5                    | mimo-v2.5                    | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| MiMo-V2.5-Pro                | mimo-v2.5-pro                | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| MiniMax M3                   | minimax-m3                   | `https://opencode.ai/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
+| MiniMax M2.7                 | minimax-m2.7                 | `https://opencode.ai/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
+| MiniMax M2.5                 | minimax-m2.5                 | `https://opencode.ai/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
+| Muse Spark 1.2 Contributor   | muse-spark-1.2-contributor   | `https://opencode.ai/zen/go/v1/responses`        | `@ai-sdk/openai`            |
+| Qwen3.8 Max                  | qwen3.8-max                  | `https://opencode.ai/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
+| Qwen3.8 Flash                | qwen3.8-flash                | `https://opencode.ai/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
+| Qwen3.7 Max                  | qwen3.7-max                  | `https://opencode.ai/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
+| Qwen3.7 Plus                 | qwen3.7-plus                 | `https://opencode.ai/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
+| Qwen3.6 Plus                 | qwen3.6-plus                 | `https://opencode.ai/zen/go/v1/messages`         | `@ai-sdk/anthropic`         |
+| Hy4 preview                  | hy4-preview                  | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
+| Hy3                          | hy3                          | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 
-Dit [model id](/docs/config/#models) i din Corro Code config
-bruger formatet `corro-go/<model-id>`. For eksempel for Kimi K3, vil du
-bruge `corro-go/kimi-k3` i din config.
+Dit [model id](/docs/config/#models) i din OpenCode config
+bruger formatet `opencode-go/<model-id>`. For eksempel for Kimi K3, vil du
+bruge `opencode-go/kimi-k3` i din config.
 
 ---
 
@@ -270,7 +270,7 @@ bruge `corro-go/kimi-k3` i din config.
 Du kan hente den fulde liste over tilgængelige modeller og deres metadata fra:
 
 ```
-https://corrocode.dev/zen/go/v1/models
+https://opencode.ai/zen/go/v1/models
 ```
 
 ---
@@ -314,9 +314,9 @@ https://corrocode.dev/zen/go/v1/models
 
 ## Mål
 
-Vi skabte Corro Code Go for at:
+Vi skabte OpenCode Go for at:
 
 1. Gøre AI-kodning **tilgængelig** for flere mennesker med et lavprisabonnement.
 2. Give **pålidelig** adgang til de bedste åbne kodningsmodeller.
 3. Kuratere modeller, der er **testet og benchmarkede** til brug med kodningsagenter.
-4. Undgå **lock-in** ved også at lade dig bruge enhver anden udbyder med Corro Code.
+4. Undgå **lock-in** ved også at lade dig bruge enhver anden udbyder med OpenCode.

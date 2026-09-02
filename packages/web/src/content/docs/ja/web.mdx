@@ -1,11 +1,11 @@
 ---
 title: ウェブ
-description: ブラウザで Corro Code を使用する。
+description: ブラウザで OpenCode を使用する。
 ---
 
-Corro Code はブラウザで Web アプリケーションとして実行でき、ターミナルを必要とせずに同じ強力な AI コーディングエクスペリエンスを提供します。
+OpenCode はブラウザで Web アプリケーションとして実行でき、ターミナルを必要とせずに同じ強力な AI コーディングエクスペリエンスを提供します。
 
-![Corro Code Web - 新しいセッション](../../../assets/web/web-homepage-new-session.png)
+![OpenCode Web - 新しいセッション](../../../assets/web/web-homepage-new-session.png)
 
 ---
 
@@ -14,16 +14,16 @@ Corro Code はブラウザで Web アプリケーションとして実行でき�
 以下を実行して Web インターフェースを開始します。
 
 ```bash
-corro web
+opencode web
 ```
 
-これにより、利用可能なランダムなポートを使用して `127.0.0.1` でローカルサーバーが起動され、デフォルトのブラウザで Corro Code が自動的に開きます。
+これにより、利用可能なランダムなポートを使用して `127.0.0.1` でローカルサーバーが起動され、デフォルトのブラウザで OpenCode が自動的に開きます。
 
 :::caution
 `OPENCODE_SERVER_PASSWORD` が設定されていない場合、サーバーは保護されません。これはローカルで使用する場合には問題ありませんが、ネットワークアクセス用に設定する必要があります。
 :::
 :::tip[Windows ユーザー]
-最高のエクスペリエンスを得るには、PowerShell ではなく [WSL](/docs/windows-wsl) から `corro web` を実行します。これにより、ファイルシステムへの適切なアクセスとターミナルの統合が保証されます。
+最高のエクスペリエンスを得るには、PowerShell ではなく [WSL](/docs/windows-wsl) から `opencode web` を実行します。これにより、ファイルシステムへの適切なアクセスとターミナルの統合が保証されます。
 :::
 
 ---
@@ -34,21 +34,21 @@ corro web
 
 ### ポート
 
-デフォルトでは、Corro Code は使用可能なポートを選択します。ポートを指定できます。
+デフォルトでは、OpenCode は使用可能なポートを選択します。ポートを指定できます。
 
 ```bash
-corro web --port 4096
+opencode web --port 4096
 ```
 
 ### ホスト名
 
-デフォルトでは、サーバーは `127.0.0.1` (localhost のみ) にバインドされます。ネットワーク上で Corro Code にアクセスできるようにするには:
+デフォルトでは、サーバーは `127.0.0.1` (localhost のみ) にバインドされます。ネットワーク上で OpenCode にアクセスできるようにするには:
 
 ```bash
-corro web --hostname 0.0.0.0
+opencode web --hostname 0.0.0.0
 ```
 
-`0.0.0.0` を使用すると、Corro Code はローカルアドレスとネットワークアドレスの両方を表示します。
+`0.0.0.0` を使用すると、OpenCode はローカルアドレスとネットワークアドレスの両方を表示します。
 
 ```
   Local access:       http://localhost:4096
@@ -60,15 +60,15 @@ corro web --hostname 0.0.0.0
 mDNS を有効にして、ローカルネットワーク上でサーバーを検出できるようにします。
 
 ```bash
-corro web --mdns
+opencode web --mdns
 ```
 
-これにより、ホスト名が自動的に `0.0.0.0` に設定され、サーバーが `corro.local` としてアドバタイズされます。
+これにより、ホスト名が自動的に `0.0.0.0` に設定され、サーバーが `opencode.local` としてアドバタイズされます。
 
 mDNS ドメイン名をカスタマイズして、同じネットワーク上で複数のインスタンスを実行できます。
 
 ```bash
-corro web --mdns --mdns-domain myproject.local
+opencode web --mdns --mdns-domain myproject.local
 ```
 
 ### CORS
@@ -76,7 +76,7 @@ corro web --mdns --mdns-domain myproject.local
 CORS の追加ドメインを許可するには (カスタムフロントエンドに便利):
 
 ```bash
-corro web --cors https://example.com
+opencode web --cors https://example.com
 ```
 
 ### 認証
@@ -84,28 +84,28 @@ corro web --cors https://example.com
 アクセスを保護するには、`OPENCODE_SERVER_PASSWORD` 環境変数を使用してパスワードを設定します。
 
 ```bash
-OPENCODE_SERVER_PASSWORD=secret corro web
+OPENCODE_SERVER_PASSWORD=secret opencode web
 ```
 
-ユーザー名のデフォルトは `corro` ですが、`OPENCODE_SERVER_USERNAME` で変更できます。
+ユーザー名のデフォルトは `opencode` ですが、`OPENCODE_SERVER_USERNAME` で変更できます。
 
 ---
 
 ## Web インターフェースの使用
 
-開始すると、Web インターフェイスから Corro Code セッションにアクセスできるようになります。
+開始すると、Web インターフェイスから OpenCode セッションにアクセスできるようになります。
 
 ### セッション
 
 ホームページからセッションを表示および管理します。アクティブなセッションを確認したり、新しいセッションを開始したりできます。
 
-![Corro Code Web - アクティブなセッション](../../../assets/web/web-homepage-active-session.png)
+![OpenCode Web - アクティブなセッション](../../../assets/web/web-homepage-active-session.png)
 
 ### サーバーステータス
 
 「サーバーを表示」をクリックすると、接続されているサーバーとそのステータスが表示されます。
 
-![Corro Code Web - サーバー](../../../assets/web/web-homepage-see-servers.png)
+![OpenCode Web - サーバー](../../../assets/web/web-homepage-see-servers.png)
 
 ---
 
@@ -115,10 +115,10 @@ OPENCODE_SERVER_PASSWORD=secret corro web
 
 ```bash
 # Start the web server
-corro web --port 4096
+opencode web --port 4096
 
 # In another terminal, attach the TUI
-corro attach http://localhost:4096
+opencode attach http://localhost:4096
 ```
 
 これにより、Web インターフェイスとターミナルの両方を同時に使用し、同じセッションと状態を共有できるようになります。
@@ -127,7 +127,7 @@ corro attach http://localhost:4096
 
 ## 設定ファイル
 
-`corro.json` 設定ファイルでサーバー設定を構成することもできます。
+`opencode.json` 設定ファイルでサーバー設定を構成することもできます。
 
 ```json
 {

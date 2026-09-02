@@ -14,7 +14,7 @@ test("applies message latency after a list response gate is released", async () 
   } as unknown as Page
   await mockOpenCodeServer(page, {
     provider: {},
-    directory: "C:/Corro Code",
+    directory: "C:/OpenCode",
     project: {},
     sessions: [{ id: "session" }],
     messageDelay: 25,
