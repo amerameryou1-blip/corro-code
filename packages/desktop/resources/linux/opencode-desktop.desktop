@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=OpenCode
-Exec=/opt/OpenCode/ai.opencode.desktop %U
+Name=Corro Code
+Exec=/opt/Corro Code/ai.opencode.desktop %U
 Terminal=false
 Type=Application
 Icon=ai.opencode.desktop
