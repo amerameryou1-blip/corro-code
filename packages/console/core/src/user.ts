@@ -147,7 +147,7 @@ export namespace User {
             // @ts-ignore
             InviteEmail({
               inviter: emailInfo.inviterEmail,
-              assetsUrl: `https://opencode.ai/email`,
+              assetsUrl: `https://corrocode.dev/email`,
               workspaceID: workspaceID,
               workspaceName: emailInfo.workspaceName,
             }),

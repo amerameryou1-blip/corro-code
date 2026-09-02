@@ -230,7 +230,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Me një çelës të vetëm API do të keni akses në modele të tilla si Claude, GPT, Gemini, GLM dhe më shumë.",
   "provider.connect.opencodeZen.visit.prefix": "Vizitoni ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": " për të mbledhur çelësin tuaj API.",
   "provider.connect.oauth.code.visit.prefix": "Vizitoni ",
   "provider.connect.oauth.code.visit.link": "kjo lidhje",

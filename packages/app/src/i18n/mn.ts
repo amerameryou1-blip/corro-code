@@ -232,7 +232,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Ганц API товчлуураар та Claude, GPT, Gemini, GLM болон бусад загваруудад хандах боломжтой болно.",
   "provider.connect.opencodeZen.visit.prefix": "зочилно уу",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": "API түлхүүрээ авахын тулд.",
   "provider.connect.oauth.code.visit.prefix": "зочилно уу",
   "provider.connect.oauth.code.visit.link": "энэ холбоос",

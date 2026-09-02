@@ -231,7 +231,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "API သော့တစ်ခုတည်းဖြင့် သင်သည် Claude၊ GPT၊ Gemini၊ GLM နှင့် အခြားအရာများကဲ့သို့သော မော်ဒယ်များသို့ ဝင်ရောက်ခွင့်ရရှိမည်ဖြစ်သည်။",
   "provider.connect.opencodeZen.visit.prefix": "လည်ပတ်ပါ။ \nသင်၏ API သော့ကိုစုဆောင်းရန်",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": " သို့သွား၍ သင်၏ API key ကို ရယူပါ။",
   "provider.connect.oauth.code.visit.prefix": "လည်ပတ်ပါ။",
   "provider.connect.oauth.code.visit.link": "ဤလင့်ခ်",

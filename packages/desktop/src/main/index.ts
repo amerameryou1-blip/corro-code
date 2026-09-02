@@ -268,6 +268,7 @@ const main = Effect.gen(function* () {
       }),
     ),
   )
+  app.setAsDefaultProtocolClient("corro")
   app.setAsDefaultProtocolClient("opencode")
   registerRendererProtocol()
   setDockIcon()

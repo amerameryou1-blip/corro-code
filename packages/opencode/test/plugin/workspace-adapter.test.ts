@@ -74,7 +74,7 @@ describe("plugin.workspace", () => {
           path.join(dir, "opencode.json"),
           JSON.stringify(
             {
-              $schema: "https://opencode.ai/config.json",
+              $schema: "https://corrocode.dev/config.json",
               plugin: [pathToFileURL(file).href],
             },
             null,

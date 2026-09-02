@@ -1,7 +1,7 @@
 ---
 import { Base64 } from "js-base64"
 import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro"
-import type { Session } from "opencode/session/index"
+import type { Session } from "corro/session/index"
 import config from "../../../config.mjs"
 import Share from "../../components/Share.tsx"
 
@@ -106,7 +106,7 @@ const modelParam =
       ? encodeURIComponent(`${modelsArray[0]} & ${modelsArray[1]}`)
       : encodeURIComponent(`${modelsArray[0]} & ${modelsArray.length - 1} others`)
 
-const ogImage = `${config.socialCard}/opencode-share/${encodedTitle}.png?model=${modelParam}&version=${version}&id=${id}`
+const ogImage = `${config.socialCard}/corro-share/${encodedTitle}.png?model=${modelParam}&version=${version}&id=${id}`
 ---
 <StarlightPage
   hasSidebar={false}

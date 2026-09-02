@@ -230,7 +230,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Met één API-sleutel krijg je toegang tot modellen zoals Claude, GPT, Gemini, GLM en meer.",
   "provider.connect.opencodeZen.visit.prefix": "Ga naar ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": " om je API-sleutel op te halen.",
   "provider.connect.oauth.code.visit.prefix": "Ga naar ",
   "provider.connect.oauth.code.visit.link": "deze link",

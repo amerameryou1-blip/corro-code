@@ -4,10 +4,10 @@
   "version": "1.18.26",
   "type": "module",
   "license": "MIT",
-  "homepage": "https://opencode.ai",
+  "homepage": "https://corrocode.dev",
   "author": {
     "name": "Corro Code",
-    "email": "hello@opencode.ai"
+    "email": "hello@corrocode.dev"
   },
   "scripts": {
     "typecheck": "tsgo -b",

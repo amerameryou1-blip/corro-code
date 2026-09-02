@@ -1,5 +1,5 @@
 {
-  "$schema": "https://opencode.ai/config.json",
+  "$schema": "https://corrocode.dev/config.json",
   "username": "after",
   "mcp": {
     "modern": {

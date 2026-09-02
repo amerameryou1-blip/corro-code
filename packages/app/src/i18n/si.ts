@@ -229,7 +229,7 @@ export const dict: Record<string, string> = {
   "provider.connect.opencodeZen.line2":
     "තනි API යතුරක් සමඟින් ඔබට Claude, GPT, Gemini, GLM සහ තවත් ආකෘති වෙත ප්‍රවේශය ලැබෙනු ඇත.",
   "provider.connect.opencodeZen.visit.prefix": "පිවිසෙන්න",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": "ඔබගේ API යතුර එකතු කිරීමට.",
   "provider.connect.oauth.code.visit.prefix": "පිවිසෙන්න",
   "provider.connect.oauth.code.visit.link": "මෙම සබැඳිය",

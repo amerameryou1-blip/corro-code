@@ -229,7 +229,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Cu o singură cheie API ai acces la modele precum Claude, GPT, Gemini, GLM și altele.",
   "provider.connect.opencodeZen.visit.prefix": "Vizitează",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": "pentru a obține cheia ta API.",
   "provider.connect.oauth.code.visit.prefix": "Vizitează",
   "provider.connect.oauth.code.visit.link": "acest link",

@@ -229,7 +229,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Dengan satu kunci API, anda akan mendapat akses kepada model seperti Claude, GPT, Gemini, GLM dan banyak lagi.",
   "provider.connect.opencodeZen.visit.prefix": "Layari",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": "untuk mendapatkan kunci API anda.",
   "provider.connect.oauth.code.visit.prefix": "Layari",
   "provider.connect.oauth.code.visit.link": "pautan ini",

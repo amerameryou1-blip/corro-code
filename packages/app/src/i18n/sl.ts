@@ -229,7 +229,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Z enim samim ključem API boste dobili dostop do modelov, kot so Claude, GPT, Gemini, GLM in več.",
   "provider.connect.opencodeZen.visit.prefix": "Obisk ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": " za prevzem ključa API.",
   "provider.connect.oauth.code.visit.prefix": "Obisk ",
   "provider.connect.oauth.code.visit.link": "ta povezava",

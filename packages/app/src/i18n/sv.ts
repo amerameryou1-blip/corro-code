@@ -231,7 +231,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Med en enda API-nyckel får du tillgång till modeller som Claude, GPT, Gemini, GLM och mer.",
   "provider.connect.opencodeZen.visit.prefix": "Besök ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": " för att hämta din API-nyckel.",
   "provider.connect.oauth.code.visit.prefix": "Besök ",
   "provider.connect.oauth.code.visit.link": "denna länk",

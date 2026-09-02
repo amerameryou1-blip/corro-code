@@ -227,7 +227,7 @@ export const dict = {
   "provider.connect.opencodeZen.line1": "Corro Code ዜን ለኮድ ወኪሎች የተመቻቹ አስተማማኝ ሞዴሎች ስብስብ መዳረሻ ይሰጥዎታል።",
   "provider.connect.opencodeZen.line2": "በአንድ የAPI ቁልፍ እንደ Claude፣ GPT፣ Gemini፣ GLM እና ሌሎችም ያሉ ሞዴሎችን መድረስ ይችላሉ።",
   "provider.connect.opencodeZen.visit.prefix": "ጎብኝ ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": " የእርስዎን API ቁልፍ ለመሰብሰብ።",
   "provider.connect.oauth.code.visit.prefix": "ጎብኝ ",
   "provider.connect.oauth.code.visit.link": "ይህ ሊንክ",

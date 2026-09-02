@@ -229,7 +229,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Ühe klahviga API pääsete juurde sellistele mudelitele nagu Claude, GPT, Gemini, GLM ja palju muud.",
   "provider.connect.opencodeZen.visit.prefix": "Külastage ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": " API võtme kättesaamiseks.",
   "provider.connect.oauth.code.visit.prefix": "Külastage ",
   "provider.connect.oauth.code.visit.link": "see link",

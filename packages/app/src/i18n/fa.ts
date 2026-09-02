@@ -230,7 +230,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "با یک کلید API به مدل هایی مانند Claude، GPT، Gemini، GLM و موارد دیگر دسترسی خواهید داشت.",
   "provider.connect.opencodeZen.visit.prefix": "بازدید کنید ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": " برای جمع آوری کلید API.",
   "provider.connect.oauth.code.visit.prefix": "بازدید کنید ",
   "provider.connect.oauth.code.visit.link": "این لینک",

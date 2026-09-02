@@ -233,7 +233,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "އެއް API ކީ އާއެކު Claude، GPT، Gemini، GLM އަދި އެހެނިހެން މޮޑެލްތަކަށް އެކްސެސް ލިބިގެންދާނެއެވެ.",
   "provider.connect.opencodeZen.visit.prefix": "ޒިޔާރަތްކުރުން ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen އެވެ",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen އެވެ",
   "provider.connect.opencodeZen.visit.suffix": " ތިބާގެ API ކީ އެއްކުރުމަށްޓަކައެވެ.",
   "provider.connect.oauth.code.visit.prefix": "ޒިޔާރަތްކުރުން ",
   "provider.connect.oauth.code.visit.link": "މި ލިންކެވެ",

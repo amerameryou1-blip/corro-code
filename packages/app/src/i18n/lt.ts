@@ -233,7 +233,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Su vienu API raktu galėsite pasiekti tokius modelius kaip Claude, GPT, Gemini, GLM ir kt.",
   "provider.connect.opencodeZen.visit.prefix": "Aplankykite",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": "norėdami pasiimti savo API raktą.",
   "provider.connect.oauth.code.visit.prefix": "Aplankykite",
   "provider.connect.oauth.code.visit.link": "šią nuorodą",

@@ -229,7 +229,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "ជាមួយនឹងសោ API តែមួយ អ្នកនឹងទទួលបានការចូលប្រើម៉ូដែលដូចជា Claude, GPT, Gemini, GLM និងច្រើនទៀត។",
   "provider.connect.opencodeZen.visit.prefix": "ទស្សនា",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": "ដើម្បីប្រមូលសោ API របស់អ្នក។",
   "provider.connect.oauth.code.visit.prefix": "ទស្សនា",
   "provider.connect.oauth.code.visit.link": "តំណនេះ។",

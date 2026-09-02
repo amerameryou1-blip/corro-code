@@ -231,7 +231,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Amb una sola tecla API tindreu accés a models com ara Claude, GPT, Gemini, GLM i més.",
   "provider.connect.opencodeZen.visit.prefix": "Visita ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": " per recollir la teva clau API.",
   "provider.connect.oauth.code.visit.prefix": "Visita ",
   "provider.connect.oauth.code.visit.link": "aquest enllaç",

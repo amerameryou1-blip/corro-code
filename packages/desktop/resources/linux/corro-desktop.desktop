@@ -1,10 +1,10 @@
 [Desktop Entry]
 Name=Corro Code
-Exec=/opt/Corro Code/ai.opencode.desktop %U
+Exec=/opt/Corro Code/dev.corrocode.desktop %U
 Terminal=false
 Type=Application
-Icon=ai.opencode.desktop
-StartupWMClass=ai.opencode.desktop
+Icon=dev.corrocode.desktop
+StartupWMClass=dev.corrocode.desktop
 NoDisplay=true
 Comment=Open source AI coding agent
 Categories=Development;

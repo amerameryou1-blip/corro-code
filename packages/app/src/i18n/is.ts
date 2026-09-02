@@ -233,7 +233,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Með einum API lykli færðu aðgang að gerðum eins og Claude, GPT, Gemini, GLM og fleira.",
   "provider.connect.opencodeZen.visit.prefix": "Heimsókn",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": "til að safna API lykilnum þínum.",
   "provider.connect.oauth.code.visit.prefix": "Heimsókn",
   "provider.connect.oauth.code.visit.link": "þennan hlekk",

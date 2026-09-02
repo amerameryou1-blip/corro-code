@@ -229,7 +229,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "S jediným API kľúčom získate prístup k modelom ako Claude, GPT, Gemini, GLM a ďalším.",
   "provider.connect.opencodeZen.visit.prefix": "Navštívte",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": "a získajte svoj API kľúč.",
   "provider.connect.oauth.code.visit.prefix": "Navštívte",
   "provider.connect.oauth.code.visit.link": "tento odkaz",

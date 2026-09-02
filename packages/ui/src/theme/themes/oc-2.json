@@ -1,12 +1,12 @@
 {
-  "$schema": "https://opencode.ai/desktop-theme.json",
-  "name": "OC-2",
+  "$schema": "https://corrocode.dev/desktop-theme.json",
+  "name": "Corro",
   "id": "oc-2",
   "light": {
     "palette": {
       "neutral": "#f7f7f7",
       "ink": "#171311",
-      "primary": "#dcde8d",
+      "primary": "#e3a76a",
       "success": "#12c905",
       "warning": "#ffdc17",
       "error": "#fc533a",

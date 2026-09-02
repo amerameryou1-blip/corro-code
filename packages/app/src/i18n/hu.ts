@@ -233,7 +233,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Egyetlen API kulccsal hozzáférhet olyan modellekhez, mint a Claude, GPT, Gemini, GLM és még sok más.",
   "provider.connect.opencodeZen.visit.prefix": "Látogatás",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": "hogy átvegye a API kulcsát.",
   "provider.connect.oauth.code.visit.prefix": "Látogatás",
   "provider.connect.oauth.code.visit.link": "ezt a linket",

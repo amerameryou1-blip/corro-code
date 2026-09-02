@@ -36,9 +36,9 @@ const channel = (() => {
 })()
 
 const APP_IDS = {
-  dev: "ai.opencode.desktop.dev",
-  beta: "ai.opencode.desktop.beta",
-  prod: "ai.opencode.desktop",
+  dev: "dev.corrocode.desktop.dev",
+  beta: "dev.corrocode.desktop.beta",
+  prod: "dev.corrocode.desktop",
 } as const
 
 const getBase = (appId: string): Configuration => ({
@@ -87,7 +87,7 @@ const getBase = (appId: string): Configuration => ({
   },
   protocols: {
     name: "Corro Code",
-    schemes: ["opencode"],
+    schemes: ["corro", "opencode"],
   },
   win: {
     icon: `resources/icons/icon.ico`,
@@ -129,7 +129,7 @@ function getConfig() {
         appId,
         productName: "Corro Code Dev",
         deb: { fpm: [metainfoFpm(appId)] },
-        rpm: { packageName: "opencode-dev", fpm: [metainfoFpm(appId)] },
+        rpm: { packageName: "corro-dev", fpm: [metainfoFpm(appId)] },
       }
     }
     case "beta": {
@@ -137,10 +137,10 @@ function getConfig() {
         ...base,
         appId,
         productName: "Corro Code Beta",
-        protocols: { name: "Corro Code Beta", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode-beta", channel: "latest" },
+        protocols: { name: "Corro Code Beta", schemes: ["corro", "opencode"] },
+        publish: { provider: "github", owner: "amerameryou1-blip", repo: "corro-code-beta", channel: "latest" },
         deb: { fpm: [metainfoFpm(appId)] },
-        rpm: { packageName: "opencode-beta", fpm: [metainfoFpm(appId)] },
+        rpm: { packageName: "corro-beta", fpm: [metainfoFpm(appId)] },
       }
     }
     case "prod": {
@@ -148,8 +148,8 @@ function getConfig() {
         ...base,
         appId,
         productName: "Corro Code",
-        protocols: { name: "Corro Code", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
+        protocols: { name: "Corro Code", schemes: ["corro", "opencode"] },
+        publish: { provider: "github", owner: "amerameryou1-blip", repo: "corro-code", channel: "latest" },
         deb: { fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
         rpm: { packageName: "opencode", fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
       }

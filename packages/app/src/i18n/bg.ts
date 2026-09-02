@@ -232,7 +232,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "С един ключ API ще получите достъп до модели като Claude, GPT, Gemini, GLM и други.",
   "provider.connect.opencodeZen.visit.prefix": "Посетете",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": "за да вземете своя ключ API.",
   "provider.connect.oauth.code.visit.prefix": "Посетете",
   "provider.connect.oauth.code.visit.link": "тази връзка",

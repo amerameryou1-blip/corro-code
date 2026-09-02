@@ -231,7 +231,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Bitta API kaliti bilan siz Claude, GPT, Gemini, GLM va boshqalar kabi modellarga kirishingiz mumkin.",
   "provider.connect.opencodeZen.visit.prefix": "Tashrif buyuring ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": " API kalitingizni olish uchun.",
   "provider.connect.oauth.code.visit.prefix": "Tashrif buyuring ",
   "provider.connect.oauth.code.visit.link": "bu havola",

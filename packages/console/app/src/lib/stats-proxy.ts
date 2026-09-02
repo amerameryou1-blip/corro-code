@@ -12,7 +12,7 @@ export async function statsProxy(evt: APIEvent) {
 
   const targetUrl = new URL(req.url)
   targetUrl.protocol = "https:"
-  targetUrl.hostname = Resource.App.stage === "production" ? "stats.opencode.ai" : "stats.dev.opencode.ai"
+  targetUrl.hostname = Resource.App.stage === "production" ? "stats.corrocode.dev" : "stats.dev.corrocode.dev"
   targetUrl.port = ""
 
   if (

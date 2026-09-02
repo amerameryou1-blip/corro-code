@@ -24,7 +24,7 @@ Focused tests separately cover invalid inputs, diagnostics, secret redaction, lo
 
 ## Run
 
-From `packages/opencode`:
+From `packages/corro`:
 
 ```sh
 bun test test/config/v2-compat.test.ts test/config/config.test.ts --timeout 30000

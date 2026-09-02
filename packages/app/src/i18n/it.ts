@@ -138,7 +138,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Con una sola chiave API avrai accesso a modelli come Claude, GPT, Gemini, GLM e altri.",
   "provider.connect.opencodeZen.visit.prefix": "Visita ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": " per ottenere la tua chiave API.",
   "provider.connect.oauth.code.visit.prefix": "Visita ",
   "provider.connect.oauth.code.visit.link": "questo collegamento",

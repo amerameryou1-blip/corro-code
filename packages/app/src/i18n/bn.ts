@@ -230,7 +230,7 @@ export const dict: Record<string, string> = {
   "provider.connect.opencodeZen.line2":
     "একটি API কী দিয়ে আপনি Claude, GPT, Gemini, GLM এবং আরও অনেক কিছুর মতো মডেলগুলিতে অ্যাক্সেস পাবেন৷",
   "provider.connect.opencodeZen.visit.prefix": "ভিজিট করুন",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": "আপনার API কী সংগ্রহ করতে।",
   "provider.connect.oauth.code.visit.prefix": "ভিজিট করুন",
   "provider.connect.oauth.code.visit.link": "এই লিঙ্ক",

@@ -237,7 +237,7 @@ export const dict = {
   "provider.connect.opencodeZen.line2":
     "Chỉ với một khóa API, bạn sẽ có quyền truy cập vào các mô hình như Claude, GPT, Gemini, GLM và hơn thế nữa.",
   "provider.connect.opencodeZen.visit.prefix": "Truy cập ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "corrocode.dev/zen",
   "provider.connect.opencodeZen.visit.suffix": " để lấy khóa API của bạn.",
   "provider.connect.oauth.code.visit.prefix": "Truy cập ",
   "provider.connect.oauth.code.visit.link": "liên kết này",

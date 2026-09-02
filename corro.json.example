@@ -1,0 +1,18 @@
+{
+  "$schema": "https://corrocode.dev/config.json",
+  "provider": {
+    "corro": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Corro Code",
+      "options": {
+        "baseURL": "https://corro-code-backend.vercel.app/api",
+        "apiKey": "{env:CORRO_JWT}"
+      },
+      "models": {
+        "kimi-k3": { "name": "Kimi K3 (free)" },
+        "deepseek-v4-pro-0813": { "name": "DeepSeek V4 Pro (free)" },
+        "deepseek-v4-flash-0731": { "name": "DeepSeek V4 Flash (free)" }
+      }
+    }
+  }
+}
