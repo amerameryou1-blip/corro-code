@@ -1,14 +1,13 @@
 import { Global } from "@opencode-ai/util/global"
 import { AppProcess } from "@opencode-ai/util/process"
 import { OpenCode } from "@opencode-ai/client"
+import { PersistentPty } from "@opencode-ai/schema/persistent-pty"
 import { OPENCODE_CHANNEL, OPENCODE_LOCAL, OPENCODE_VERSION } from "../version"
 import { Context, Duration, Effect, FileSystem, Layer, Ref, Schedule, Semaphore, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { parse, type ParseError } from "jsonc-parser"
-import { spawn } from "node:child_process"
 import path from "node:path"
 import { action, parseReleaseVersion, type Action, type Policy } from "./updater-action"
-import { selfCommand } from "../util/process"
 
 declare const OPENCODE_CLI_NAME: string | undefined
 
@@ -25,6 +24,7 @@ export interface Interface {
     readonly password: string
     readonly managed: boolean
     readonly notify: (version: string) => Effect.Effect<void>
+    readonly restart: (handoff: PersistentPty.Handoff | null) => Effect.Effect<void>
   }) => Effect.Effect<never>
   readonly apply: (version: string) => Effect.Effect<void, Error>
   readonly method: () => Effect.Effect<Method | undefined>
@@ -47,7 +47,7 @@ export interface MonitorInput {
   readonly managed: boolean
   readonly inspect: () => Effect.Effect<Inspection, Error>
   readonly install: (version: string) => Effect.Effect<boolean, Error>
-  readonly restart: () => Effect.Effect<void, Error>
+  readonly restart: (handoff: PersistentPty.Handoff | null) => Effect.Effect<void>
   readonly interval?: Duration.Input
   readonly notificationThreshold?: Duration.Input
   readonly notify: (version: string) => Effect.Effect<void>
@@ -84,8 +84,14 @@ export const monitorServer = Effect.fnUntraced(function* (input: MonitorInput) {
             ),
           )
         if (!installed) return
-        if (input.managed) yield* input.restart()
+        const handoff = input.managed
+          ? yield* Effect.tryPromise({
+              try: () => client.experimental.persistentPty.handoff(),
+              catch: (cause) => new Error("Failed to prepare persistent terminals for restart", { cause }),
+            })
+          : undefined
         yield* Ref.set(state, { type: "ready-to-restart", version: latest.version })
+        if (handoff) yield* input.restart(handoff.handoff)
       }),
     )
 
@@ -310,23 +316,6 @@ const make = Effect.gen(function* () {
     return true
   })
 
-  const restart = Effect.fnUntraced(function* () {
-    const [command, ...args] = [...selfCommand(), "service", "restart", "--preserve-terminals"]
-    if (!command) return yield* Effect.fail(new Error("Failed to resolve CLI command for restart"))
-    yield* Effect.tryPromise({
-      try: () =>
-        new Promise<void>((resolve, reject) => {
-          const child = spawn(command, args, { detached: true, stdio: "ignore", windowsHide: true })
-          child.once("spawn", () => {
-            child.unref()
-            resolve()
-          })
-          child.once("error", reject)
-        }),
-      catch: (cause) => new Error("Failed to start update restart helper", { cause }),
-    })
-  })
-
   const apply = Effect.fn("cli.updater.apply")(function* (version: string) {
     if (!(yield* install(version))) return yield* Effect.fail(new Error("Installation method not found"))
   })
@@ -345,8 +334,9 @@ const make = Effect.gen(function* () {
     readonly password: string
     readonly managed: boolean
     readonly notify: (version: string) => Effect.Effect<void>
+    readonly restart: (handoff: PersistentPty.Handoff | null) => Effect.Effect<void>
   }) {
-    return yield* monitorServer({ ...input, inspect, install, restart })
+    return yield* monitorServer({ ...input, inspect, install })
   })
 
   return Service.of({ check, monitor, apply, method, latest, upgrade })

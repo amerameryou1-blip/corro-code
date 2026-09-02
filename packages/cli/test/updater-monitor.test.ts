@@ -61,6 +61,9 @@ function makeServer() {
         waited.resolve()
         return new Response(null, { status: 204 })
       }
+      if (url.pathname === "/api/experimental/persistent-pty/handoff" && request.method === "POST") {
+        return Response.json({ handoff: null })
+      }
       if (url.pathname === "/api/event") {
         return new Response(
           new ReadableStream<Uint8Array>({
