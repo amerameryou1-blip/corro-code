@@ -831,7 +831,7 @@ function emitPermission(state: State, kind: PermissionKind = "edit"): void {
       always: [target],
       done: {
         title: "read",
-        output: ["1: {", '2:   "name": "opencode",', '3:   "private": true', "4: }"].join("\n"),
+        output: ["1: {", '2:   "name": "corro",', '3:   "private": true', "4: }"].join("\n"),
         metadata: {},
       },
     })
