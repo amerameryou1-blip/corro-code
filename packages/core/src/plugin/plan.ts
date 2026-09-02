@@ -1,11 +1,11 @@
 export * as PlanPlugin from "./plan.js"
 
-import { ToolFailure } from "@opencode-ai/ai"
-import { Instruction } from "@opencode-ai/plugin/instructions"
+import { Message, ToolFailure } from "@opencode-ai/ai"
 import { define } from "@opencode-ai/plugin/effect/plugin"
 import { Agent } from "@opencode-ai/schema/agent"
+import type { SessionEvent } from "@opencode-ai/schema/session-event"
 import { Global } from "@opencode-ai/util/global"
-import { Effect, Schema } from "effect"
+import { Effect, Stream } from "effect"
 import path from "path"
 import { Permission } from "../permission.js"
 
@@ -29,6 +29,7 @@ export const Plugin = define({
   effect: Effect.fn(function* (ctx) {
     const global = yield* Global.Service
     const directory = path.join(global.home, ".opencode", "plan")
+    const enterReminder = enter(directory)
     yield* ctx.agent.transform((draft) => {
       draft.update(plan, (item) => {
         item.name = Agent.Name.make("Plan")
@@ -52,17 +53,69 @@ export const Plugin = define({
       return Effect.void
     })
 
-    yield* ctx.experimental.instructions.transform((draft) => {
-      draft.add({
-        key: "opencode.plan/mode",
-        codec: Schema.toCodecJson(Schema.Struct({ directory: Schema.String })),
-        read: (context) => Effect.succeed(context.agent === plan ? { directory } : Instruction.removed),
-        render: {
-          initial: (value) => enter(value.directory),
-          changed: (_previous, current) => enter(current.directory),
-          removed: () => leave,
-        },
-      })
+    // Compaction and committed reverts can strip reminders while the session's agent stays
+    // put. Reconcile per request, appending near the tail so the cached prefix stays warm.
+    yield* ctx.session.hook("context", (event) => {
+      const reminder = lastReminder(event.messages, enterReminder)
+      const missing = event.agent === plan && reminder !== enterReminder
+      const stale = event.agent !== plan && reminder === enterReminder
+      const text = missing ? enterReminder : stale ? leave : undefined
+      if (!text) return Effect.void
+      // Before the user's prompt, matching where agent-switch reminders land.
+      const at = event.messages.at(-1)?.role === "user" ? event.messages.length - 1 : event.messages.length
+      event.messages.splice(at, 0, Message.user(text))
+      return ctx.session
+        .synthetic({ sessionID: event.sessionID, text, resume: false })
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("failed to persist Plan mode reminder", { sessionID: event.sessionID, cause }),
+          ),
+        )
     })
+
+    yield* ctx.event.subscribe().pipe(
+      Stream.filter(
+        (event): event is SessionEvent.Created | SessionEvent.AgentSelected =>
+          event.type === "session.created" || event.type === "session.agent.selected",
+      ),
+      Stream.runForEach((event) => {
+        const text = switchReminder(event, enterReminder)
+        if (!text) return Effect.void
+        return ctx.session
+          .synthetic({
+            sessionID: event.data.sessionID,
+            text,
+            resume: false,
+          })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("failed to inject Plan mode reminder", { sessionID: event.data.sessionID, cause }),
+            ),
+          )
+      }),
+      Effect.forkScoped({ startImmediately: true }),
+    )
   }),
 })
+
+function switchReminder(
+  event: SessionEvent.Created | SessionEvent.AgentSelected,
+  enterReminder: string,
+): string | undefined {
+  if (event.type === "session.created") {
+    if (event.data.agent !== plan) return undefined
+    return enterReminder
+  }
+  if (event.data.agent === event.data.previous) return undefined
+  if (event.data.agent === plan) return enterReminder
+  if (event.data.previous === plan) return leave
+  return undefined
+}
+
+function lastReminder(messages: ReadonlyArray<Message>, enterReminder: string) {
+  return messages.reduce<string | undefined>((found, message) => {
+    const part = message.role === "user" && message.content.length === 1 ? message.content[0] : undefined
+    if (part?.type !== "text") return found
+    return part.text === enterReminder || part.text === leave ? part.text : found
+  }, undefined)
+}
