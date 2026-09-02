@@ -8,12 +8,12 @@ import { Config } from "../../config.js"
 import { Job } from "../../job.js"
 import { Permission } from "../../permission.js"
 import { Session } from "../../session.js"
+import { BackgroundNotice } from "../../session/background-notice.js"
 import { SessionSchema } from "../../session/schema.js"
-import { SubagentCompletion } from "../../session/subagent-completion.js"
+import { SubagentOutcome } from "../../session/subagent-outcome.js"
 
 export const name = "subagent"
 
-const NO_TEXT = "Subagent completed without a text response."
 const backgroundResult = (sessionID: SessionSchema.ID) => ({
   sessionID,
   status: "running" as const,
@@ -40,7 +40,7 @@ export const Input = Schema.Struct({
 
 export const Output = Schema.Struct({
   sessionID: SessionSchema.ID,
-  status: Schema.Literals(["completed", "running"]),
+  status: Schema.Literals(["completed", "running", "stopped"]),
   output: Schema.String,
 })
 export const description = [
@@ -65,22 +65,6 @@ export const Plugin = {
     // continuation job is observable even while a settled generation's observer is finalizing.
     const notifications = new Set<string>()
 
-    // Concatenate the child's final completed assistant text. Distinguishes "completed with no
-    // text" (generic string) from "failed" (the run effect fails, surfaced as a job error).
-    const latestAssistantText = Effect.fn("SubagentTool.latestAssistantText")(function* (sessionID: SessionSchema.ID) {
-      const messages = yield* sessions.messages({ sessionID, order: "desc", limit: 20 })
-      const assistant = messages.find(
-        (message) =>
-          message.type === "assistant" && message.time.completed !== undefined && message.error === undefined,
-      )
-      if (assistant === undefined || assistant.type !== "assistant") return NO_TEXT
-      const text = assistant.content
-        .filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
-        .map((part) => part.text)
-        .join("")
-      return text.length > 0 ? text : NO_TEXT
-    })
-
     const notifyWhenDone = Effect.fn("SubagentTool.notifyWhenDone")(function* (
       recovery: Extract<Job.Recovery, { kind: "subagent" }>,
       startedAt: number,
@@ -90,7 +74,7 @@ export const Plugin = {
       notifications.add(key)
       yield* Effect.gen(function* () {
         const info = (yield* jobs.wait({ id: recovery.childSessionID })).info
-        if (info) yield* SubagentCompletion.deliver(sessions, jobs, { ...info, recovery })
+        if (info && info.status !== "running") yield* BackgroundNotice.deliver(sessions, jobs, { ...info, recovery })
       }).pipe(
         Effect.ensuring(Effect.sync(() => notifications.delete(key))),
         Effect.forkIn(scope, { startImmediately: true }),
@@ -231,7 +215,7 @@ export const Plugin = {
                 title: input.description,
                 metadata: {},
                 recovery,
-                run: sessions.resume(child.id).pipe(Effect.andThen(latestAssistantText(child.id))),
+                run: SubagentOutcome.run(sessions, child.id),
               })
 
               if (background) {
@@ -256,16 +240,20 @@ export const Plugin = {
                 return yield* new ToolFailure({
                   message: `Subagent failed (sessionID: ${child.id}): ${result.info.error ?? "unknown error"}`,
                 })
-              if (result?.info.status === "cancelled")
+              const outcome = result?.info.result?.kind === "subagent" ? result.info.result : undefined
+              if (outcome === undefined)
                 return yield* new ToolFailure({ message: `Subagent cancelled (sessionID: ${child.id})` })
-              return { sessionID: child.id, status: "completed" as const, output: result?.info.output ?? NO_TEXT }
+              // A user stop is a successful answer: the work ended and the parent should not redo it.
+              if (outcome.status === "interrupted")
+                return { sessionID: child.id, status: "stopped" as const, output: SubagentOutcome.stopped }
+              return { sessionID: child.id, status: "completed" as const, output: outcome.text }
             }).pipe(
               Effect.map((output) => ({
                 output,
                 content:
-                  output.status === "completed"
-                    ? `<subagent sessionID="${output.sessionID}" state="completed">\n${output.output}\n</subagent>`
-                    : output.output,
+                  output.status === "running"
+                    ? output.output
+                    : `<subagent sessionID="${output.sessionID}" state="${output.status}">\n${output.output}\n</subagent>`,
                 metadata: { sessionID: output.sessionID, status: output.status },
               })),
             ),
