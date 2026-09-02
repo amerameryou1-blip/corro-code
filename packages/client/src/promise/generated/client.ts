@@ -479,7 +479,7 @@ export function make(options: ClientOptions) {
             path: `/api/plugin/await-activation`,
             query: { location: input?.["location"] },
             successStatus: 204,
-            declaredStatuses: [401, 400],
+            declaredStatuses: [400, 401],
             empty: true,
           },
           requestOptions,
