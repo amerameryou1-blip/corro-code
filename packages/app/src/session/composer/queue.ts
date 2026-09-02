@@ -2,6 +2,7 @@ import { createEffect, createMemo, onCleanup, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useMutation } from "@tanstack/solid-query"
 import type { SessionInboxInfo } from "@opencode-ai/client/promise"
+import { PromptSubmissionError } from "@opencode-ai/client/solid"
 import { SessionMessage } from "@opencode-ai/schema/session-message"
 import type { ComposerDelivery } from "@/composer/adapter"
 import type { ComposerModel } from "@/composer/model"
@@ -38,6 +39,13 @@ export function createSessionQueue(input: {
   const language = useLanguage()
   const [state, setState] = createStore<{ editing?: { id: string; stash: EditStash } }>({})
   const notify = () => showToast({ title: language.t("common.requestFailed") })
+  // A standalone row retry cannot finish the surrounding cancel/reorder workflow.
+  const admitReplacement = (request: Parameters<typeof data.session.prompt>[0]) =>
+    data.session.prompt(request).catch(async (error: unknown) => {
+      if (error instanceof PromptSubmissionError && error.reason === "failed")
+        await data.session.pending.cancel(error.sessionID, error.id)
+      throw error
+    })
   const mutation = useMutation(() => ({
     mutationFn: async (
       change:
@@ -62,13 +70,13 @@ export function createSessionQueue(input: {
         change.text,
       )
       // Admit before cancelling so a failed replacement never discards the original.
-      const admitted = await data.session.prompt({
+      const admitted = await admitReplacement({
         ...replacement,
         id: change.replacement,
         delivery: change.delivery,
         ...(change.delivery === "queue" ? { resume: false } : {}),
       })
-      await server.api.session.inbox.cancel({ sessionID: input.sessionID, inboxID: change.original })
+      await data.session.pending.cancel(input.sessionID, change.original)
       cancelEdit()
       if (change.delivery === "queue")
         await rewrite(change.inboxIDs.map((id) => (id === change.original ? admitted.id : id)))
@@ -82,6 +90,9 @@ export function createSessionQueue(input: {
       .list(input.sessionID)
       .filter((item): item is QueuedPrompt => item.type === "user" && item.delivery === "queue"),
   )
+  const submission = (id: string) => data.session.submission.get(input.sessionID, id)
+  // Reordering replaces IDs; unconfirmed admissions must keep theirs for retry.
+  const reorderable = () => !queued().some((item) => submission(item.id))
   const rows = createMemo(() => {
     const replacement = mutation.isPending ? mutation.variables : undefined
     return queuedPromptRows(
@@ -108,8 +119,9 @@ export function createSessionQueue(input: {
     if (changed < 0) return
 
     // Existing inbox APIs cannot reorder rows, so replace only the changed suffix.
+    // This is not atomic: earlier replacements remain if a later admission fails.
     for (const item of ordered.slice(changed)) {
-      await data.session.prompt({
+      await admitReplacement({
         sessionID: input.sessionID,
         text: item.payload.text,
         files: item.payload.files?.map((file) => ({
@@ -126,24 +138,25 @@ export function createSessionQueue(input: {
       })
     }
     for (const item of current.slice(changed)) {
-      await server.api.session.inbox.cancel({ sessionID: input.sessionID, inboxID: item.id })
+      await data.session.pending.cancel(input.sessionID, item.id)
     }
   }
   const steer = (id: string) => {
+    if (submission(id)) return Promise.resolve()
     if (state.editing?.id === id) cancelEdit()
     return server.api.session.inbox.steer({ sessionID: input.sessionID, inboxID: id }).catch(() => notify())
   }
   const remove = (id: string) => {
     if (state.editing?.id === id) cancelEdit()
-    return server.api.session.inbox.cancel({ sessionID: input.sessionID, inboxID: id }).catch(() => notify())
+    return data.session.pending.cancel(input.sessionID, id).catch(() => notify())
   }
   const reorder = (inboxIDs: string[]) => {
-    if (mutation.isPending) return Promise.resolve()
+    if (mutation.isPending || !reorderable()) return Promise.resolve()
     return mutation.mutateAsync({ type: "reorder", inboxIDs }).catch(() => undefined)
   }
 
   const edit = (id: string) => {
-    if (mutation.isPending) return false
+    if (mutation.isPending || submission(id)) return false
     if (state.editing?.id === id) return true
     const item = queued().find((entry) => entry.id === id)
     if (!item) return false
@@ -202,6 +215,9 @@ export function createSessionQueue(input: {
   }
 
   return {
+    sessionID: input.sessionID,
+    submission,
+    reorderable,
     count: () => queued().length,
     delivery: () => (input.working() ? input.behavior() : "steer"),
     alternate: () => {
@@ -228,7 +244,17 @@ export type SessionQueue = ReturnType<typeof createSessionQueue>
 // The slice of the queue the panel renders and drives.
 export type SessionQueueView = Pick<
   SessionQueue,
-  "rows" | "editing" | "working" | "busy" | "steer" | "remove" | "edit" | "reorder"
+  | "sessionID"
+  | "submission"
+  | "reorderable"
+  | "rows"
+  | "editing"
+  | "working"
+  | "busy"
+  | "steer"
+  | "remove"
+  | "edit"
+  | "reorder"
 >
 
 export function queuedPromptRows(items: QueuedPrompt[], replacement?: { original: string; replacement: string }) {

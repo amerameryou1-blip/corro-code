@@ -761,9 +761,19 @@ test("session startup prompt is submitted exactly once", async () => {
         data: [{ id: "model", providerID: "provider", name: "Model", variants: [] }],
       })
     if (url.pathname === "/api/session/dummy/prompt") {
-      bodies.push(await request.json())
+      const input = await request.json()
+      bodies.push(input)
       promptSubmitted.resolve()
-      return json({ data: {} })
+      return json({
+        data: {
+          id: input.id,
+          sessionID: "dummy",
+          type: "user",
+          payload: { text: input.text },
+          delivery: input.delivery ?? "steer",
+          timeCreated: 1,
+        },
+      })
     }
   }, events)
   const server = Bun.serve({ port: 0, fetch: (request) => calls.fetch(request) })
@@ -836,8 +846,18 @@ test.each([false, true])("uses the resolved launch directory for new prompts (fa
         return json({ data: session })
       }
       if (/^\/api\/session\/[^/]+\/prompt$/.test(url.pathname)) {
-        submitted.resolve(await request.json())
-        return json({ data: {} })
+        const input = await request.json()
+        submitted.resolve(input)
+        return json({
+          data: {
+            id: input.id,
+            sessionID: url.pathname.split("/")[3],
+            type: "user",
+            payload: { text: input.text },
+            delivery: input.delivery ?? "steer",
+            timeCreated: 1,
+          },
+        })
       }
       if (/^\/api\/session\/[^/]+\/(message|inbox|permission)$/.test(url.pathname))
         return json({ data: [], cursor: {} })

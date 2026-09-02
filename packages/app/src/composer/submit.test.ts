@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { ModelSelection } from "@/providers/models/selection"
 import type { SessionMessageUser } from "@opencode-ai/client/promise"
+import { PromptSubmissionError } from "@opencode-ai/client/solid"
 import { Skill } from "@opencode-ai/schema/skill"
 import type { ActiveComposerAdapter, ComposerControls, ComposerSession, NewSessionComposerAdapter } from "./adapter"
 import { createMemoryComposerState } from "./state"
@@ -52,6 +53,7 @@ function submitInput(
   adapter: ActiveComposerAdapter | NewSessionComposerAdapter,
   notify = { missingSelection() {}, failed(_kind: "shell" | "command" | "prompt", _error: unknown) {} },
   mode: "normal" | "shell" = "normal",
+  delivery: "steer" | "queue" = "steer",
 ) {
   return createComposerSubmit({
     adapter,
@@ -63,6 +65,7 @@ function submitInput(
     setMode() {},
     closePopover() {},
     notify,
+    delivery: () => delivery,
     comments: { capture: () => [], clear() {}, restore() {} },
   })
 }
@@ -99,6 +102,7 @@ function session(input: {
         setStatus: (_sessionID, status) => input.statuses?.push(status),
         prompt: async (value) => {
           input.calls.push("prompt")
+          await value.prepare?.()
           await input.prompt(value)
         },
       },
@@ -107,7 +111,7 @@ function session(input: {
 }
 
 describe("Composer submission", () => {
-  test("sends one captured value with explicit delivery after selection switches", async () => {
+  test("captures model selection in one shared prompt command and prepares the agent", async () => {
     const state = createMemoryComposerState({ prompt: "ship it" }).capture()
     const calls: string[] = []
     const admitted = Promise.withResolvers<Parameters<ComposerSession["data"]["session"]["prompt"]>[0]>()
@@ -131,7 +135,8 @@ describe("Composer submission", () => {
     await submitInput(adapter).submit(new Event("submit"))
     const request = await admitted.promise
 
-    expect(calls).toEqual(["switch-agent", "switch-model", "prompt"])
+    expect(calls).toEqual(["prompt", "switch-agent"])
+    expect(request.model).toEqual({ id: "model-1", providerID: "provider-1", variant: "balanced" })
     expect(request.delivery).toBe("steer")
     expect(request.text).toBe("ship it")
     expect(request.id).toMatch(/^msg_/)
@@ -170,13 +175,13 @@ describe("Composer submission", () => {
     const submitted = submitInput(adapter).submit(new Event("submit"))
     const request = await admitted.promise
 
-    expect(calls).toEqual(["start", "switch-agent", "switch-model", "prompt"])
+    expect(calls).toEqual(["start", "prompt", "switch-agent"])
     expect(statuses).toEqual(["running"])
     expect(promoted.current()).toMatchObject([{ type: "text", content: "restored draft" }])
     cleanupReady.resolve()
     await submitted
 
-    expect(calls).toEqual(["start", "switch-agent", "switch-model", "prompt", "submitted"])
+    expect(calls).toEqual(["start", "prompt", "switch-agent", "submitted"])
     expect(request.delivery).toBe("steer")
     expect(request.text).toBe("first prompt")
     expect(draft.current()).toEqual([{ type: "text", content: "", start: 0, end: 0 }])
@@ -309,7 +314,7 @@ describe("Composer submission", () => {
     await checked.promise
 
     expect(state.current()).toEqual([{ type: "text", content: "", start: 0, end: 0 }])
-    expect(attempts).toHaveLength(2)
+    expect(attempts).toHaveLength(1)
     expect(new Set(attempts).size).toBe(1)
   })
 
@@ -382,7 +387,7 @@ describe("Composer submission", () => {
     }
     const notify = {
       missingSelection() {},
-      failed: () => (attempts.length === 2 ? first.resolve() : second.resolve()),
+      failed: () => (attempts.length === 1 ? first.resolve() : second.resolve()),
     }
     const submission = submitInput(adapter, notify)
 
@@ -391,11 +396,88 @@ describe("Composer submission", () => {
     await submission.submit(new Event("submit"))
     await second.promise
 
-    expect(attempts).toHaveLength(4)
+    expect(attempts).toHaveLength(2)
     expect(new Set(attempts).size).toBe(1)
     expect(statuses).toEqual(["running", "idle", "running", "idle"])
     expect(state.current()).toMatchObject([{ type: "text", content: "retry me" }])
   })
+
+  test("queued follow-ups keep model metadata without changing the active selection", async () => {
+    const state = createMemoryComposerState({ prompt: "later" }).capture()
+    const calls: string[] = []
+    const admitted = Promise.withResolvers<Parameters<ComposerSession["data"]["session"]["prompt"]>[0]>()
+    const target = session({ calls, prompt: async (value) => admitted.resolve(value) })
+    const adapter: ActiveComposerAdapter = {
+      kind: "active-session",
+      state,
+      ready: () => true,
+      controls,
+      working: () => true,
+      session: () => target,
+      interrupt: async () => undefined,
+      submitted() {},
+      setEditor() {},
+    }
+
+    await submitInput(adapter, undefined, "normal", "queue").submit(new Event("submit"))
+    const request = await admitted.promise
+    expect(calls).toEqual(["prompt"])
+    expect(request.delivery).toBe("queue")
+    expect(request.model).toBeUndefined()
+    expect(request.prepare).toBeUndefined()
+    expect(request.metadata?.model).toEqual({ providerID: "provider-1", modelID: "model-1", variant: "balanced" })
+  })
+
+  test.each(["failed", "cancelled"] as const)(
+    "%s shared submission clears first-prompt handoff and busy state without restoring a duplicate draft",
+    async (reason) => {
+      const state = createMemoryComposerState({ prompt: "retained by the shared client" }).capture()
+      const statuses: ("idle" | "running")[] = []
+      const calls: string[] = []
+      const settled = Promise.withResolvers<void>()
+      const notified: unknown[] = []
+      const cleared: string[] = []
+      const target = session({
+        calls,
+        statuses,
+        admitted: () => {
+          throw new Error("An optimistic row is not an acknowledgement")
+        },
+        handoff: { set() {}, clear: (id) => cleared.push(id) },
+        prompt: async (value) => {
+          throw new PromptSubmissionError(reason, "session-1", value.id!)
+        },
+      })
+      target.data.session.setStatus = (_id, status) => {
+        statuses.push(status)
+        if (status === "idle") settled.resolve()
+      }
+      const adapter: NewSessionComposerAdapter = {
+        kind: "new-session",
+        state,
+        ready: () => true,
+        controls,
+        working: () => false,
+        submitted() {},
+        async start() {
+          return { session: target, cleanupReady: Promise.resolve() }
+        },
+      }
+
+      await submitInput(adapter, { missingSelection() {}, failed: (_kind, error) => notified.push(error) }).submit(
+        new Event("submit"),
+      )
+      await settled.promise
+
+      expect(calls.filter((call) => call === "prompt")).toHaveLength(1)
+      expect(statuses).toEqual(["running", "idle"])
+      expect(cleared).toHaveLength(1)
+      expect(cleared[0]).toMatch(/^msg_/)
+      expect(notified).toHaveLength(reason === "failed" ? 1 : 0)
+      expect(state.current()).toEqual([{ type: "text", content: "", start: 0, end: 0 }])
+      expect(state.retry.current()).toBeUndefined()
+    },
+  )
 
   test("forwards structured mentions to custom commands", async () => {
     const state = createMemoryComposerState().capture()

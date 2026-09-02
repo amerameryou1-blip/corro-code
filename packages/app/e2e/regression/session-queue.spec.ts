@@ -234,6 +234,145 @@ test("editing restores the existing draft and replaces only the original queue p
   expect(mock.log[0]).toBe("prompt:queue")
 })
 
+for (const action of ["edit", "reorder"] as const) {
+  test(`retires an exhausted queue ${action} replacement without offering a standalone retry`, async ({ page }) => {
+    const mock = createQueueMock(["first queued prompt", "second queued prompt"])
+    const view = await openSession(page, mock)
+    const attempts: string[] = []
+    await page.route(`**/api/session/${sessionID}/prompt`, (route) => {
+      const body = route.request().postDataJSON() as { id: string }
+      attempts.push(body.id)
+      return route.abort("failed")
+    })
+    await expect(view.rows).toHaveCount(2)
+    const first = view.rows.filter({ hasText: "first queued prompt" })
+    if (action === "edit") {
+      await first.getByRole("button", { name: "first queued prompt", exact: true }).click()
+      await view.input.fill("replacement that cannot be admitted")
+      await view.input.press("Enter")
+    }
+    if (action === "reorder") {
+      await first.getByRole("button", { name: "Reorder queued prompt" }).hover()
+      await page.mouse.down()
+      const target = await view.rows.filter({ hasText: "second queued prompt" }).boundingBox()
+      if (!target) throw new Error("The target queue row is not visible")
+      await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 10 })
+      await page.mouse.up()
+    }
+    await expect(page.getByText("Request failed", { exact: true })).toBeVisible()
+    expect(attempts).toHaveLength(4)
+    expect(new Set(attempts).size).toBe(1)
+    expect(mock.changes).toEqual([{ inboxID: attempts[0], action: "cancel" }])
+    expect(mock.rows.map((row) => row.id)).toEqual(["inb_seed_1", "inb_seed_2"])
+    await expect(view.rows.locator('[data-action="session-queue-edit"]')).toHaveText([
+      "first queued prompt",
+      "second queued prompt",
+    ])
+    await expect(page.locator('[data-component="prompt-submission"]')).toHaveCount(0)
+  })
+}
+
+for (const delivery of ["steer", "queue"] as const) {
+  for (const width of [390, 1440]) {
+    test(`recovers independent failed ${delivery} submissions at ${width}px`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 })
+      const mock = createQueueMock([])
+      const view = await openSession(page, mock, delivery)
+      const attempts: { id: string; text: string }[] = []
+      const accepted = new Set<string>()
+      await page.route(`**/api/session/${sessionID}/prompt`, (route) => {
+        const body = route.request().postDataJSON() as { id: string; text: string }
+        attempts.push(body)
+        return accepted.has(body.id) ? route.fallback() : route.abort("failed")
+      })
+      const recovery = page.locator('[data-component="prompt-submission"]')
+      await view.input.fill("first failed submission")
+      await view.input.press("Enter")
+      await expect(recovery.getByRole("status")).toHaveText("Could not confirm prompt delivery")
+      const firstID = attempts[0].id
+      expect(attempts.map((attempt) => attempt.id)).toEqual([firstID, firstID, firstID, firstID])
+      await expect(view.input).toHaveText("")
+
+      await view.input.fill("second failed submission")
+      await view.input.press("Enter")
+      await expect(recovery.getByRole("status")).toHaveText([
+        "Could not confirm prompt delivery",
+        "Could not confirm prompt delivery",
+      ])
+      const secondID = attempts[4].id
+      expect(secondID).not.toBe(firstID)
+      expect(attempts.slice(4).map((attempt) => attempt.id)).toEqual([secondID, secondID, secondID, secondID])
+      await expect(view.input).toHaveText("")
+      if (delivery === "queue") {
+        await expect(view.rows).toHaveCount(2)
+        await expect(view.rows.getByRole("button", { name: "first failed submission", exact: true })).toBeDisabled()
+        await expect(view.rows.getByRole("button", { name: "second failed submission", exact: true })).toBeDisabled()
+        await expect(
+          view.rows
+            .filter({ hasText: "first failed submission" })
+            .getByRole("button", { name: "Reorder queued prompt" }),
+        ).toBeDisabled()
+        await expect(view.rows.getByRole("button", { name: "Steer", exact: true })).toHaveCount(0)
+      }
+
+      await testInfo.attach("failed-submissions", { body: await page.screenshot(), contentType: "image/png" })
+
+      const firstRecovery = page.locator(`[data-component="prompt-submission"][data-submission-id="${firstID}"]`)
+      const secondRecovery = page.locator(`[data-component="prompt-submission"][data-submission-id="${secondID}"]`)
+      accepted.add(firstID)
+      await firstRecovery.getByRole("button", { name: "Retry", exact: true }).click()
+      await expect(firstRecovery).toHaveCount(0)
+      await expect.poll(() => mock.prompts.map((prompt) => prompt.id)).toEqual([firstID])
+      expect(attempts).toHaveLength(9)
+      expect(attempts[8]).toEqual(attempts[0])
+      await expect(secondRecovery.getByRole("status")).toHaveText("Could not confirm prompt delivery")
+
+      await secondRecovery.getByRole("button", { name: "Cancel", exact: true }).click()
+      await expect(recovery).toHaveCount(0)
+      await expect.poll(() => mock.changes).toEqual([{ inboxID: secondID, action: "cancel" }])
+      await expect(view.input).toHaveText("")
+      if (delivery === "queue") {
+        await expect(view.rows.locator('[data-action="session-queue-edit"]')).toHaveText(["first failed submission"])
+        return
+      }
+      const messages = page.locator('[data-timeline-row="UserMessage"]')
+      await expect(messages).toHaveCount(1)
+      await expect(messages).toContainText("first failed submission")
+      await expect(messages).toHaveAttribute("data-message-id", firstID)
+    })
+  }
+
+  test(`keeps recovery visible for an image-only failed ${delivery} submission`, async ({ page }) => {
+    const mock = createQueueMock([])
+    const view = await openSession(page, mock, delivery)
+    await page.route(`**/api/session/${sessionID}/prompt`, (route) => route.abort("failed"))
+    const chooser = page.waitForEvent("filechooser")
+    await view.composer.getByRole("button", { name: "Add images and files", exact: true }).click()
+    await page.getByRole("menuitem", { name: /^Images and files/ }).click()
+    await (
+      await chooser
+    ).setFiles({
+      name: "pixel.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    })
+    await expect(view.composer.locator('[data-component="composer-attachments"]')).toBeVisible()
+    await view.input.press("Enter")
+    const recovery = page.locator('[data-component="prompt-submission"]')
+    await expect(recovery.getByRole("status")).toHaveText("Could not confirm prompt delivery")
+    await expect(recovery.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
+    await recovery.getByRole("button", { name: "Cancel", exact: true }).click()
+    await expect(recovery).toHaveCount(0)
+    await expect(view.rows).toHaveCount(0)
+    await expect(page.locator('[data-timeline-row="UserMessage"]')).toHaveCount(0)
+    await expect(view.composer.locator('[data-component="composer-attachments"]')).toHaveCount(0)
+    await expect(view.input).toHaveText("")
+  })
+}
+
 for (const delivery of ["steer", "queue"] as const) {
   test(`keeps finished tools above a pending ${delivery === "queue" ? "queue-to-steer" : "steer"} follow-up`, async ({
     page,

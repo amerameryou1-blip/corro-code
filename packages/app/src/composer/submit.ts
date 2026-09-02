@@ -1,5 +1,6 @@
 import { SessionMessage } from "@opencode-ai/schema/session-message"
 import type { SessionMessageUser } from "@opencode-ai/client/promise"
+import { PromptSubmissionError } from "@opencode-ai/client/solid"
 import { Event } from "@opencode-ai/schema/event"
 import type { Accessor } from "solid-js"
 import type { PromptHistoryComment } from "./history/entry"
@@ -310,31 +311,23 @@ async function sendPrompt(session: ComposerSession, value: ComposerSubmission) {
   // selection applies now; a queued follow-up must not reconfigure the turn it
   // waits behind, so it runs with the session selection at delivery time (the
   // intended selection stays recorded in its metadata).
-  if (value.delivery === "steer") {
-    const current = session.current()
-    if (current?.agent !== value.selection.agent) {
-      await session.api.switchAgent({ sessionID: session.id, agent: value.selection.agent })
-    }
-    if (
-      current?.model?.providerID !== value.selection.model.providerID ||
-      current.model.id !== value.selection.model.modelID ||
-      (current.model.variant ?? "default") !== (value.selection.variant ?? "default")
-    ) {
-      await session.api.switchModel({
-        sessionID: session.id,
-        model: {
-          id: value.selection.model.modelID,
-          providerID: value.selection.model.providerID,
-          variant: value.selection.variant,
-        },
-      })
-    }
-  }
-
-  const admission = {
+  await session.data.session.prompt({
     id: value.id,
     sessionID: session.id,
     delivery: value.delivery,
+    ...(value.delivery === "steer"
+      ? {
+          model: {
+            id: value.selection.model.modelID,
+            providerID: value.selection.model.providerID,
+            variant: value.selection.variant,
+          },
+          prepare: async () => {
+            if (session.current()?.agent !== value.selection.agent)
+              await session.api.switchAgent({ sessionID: session.id, agent: value.selection.agent })
+          },
+        }
+      : {}),
     text: request.text,
     files: request.files.map((file) => ({ uri: file.uri, name: file.name, mention: file.mention })),
     agents: request.agents,
@@ -348,8 +341,7 @@ async function sendPrompt(session: ComposerSession, value: ComposerSubmission) {
         ...(value.selection.variant ? { variant: value.selection.variant } : {}),
       },
     },
-  }
-  await session.data.session.prompt(admission).catch(() => session.data.session.prompt(admission))
+  })
 }
 
 async function buildSubmissionRequest(session: ComposerSession, value: ComposerSubmission) {
@@ -378,6 +370,13 @@ function failSubmission(
   messageID?: string,
   rollback?: () => void,
 ) {
+  if (error instanceof PromptSubmissionError) {
+    session.handoff?.clear(error.id)
+    rollback?.()
+    // The shared client retains failed rows for retry; cancellation discards them.
+    if (error.reason === "failed") input.notify.failed(kind, error)
+    return
+  }
   if (messageID && session.admitted(messageID)) return
   if (messageID) session.handoff?.clear(messageID)
   rollback?.()

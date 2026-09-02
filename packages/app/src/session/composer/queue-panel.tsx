@@ -11,6 +11,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useLanguage } from "@/runtime/i18n/language"
 import type { SessionQueueView } from "./queue"
+import { PromptSubmission } from "../prompt-submission"
 
 // Pullout above the composer listing the prompts queued behind the current
 // turn. The panel slides under the composer card (negative margin, opaque
@@ -58,11 +59,7 @@ export function SessionQueuePanel(props: { queue: SessionQueueView }) {
         >
           {/* Keyed on row IDs so store updates move row elements instead of
               remounting them, which would kill an in-flight drag. */}
-          <div
-            ref={listRef}
-            class="flex flex-col gap-px"
-            classList={{ "max-h-[131px] overflow-y-auto": count() > 3 }}
-          >
+          <div ref={listRef} class="flex flex-col gap-px" classList={{ "max-h-[131px] overflow-y-auto": count() > 3 }}>
             <For each={props.queue.rows().map((row) => row.id)}>
               {(id, index) => <SessionQueueRow queue={props.queue} id={id} index={index()} />}
             </For>
@@ -89,7 +86,7 @@ function SessionQueueRow(props: { queue: SessionQueueView; id: string; index: nu
       return props.index
     },
     get disabled() {
-      return props.queue.busy()
+      return props.queue.busy() || !props.queue.reorderable()
     },
   })
   return (
@@ -110,6 +107,7 @@ function SessionQueueRow(props: { queue: SessionQueueView; id: string; index: nu
               type="button"
               class="grid shrink-0 cursor-grab touch-none grid-cols-2 gap-x-[2px] gap-y-[2.25px] p-1"
               aria-label={language.t("session.queue.reorder")}
+              disabled={props.queue.busy() || !props.queue.reorderable()}
             >
               <For each={Array.from({ length: 6 })}>
                 {() => <span class="size-[2px] bg-v2-background-bg-layer-04" />}
@@ -120,7 +118,7 @@ function SessionQueueRow(props: { queue: SessionQueueView; id: string; index: nu
                 type="button"
                 data-action="session-queue-edit"
                 dir="auto"
-                disabled={props.queue.busy()}
+                disabled={props.queue.busy() || !!props.queue.submission(props.id)}
                 class="max-w-full min-w-0 self-start truncate rounded-sm text-start text-[13px] font-[440] leading-[var(--line-height-compact)]"
                 classList={{
                   "text-v2-text-text-faint": editing(),
@@ -135,6 +133,7 @@ function SessionQueueRow(props: { queue: SessionQueueView; id: string; index: nu
                   {language.t("session.queue.attachments")}
                 </span>
               </Show>
+              <PromptSubmission sessionID={props.queue.sessionID} id={props.id} />
             </div>
           </div>
           <div
@@ -146,7 +145,7 @@ function SessionQueueRow(props: { queue: SessionQueueView; id: string; index: nu
               "pointer-events-none": props.queue.busy(),
             }}
           >
-            <Show when={!editing()}>
+            <Show when={!editing() && !props.queue.submission(props.id)}>
               <Tooltip
                 placement="top"
                 inactive={!props.queue.working()}
@@ -166,18 +165,20 @@ function SessionQueueRow(props: { queue: SessionQueueView; id: string; index: nu
                 </Button>
               </Tooltip>
             </Show>
-            <Tooltip placement="top" value={language.t("session.queue.remove")}>
-              <IconButton
-                data-action="session-queue-remove"
-                type="button"
-                size="small"
-                variant="ghost-muted"
-                icon={<Icon name="outline-xmark" />}
-                disabled={props.queue.busy()}
-                aria-label={language.t("session.queue.remove")}
-                onClick={() => void props.queue.remove(props.id)}
-              />
-            </Tooltip>
+            <Show when={!props.queue.submission(props.id)}>
+              <Tooltip placement="top" value={language.t("session.queue.remove")}>
+                <IconButton
+                  data-action="session-queue-remove"
+                  type="button"
+                  size="small"
+                  variant="ghost-muted"
+                  icon={<Icon name="outline-xmark" />}
+                  disabled={props.queue.busy()}
+                  aria-label={language.t("session.queue.remove")}
+                  onClick={() => void props.queue.remove(props.id)}
+                />
+              </Tooltip>
+            </Show>
           </div>
         </div>
       )}

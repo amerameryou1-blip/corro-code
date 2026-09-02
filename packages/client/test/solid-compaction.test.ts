@@ -190,7 +190,8 @@ test.each(["compaction", "canonical compaction", "user"])(
     await fixture.data.session.pending.sync(sessionID)
     expect(fixture.data.session.pending.list(sessionID)).toEqual([durable])
     fixture.response.resolve(new Response("Lost response", { status: 500 }))
-    expect(await result).toBeInstanceOf(Error)
+    if (type === "user") expect(await result).toEqual(durable)
+    if (type !== "user") expect(await result).toBeInstanceOf(Error)
     expect(fixture.data.session.pending.list(sessionID)).toEqual([durable])
     if (type === "user")
       expect(fixture.data.session.message.list(sessionID)).toMatchObject([{ id, type: "user", text: "Follow up" }])
@@ -200,14 +201,17 @@ test.each(["compaction", "canonical compaction", "user"])(
 test("keeps one event listener and removes it when the data owner is disposed during a gate", async () => {
   using fixture = setup()
   const gate = Promise.withResolvers<void>()
-  const first = fixture.data.session.prompt({ sessionID, text: "First", gate: gate.promise })
+  const first = fixture.data.session
+    .prompt({ sessionID, text: "First", gate: gate.promise })
+    .catch((error: unknown) => error)
   const compact = fixture.data.session.compact({ sessionID })
   expect(fixture.listeners.size).toBe(1)
   fixture.dispose()
   expect(fixture.listeners.size).toBe(0)
   gate.resolve()
   fixture.response.resolve(Response.json({ data: item("msg_canonical") }))
-  await Promise.all([first, compact])
+  expect(await first).toMatchObject({ reason: "cancelled" })
+  await compact
   expect(fixture.listeners.size).toBe(0)
 })
 

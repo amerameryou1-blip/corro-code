@@ -32,6 +32,7 @@ import { parseCommentNote, readPromptPresentation } from "@/composer/comment-not
 import { useCommand } from "@/shell/commands/command"
 import { useSettings } from "@/settings/model"
 import { SessionTitleHeader } from "../session-identity-header"
+import { PromptSubmission } from "../prompt-submission"
 
 type BackgroundTask = {
   id: string
@@ -630,7 +631,20 @@ function MessageTimelineView(
         const content = Timeline.resolveContent(messageByID().get(row.group.ref.messageID), row.group.ref.partID)
         return content?.type === "tool" && ["edit", "write"].includes(content.name)
       }}
-      renderRow={(row, onSizeChange) => <rowRenderer.Row row={row} onSizeChange={onSizeChange} />}
+      renderRow={(row, onSizeChange) => (
+        <>
+          <rowRenderer.Row row={row} onSizeChange={onSizeChange} />
+          <Show when={row()._tag === "UserMessage" && sessionID()}>
+            {(id) => (
+              <PromptSubmission
+                sessionID={id()}
+                id={row().userMessageID}
+                class={`${turnPadding()} ${props.centered ? "md:max-w-[1000px] md:mx-auto" : ""}`}
+              />
+            )}
+          </Show>
+        </>
+      )}
       header={
         <Show when={!props.hideHeader}>
           <SessionTitleHeader>

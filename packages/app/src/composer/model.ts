@@ -1,6 +1,7 @@
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import type { ReferenceInfo } from "@opencode-ai/client/promise"
+import { PromptSubmissionError } from "@opencode-ai/client/solid"
 import { createComponent, createEffect, createMemo, on } from "solid-js"
 import type { ComposerSuggestion } from "./types"
 import { createComposerEditor, createComposerEditorState, type ComposerEditorModel } from "./editor/interaction"
@@ -418,6 +419,7 @@ export function createComposerModel(adapter: ComposerAdapter, options?: { queue?
 }
 
 function composerErrorMessage(language: ReturnType<typeof useLanguage>, error: unknown) {
+  if (error instanceof PromptSubmissionError) return language.t("session.submission.failed")
   if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
     return error.message
   }

@@ -2,6 +2,7 @@
 import { expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import type { OpenCodeEvent } from "@opencode-ai/client"
+import { PromptSubmissionError } from "@opencode-ai/client/solid"
 import { SessionMessage } from "@opencode-ai/core/session/message"
 import { Bus } from "@opencode-ai/core/bus"
 import { Event } from "@opencode-ai/schema/event"
@@ -3198,9 +3199,9 @@ test("admits prompts optimistically and reconciles with the durable echo", async
     expect(echoed.time.created).toBe(5)
     expect(echoed.files).toEqual([echoFile])
 
-    // A late transport failure after the echo must not delete acknowledged state.
+    // The durable echo settles admission even when its HTTP response is lost.
     release(json({ _tag: "UnknownError", message: "response lost" }, { status: 500 }))
-    expect(await settled).toBeDefined()
+    expect(await settled).toBeUndefined()
     expect(sync.session.pending.list(sessionID).map((item) => item.id)).toEqual([messageID])
     expect(sync.session.message.list(sessionID).map((message) => message.id)).toEqual([messageID])
   } finally {
@@ -3416,11 +3417,10 @@ test("a retry under the same client-minted ID cannot duplicate rows", async () =
   try {
     await mounted
     await sync.session.prompt({ sessionID, id: messageID, text: "hello" })
-    // Retry with the identical payload: server admission is idempotent per ID,
-    // and the local dedupe keeps a single row.
+    // Repeated callers join the HTTP-accepted operation until its durable echo.
     await sync.session.prompt({ sessionID, id: messageID, text: "hello" })
 
-    expect(posts).toEqual([messageID, messageID])
+    expect(posts).toEqual([messageID])
     expect(sync.session.pending.list(sessionID).map((item) => item.id)).toEqual([messageID])
     expect(sync.session.input.list(sessionID)).toEqual([messageID])
     expect(sync.session.message.list(sessionID).map((message) => message.id)).toEqual([messageID])
@@ -3439,7 +3439,11 @@ test("a retry under the same client-minted ID cannot duplicate rows", async () =
     await wait(() => received.includes("session.inbox.enqueued"))
     unsubscribe()
     fail = true
-    await expect(sync.session.prompt({ sessionID, id: messageID, text: "hello" })).rejects.toThrow()
+    await expect(sync.session.prompt({ sessionID, id: messageID, text: "hello" })).rejects.toBeInstanceOf(
+      PromptSubmissionError,
+    )
+    expect(posts).toEqual(Array(5).fill(messageID))
+    expect(sync.session.submission.get(sessionID, messageID)).toMatchObject({ status: "failed", attempt: 4 })
     expect(sync.session.pending.list(sessionID).map((item) => item.id)).toEqual([messageID])
     expect(sync.session.message.list(sessionID).map((message) => message.id)).toEqual([messageID])
   } finally {
