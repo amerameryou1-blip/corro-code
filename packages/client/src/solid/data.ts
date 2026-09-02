@@ -372,7 +372,12 @@ export function createData(config: CreateDataInput) {
       )
       if (removed) optimistic.remove(operation.key)
       if (removed && status !== "accepted") return
-      if (!removed && status === "accepted" && operation.accepted && optimistic.has(operation.key))
+      if (
+        status === "accepted" &&
+        operation.accepted &&
+        prompts.get(operation.key) === operation &&
+        optimistic.has(operation.key)
+      )
         stageLocal(operation.accepted)
       config.log?.info?.("prompt submission", {
         sessionID: operation.group,
@@ -431,11 +436,6 @@ export function createData(config: CreateDataInput) {
       if (map.get(key) === promise) map.delete(key)
     }
     void promise.then(settle, settle)
-  }
-
-  // Capture creation before settlement clears its entry, so dependent RPCs still see a failed create.
-  function sendAdmission<Value>(sessionID: string, send: () => Promise<Value>, gate?: Promise<unknown>) {
-    return admissions.run(sessionID, send, { wait: Promise.all([gate, creating.get(sessionID)]) })
   }
 
   // Only server-confirmed inbox items enter the canonical projection.
@@ -1589,10 +1589,15 @@ export function createData(config: CreateDataInput) {
         // speculative row on an echo, and remember consumed IDs until the POST
         // settles so its older response cannot resurrect a queued row.
         const observed = new Set<string>()
-        const request = sendAdmission(input.sessionID, async () => {
-          if (input.model) await api().session.switchModel({ sessionID: input.sessionID, model: input.model })
-          return api().session.compact({ sessionID: input.sessionID, id })
-        })
+        const request = admissions
+          .run(
+            input.sessionID,
+            async () => {
+              if (input.model) await api().session.switchModel({ sessionID: input.sessionID, model: input.model })
+              return api().session.compact({ sessionID: input.sessionID, id })
+            },
+            { wait: creating.get(input.sessionID) },
+          )
           .then((item) => {
             batch(() => {
               optimistic.remove(id)

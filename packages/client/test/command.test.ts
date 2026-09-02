@@ -135,6 +135,7 @@ describe("Command.make", () => {
   test("retries captured data, prepares once, and rebuilds per-cycle factory state only on manual retry", async () => {
     const seen: Input[] = []
     const attempts: number[] = []
+    const contexts: Command.Context[] = []
     let prepared = 0
     let factories = 0
     let selections = 0
@@ -145,6 +146,7 @@ describe("Command.make", () => {
         factories++
         let selected = false
         return async (context) => {
+          contexts.push(context)
           seen.push(value)
           attempts.push(context.attempt)
           if (!selected) {
@@ -174,6 +176,8 @@ describe("Command.make", () => {
     expect(selections).toBe(1)
     succeed = true
     const retried = operation.retry()
+    contexts[0].stage("stale cycle")
+    expect(operation.state).toMatchObject({ status: "sending", attempt: 0, stage: "waiting" })
     expect(retried).not.toBe(original)
     expect(operation.request).toBe(retried)
     expect(operation.retry()).toBe(retried)

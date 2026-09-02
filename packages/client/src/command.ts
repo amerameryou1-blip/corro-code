@@ -112,8 +112,6 @@ export namespace Command {
         let state: State = { status: "sending", attempt: 0, stage: "waiting" }
         let accepted: Output | undefined
         let started = false
-        let retired = false
-        let running = false
         let proof = false
         let preparation: Promise<unknown> | undefined
         let confirmation: Promise<void> | undefined
@@ -128,9 +126,11 @@ export namespace Command {
           notify()
         }
 
+        function isRunning() {
+          return state.status === "sending" || state.status === "retrying"
+        }
+
         function retire(next: State) {
-          retired = true
-          running = false
           state = next
           operations.delete(key)
           abort.abort()
@@ -157,27 +157,27 @@ export namespace Command {
             return cycle.promise
           },
           retry() {
-            if (retired || running || state.status !== "failed") return cycle.promise
+            if (state.status !== "failed") return cycle.promise
             cycle = deferred<Output>()
             run()
             return cycle.promise
           },
           cancel() {
-            if (retired) return
+            if (abort.signal.aborted) return
             const error = new Error("cancelled", key)
-            if (!running) cycle = deferred<Output>()
+            if (!isRunning()) cycle = deferred<Output>()
             cycle.reject(error)
             retire({ status: "cancelled", attempt: state.attempt, stage: state.stage, error })
           },
           confirm(output) {
-            if (retired) return
+            if (abort.signal.aborted) return
             accepted = output
-            if (!running) cycle = deferred<Output>()
+            if (!isRunning()) cycle = deferred<Output>()
             cycle.resolve(output)
             retire({ status: "accepted", attempt: state.attempt, stage: state.stage })
           },
           confirmFrom(load) {
-            if (retired || confirmation) return
+            if (abort.signal.aborted || confirmation) return
             proof = true
             confirmation = interrupt(
               Promise.resolve().then(() => {
@@ -199,7 +199,6 @@ export namespace Command {
         }
 
         function run() {
-          running = true
           state = { status: "sending", attempt: 0, stage: "waiting" }
           const current = cycle
           let exhausted = false
@@ -226,10 +225,11 @@ export namespace Command {
                         signal: abort.signal,
                         attempt,
                         stage(name) {
-                          if (!retired && running && cycle === current) update({ ...state, stage: name })
+                          if (!abort.signal.aborted && isRunning() && cycle === current)
+                            update({ ...state, stage: name })
                         },
                       })
-                      if (!retired) notify()
+                      if (!abort.signal.aborted) notify()
                       return result
                     }),
                     abort.signal,
@@ -253,15 +253,13 @@ export namespace Command {
           )
           void request.then(
             (output) => {
-              if (retired) return
-              running = false
+              if (abort.signal.aborted) return
               accepted = output
               current.resolve(output)
               update({ status: "accepted", attempt: state.attempt, stage: state.stage })
             },
             (cause: unknown) => {
-              if (retired) return
-              running = false
+              if (abort.signal.aborted) return
               const error = exhausted || proof ? new Error("failed", key, { cause }) : cause
               current.reject(error)
               const next: State = {
