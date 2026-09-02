@@ -79,56 +79,6 @@ ctx.websearch.transform
 
 ## Runtime Hooks
 
-### Experimental Instructions
-
-Register a session-aware instruction source with `ctx.experimental.instructions`.
-OpenCode stores its JSON value and appends changes as authoritative system reminders,
-without rewriting the existing prompt prefix. This experimental surface may change.
-
-```ts
-import { Instruction, Plugin } from "@opencode-ai/plugin"
-import { Schema } from "effect"
-
-export default Plugin.define({
-  id: "example.review",
-  async setup(ctx) {
-    await ctx.experimental.instructions.transform((draft) => {
-      draft.add({
-        key: "example.review/mode",
-        codec: Schema.toCodecJson(Schema.String),
-        read: ({ agent }) => (agent === "reviewer" ? "Review without editing files." : Instruction.removed),
-        render: {
-          initial: (rule) => rule,
-          changed: (_, rule) => `The review instruction is now: ${rule}`,
-          removed: () => "The previous review restriction no longer applies.",
-        },
-      })
-    })
-  },
-})
-```
-
-- `read` receives readonly `sessionID`, the selected `agent` ID, and the session's
-  `location` (including project metadata). It runs during instruction preparation,
-  not during registration, and may return a value or a Promise. Effect plugins
-  return an Effect instead.
-- The first value uses `initial`; changed values use `changed`; unchanged values
-  add no reminder. `removed(previous)` runs only when a stored value is removed.
-  A source that has never had a value emits nothing when it returns `Instruction.removed`.
-- Keep keys unique and stable. Renderers must be pure functions of stored values,
-  and codecs must remain compatible with historical values. Include meaningful
-  revisions in the value when instruction semantics change.
-- Return `Instruction.unavailable` for a temporary read failure. Failed reads or
-  encoding failures have the same effect: retain the last value, or block the
-  initial baseline if no baseline exists.
-- `reload()` replays source-registration transforms; it does not wake a session.
-  Disposal/unload unregisters sources, but is **not** a narrated withdrawal.
-  Keep a source registered and return `Instruction.removed` to narrate a withdrawal.
-- Sources use the existing instruction lifecycle; this surface does not change
-  compaction, undo, or fork behavior.
-
-### Live Operations
-
 Runtime hooks intercept live operations:
 
 ```ts

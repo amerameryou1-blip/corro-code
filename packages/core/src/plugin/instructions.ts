@@ -1,7 +1,6 @@
 export * as PluginInstructions from "./instructions.js"
 
 import { Instruction } from "@opencode-ai/plugin/instructions"
-import type { InstructionDraft, InstructionDomain } from "@opencode-ai/plugin/effect/instructions"
 import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
 import { Cause, Context, Effect, Layer, Schema } from "effect"
 import { Instructions } from "../instructions/index.js"
@@ -9,14 +8,14 @@ import { State } from "../state.js"
 
 type Source = (context: Instruction.Context) => Instructions.Source
 
-export interface Interface extends InstructionDomain {
+export interface Interface extends State.Transformable<Instruction.EffectDraft> {
   readonly load: (context: Instruction.Context) => Instructions.List
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/PluginInstructions") {}
 
 export const layer = Layer.sync(Service, () => {
-  const state = State.create<Map<Instructions.Key, Source>, InstructionDraft>({
+  const state = State.create<Map<Instructions.Key, Source>, Instruction.EffectDraft>({
     name: "plugin.instructions",
     initial: () => new Map(),
     draft: (sources) => ({
@@ -40,12 +39,12 @@ export const layer = Layer.sync(Service, () => {
           return {
             ...source,
             read: source.read.pipe(
-              Effect.catchCause((cause) =>
-                Cause.hasInterrupts(cause)
-                  ? Effect.failCause(cause).pipe(Effect.orDie)
-                  : Effect.logWarning("plugin instruction source unavailable", { key }).pipe(
-                      Effect.as(Instructions.unavailable),
-                    ),
+              Effect.catchCauseIf(
+                (cause) => !Cause.hasInterrupts(cause),
+                () =>
+                  Effect.logWarning("plugin instruction source unavailable", { key }).pipe(
+                    Effect.as(Instructions.unavailable),
+                  ),
               ),
             ),
           }

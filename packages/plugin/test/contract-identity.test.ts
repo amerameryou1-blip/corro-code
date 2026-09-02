@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test"
 import { Effect } from "effect"
-import { Instruction } from "@opencode-ai/plugin/instructions"
 import { Agent } from "@opencode-ai/schema/agent"
 import { Command } from "@opencode-ai/schema/command"
 import { Connection } from "@opencode-ai/schema/connection"
@@ -32,7 +31,6 @@ test.each([
   expect(entrypoint.Connection).toBe(Connection)
   expect(entrypoint.Credential).toBe(Credential)
   expect(entrypoint.Integration).toBe(Integration)
-  expect(entrypoint.Instruction).toBe(Instruction)
   expect(entrypoint.Location).toBe(Location)
   expect(entrypoint.Mcp).toBe(Mcp)
   expect(entrypoint.Model).toBe(Model)
@@ -48,7 +46,6 @@ test.each([
     "Command",
     "Connection",
     "Credential",
-    "Instruction",
     "Integration",
     "Location",
     "Mcp",

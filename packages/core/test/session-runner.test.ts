@@ -49,8 +49,6 @@ import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
 import { SessionUsage } from "@opencode-ai/core/session/usage"
 import { PluginSupervisor } from "@opencode-ai/core/plugin/supervisor"
 import { PluginHooks } from "@opencode-ai/core/plugin/hooks"
-import { PluginInstructions } from "@opencode-ai/core/plugin/instructions"
-import { PlanPlugin } from "@opencode-ai/core/plugin/plan"
 import { SystemPromptPlugin } from "@opencode-ai/core/plugin/system-prompt"
 import { QuestionTool } from "@opencode-ai/core/tool/plugin/question"
 import { Agent } from "@opencode-ai/core/agent"
@@ -77,12 +75,11 @@ import { McpInstructions } from "@opencode-ai/core/mcp/instructions"
 import { SessionSystemPrompt } from "@opencode-ai/core/session/system-prompt"
 import { ID } from "@opencode-ai/core/model"
 import { Location } from "@opencode-ai/core/location"
-import { Global } from "@opencode-ai/util/global"
 import { Provider } from "@opencode-ai/core/provider"
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Queue, Schema, Scope, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
-import { and, asc, desc, eq, sql } from "drizzle-orm"
+import { asc, desc, eq, sql } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
 import { promptLocationNode } from "./fixture/prompt-location"
 import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
@@ -470,8 +467,6 @@ const layer = Layer.unwrap(
         Catalog.node,
         Tool.node,
         PluginHooks.node,
-        PluginInstructions.node,
-        Global.node,
         echoNode,
         SessionRunnerModel.node,
         InstructionBuiltIns.node,
@@ -581,23 +576,6 @@ const setup = Effect.gen(function* () {
 })
 
 type Scenario = Effect.Success<typeof setup>
-const activatePlan = Effect.gen(function* () {
-  const agents = yield* Agent.Service
-  const instructions = yield* PluginInstructions.Service
-  const hooks = yield* PluginHooks.Service
-  yield* PlanPlugin.Plugin.effect(
-    host({
-      agent: agentHost(agents),
-      experimental: { instructions },
-      tool: {
-        transform: () => Effect.die("unused tool.transform"),
-        reload: () => Effect.die("unused tool.reload"),
-        hook: (name, callback) => hooks.register("tool", name, callback),
-      },
-    }),
-  )
-})
-
 const scenario = (
   name: string,
   body: (s: Scenario) => Effect.gen.Return<void, unknown, Layer.Success<typeof layer> | Scope.Scope>,
@@ -723,18 +701,6 @@ const recordedStepSettlementEvents = (id: Session.ID, assistantMessageID: Sessio
       .pipe(Effect.orDie)).filter(
       (event) => settlementTypes.has(event.type) && event.data.assistantMessageID === assistantMessageID,
     )
-  })
-
-const recordedInstructionUpdates = (id: Session.ID) =>
-  Effect.gen(function* () {
-    const { db } = yield* Database.Service
-    return (yield* db
-      .select({ data: EventTable.data })
-      .from(EventTable)
-      .where(and(eq(EventTable.aggregate_id, id), eq(EventTable.type, "session.instructions.updated.2")))
-      .orderBy(asc(EventTable.seq))
-      .all()
-      .pipe(Effect.orDie)).map((row) => row.data)
   })
 
 const recordedStepSettlementTypes = (id: Session.ID, assistantMessageID: SessionMessage.ID) =>
@@ -1655,113 +1621,6 @@ describe("SessionRunnerLLM", () => {
     expect(
       yield* s.db.select().from(InstructionStateTable).where(eq(InstructionStateTable.session_id, forked.id)).get(),
     ).toMatchObject({ current_values: { "test/context": Instructions.hash("Latest context") } })
-  })
-
-  scenario("narrates Plan switches once without synthetic reminders", function* (s) {
-    yield* activatePlan
-    yield* s.runPrompt("First")
-    yield* s.session.switchAgent({ sessionID, agent: Agent.ID.make("plan") })
-    yield* s.runPrompt("Explore")
-    yield* s.runPrompt("Continue exploring")
-    yield* s.session.switchAgent({ sessionID, agent: Agent.ID.make("build") })
-    yield* s.runPrompt("Implement")
-    yield* s.runPrompt("Continue implementing")
-
-    expect(systemTexts(s.requests[1])).toHaveLength(1)
-    expect(systemTexts(s.requests[1])[0]).toContain("You are in Plan mode")
-    expect(systemTexts(s.requests[2])).toEqual(systemTexts(s.requests[1]))
-    expect(systemTexts(s.requests[3])).toHaveLength(2)
-    expect(systemTexts(s.requests[3])[1]).toContain("NO LONGER in Plan mode")
-    expect(systemTexts(s.requests[4])).toEqual(systemTexts(s.requests[3]))
-    expect(s.requests.every((request) => JSON.stringify(request.system) === JSON.stringify(s.requests[0].system))).toBe(
-      true,
-    )
-    expect(yield* recordedInstructionUpdates(sessionID)).toMatchObject([
-      { delta: { "test/context": expect.any(String) } },
-      { delta: { "opencode.plan/mode": expect.any(String) } },
-      { delta: { "opencode.plan/mode": "removed" } },
-    ])
-    expect((yield* s.messages).filter((message) => message.type === "synthetic")).toEqual([])
-    expect(yield* s.inbox).toEqual([])
-    yield* s.session.switchAgent({ sessionID, agent: Agent.ID.make("plan") })
-    yield* s.runPrompt("Explore again")
-    expect(systemTexts(s.requests.at(-1)!)).toHaveLength(3)
-    expect(systemTexts(s.requests.at(-1)!).at(-1)).toContain("You are in Plan mode")
-    expect(s.requests.at(-1)!.system).toEqual(s.requests[0].system)
-    expect(yield* recordedInstructionUpdates(sessionID)).toHaveLength(4)
-  })
-
-  scenario("starts Plan instructions in the baseline and keeps repeated requests stable", function* (s) {
-    yield* activatePlan
-    yield* s.session.switchAgent({ sessionID, agent: Agent.ID.make("plan") })
-    yield* s.runPrompt("Explore")
-    yield* s.runPrompt("Continue")
-
-    expect(s.requests[0].system.map((part) => part.text).join("\n")).toContain("You are in Plan mode")
-    expect(s.requests[1].system).toEqual(s.requests[0].system)
-    expect(systemTexts(s.requests[0])).toEqual([])
-    expect(systemTexts(s.requests[1])).toEqual([])
-    expect(yield* recordedInstructionUpdates(sessionID)).toHaveLength(1)
-    expect((yield* s.messages).filter((message) => message.type === "synthetic")).toEqual([])
-  })
-
-  scenario("compacts Plan instructions into the baseline and drops them after leaving", function* (s) {
-    yield* activatePlan
-    yield* s.runPrompt("First")
-    yield* s.session.switchAgent({ sessionID, agent: Agent.ID.make("plan") })
-    yield* s.runPrompt("Explore")
-    yield* s.llm.push(TestLLM.text("Exploration summary", "plan-summary"))
-    const active = yield* s.session.compact({ sessionID })
-    yield* s.resume
-    expect(yield* s.messages).toContainEqual(expect.objectContaining({ id: active.id, status: "completed" }))
-    yield* s.runPrompt("Continue exploring")
-
-    expect(
-      s.requests
-        .at(-1)!
-        .system.map((part) => part.text)
-        .join("\n"),
-    ).toContain("You are in Plan mode")
-    expect(systemTexts(s.requests.at(-1)!)).toEqual([])
-    yield* s.session.switchAgent({ sessionID, agent: Agent.ID.make("build") })
-    yield* s.runPrompt("Implement")
-    expect(systemTexts(s.requests.at(-1)!)).toEqual([expect.stringContaining("NO LONGER in Plan mode")])
-
-    yield* s.llm.push(TestLLM.text("Implementation summary", "build-summary"))
-    const inactive = yield* s.session.compact({ sessionID })
-    yield* s.resume
-    expect(yield* s.messages).toContainEqual(expect.objectContaining({ id: inactive.id, status: "completed" }))
-    yield* s.runPrompt("Continue implementing")
-    expect(
-      s.requests
-        .at(-1)!
-        .system.map((part) => part.text)
-        .join("\n"),
-    ).not.toContain("Plan mode")
-    expect(systemTexts(s.requests.at(-1)!)).toEqual([])
-    expect(yield* recordedInstructionUpdates(sessionID)).toHaveLength(3)
-  })
-
-  scenario("reloads and replaces the Plan source without spurious instruction updates", function* (s) {
-    const scope = yield* Scope.make()
-    yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
-    yield* activatePlan.pipe(Scope.provide(scope))
-    const instructions = yield* PluginInstructions.Service
-    yield* s.session.switchAgent({ sessionID, agent: Agent.ID.make("plan") })
-    yield* s.runPrompt("Explore")
-    const reloaded = yield* instructions.reload().pipe(Effect.forkChild({ startImmediately: true }))
-    yield* TestClock.adjust("500 millis")
-    yield* Fiber.join(reloaded)
-    yield* s.runPrompt("After reload")
-    yield* Scope.close(scope, Exit.void)
-    yield* activatePlan
-    yield* s.runPrompt("After replacement")
-
-    expect(s.requests[0].system.map((part) => part.text).join("\n")).toContain("You are in Plan mode")
-    expect(s.requests[1].system).toEqual(s.requests[0].system)
-    expect(s.requests[2].system).toEqual(s.requests[0].system)
-    expect(s.requests.flatMap(systemTexts)).toEqual([])
-    expect(yield* recordedInstructionUpdates(sessionID)).toHaveLength(1)
   })
 
   scenario("keeps nested forks self-contained", function* (s) {
