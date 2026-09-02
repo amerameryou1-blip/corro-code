@@ -2,9 +2,9 @@ import { expect, test } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectAppVisible } from "../utils/waits"
 
-const directory = "C:/OpenCode/NewProject"
+const directory = "C:/Corro Code/NewProject"
 
-test("creates a session in a new project, connects OpenCode Go, and selects its model", async ({ page }) => {
+test("creates a session in a new project, connects Corro Code Go, and selects its model", async ({ page }) => {
   let connectedGo = false
   let pendingGo = false
   const connections: Array<{ integrationID: string; body: unknown }> = []
@@ -23,7 +23,7 @@ test("creates a session in a new project, connects OpenCode Go, and selects its 
       all: [
         {
           id: "opencode",
-          name: "OpenCode",
+          name: "Corro Code",
           models: {
             "free-model": {
               id: "free-model",
@@ -35,7 +35,7 @@ test("creates a session in a new project, connects OpenCode Go, and selects its 
         },
         {
           id: "opencode-go",
-          name: "OpenCode Go",
+          name: "Corro Code Go",
           models: {
             "go-model-1": {
               id: "go-model-1",
@@ -79,7 +79,7 @@ test("creates a session in a new project, connects OpenCode Go, and selects its 
 
   const modelControl = page.locator('[data-action="prompt-model"]')
   await modelControl.click()
-  await expect(page.locator('[data-section="free-models"]')).toContainText("Free models provided by OpenCode")
+  await expect(page.locator('[data-section="free-models"]')).toContainText("Free models provided by Corro Code")
 
   await page.locator('[data-provider-id="opencode-go"]').click()
   await page.locator('[data-input="provider-api-key"]').fill("mock-go-api-key")

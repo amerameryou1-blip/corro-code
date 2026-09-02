@@ -1,16 +1,16 @@
-This is a plugin to simulate a remote environment locally. Add this to `.opencode/opencode.jsonc`:
+This is a plugin to simulate a remote environment locally. Add this to `.corro/corro.jsonc`:
 
 ```json
-  "plugin": ["../packages/opencode/src/control-plane/dev/debug-workspace-plugin.ts"],
+  "plugin": ["../packages/corro/src/control-plane/dev/debug-workspace-plugin.ts"],
 ```
 
-In a separate terminal, run a separate OpenCode server. This will act like a remote server and the local instance will proxy all requests to it:
+In a separate terminal, run a separate Corro Code server. This will act like a remote server and the local instance will proxy all requests to it:
 
 ```
-./packages/opencode/script/run-workspace-server
+./packages/corro/script/run-workspace-server
 ```
 
-With the plugin install, you can now run OpenCode and create a `debug` workspace type. This will create a "remote" workspace which talks to the second workspace server started above.
+With the plugin install, you can now run Corro Code and create a `debug` workspace type. This will create a "remote" workspace which talks to the second workspace server started above.
 
 How this works:
 

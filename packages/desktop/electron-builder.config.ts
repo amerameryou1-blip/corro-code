@@ -87,7 +87,7 @@ const getBase = (appId: string): Configuration => ({
   },
   protocols: {
     name: "Corro Code",
-    schemes: ["opencode"],
+    schemes: ["corro"],
   },
   win: {
     icon: `resources/icons/icon.ico`,
@@ -137,7 +137,7 @@ function getConfig() {
         ...base,
         appId,
         productName: "Corro Code Beta",
-        protocols: { name: "Corro Code Beta", schemes: ["opencode"] },
+        protocols: { name: "Corro Code Beta", schemes: ["corro"] },
         publish: { provider: "github", owner: "anomalyco", repo: "opencode-beta", channel: "latest" },
         deb: { fpm: [metainfoFpm(appId)] },
         rpm: { packageName: "opencode-beta", fpm: [metainfoFpm(appId)] },
@@ -148,8 +148,8 @@ function getConfig() {
         ...base,
         appId,
         productName: "Corro Code",
-        protocols: { name: "Corro Code", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
+        protocols: { name: "Corro Code", schemes: ["corro"] },
+        publish: { provider: "github", owner: "amerameryou1-blip", repo: "corro-code", channel: "latest" },
         deb: { fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
         rpm: { packageName: "opencode", fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
       }

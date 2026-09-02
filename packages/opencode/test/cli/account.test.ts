@@ -5,7 +5,7 @@ import { defaultConsoleUrl, formatAccountLabel, formatOrgLine } from "../../src/
 
 describe("console account display", () => {
   test("uses opencode.ai/console as the default login URL", () => {
-    expect(defaultConsoleUrl).toBe("https://opencode.ai/console")
+    expect(defaultConsoleUrl).toBe("https://corrocode.dev/console")
   })
 
   test("includes the account url in account labels", () => {

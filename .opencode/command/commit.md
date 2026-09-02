@@ -1,6 +1,6 @@
 ---
 description: git commit and push
-model: opencode/kimi-k2.5
+model: corro/kimi-k2.5
 subtask: true
 ---
 

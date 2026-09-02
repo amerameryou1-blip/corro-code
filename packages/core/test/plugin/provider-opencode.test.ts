@@ -78,7 +78,7 @@ describe("OpencodePlugin", () => {
         {
           id: Integration.MethodID.make("device"),
           type: "oauth",
-          label: "OpenCode Console account",
+          label: "Corro Code Console account",
         },
         { type: "key", label: "API key (service account)" },
       ])
@@ -108,7 +108,7 @@ describe("OpencodePlugin", () => {
         methodID: Integration.MethodID.make("device"),
         inputs: {},
       })
-      expect(attempt.url).toBe("https://opencode.ai/console/device?user_code=user&client_id=opencode-cli")
+      expect(attempt.url).toBe("https://corrocode.dev/console/device?user_code=user&client_id=opencode-cli")
     }),
   )
 
@@ -142,7 +142,7 @@ describe("OpencodePlugin", () => {
     }),
   )
 
-  it.live("loads providers and models from the connected OpenCode server", () =>
+  it.live("loads providers and models from the connected Corro Code server", () =>
     Effect.acquireUseRelease(
       Effect.sync(() => {
         const authorization: Array<string | null> = []

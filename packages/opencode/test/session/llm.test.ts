@@ -812,7 +812,7 @@ describe("session.llm.stream", () => {
           enabled_providers: [opencodeFixture.providerID],
           provider: {
             [opencodeFixture.providerID]: {
-              name: "OpenCode Test",
+              name: "Corro Code Test",
               npm: "@ai-sdk/openai-compatible",
               models: { [fixture.model.id]: configModel(fixture.model) as ConfigModel },
               options: { apiKey: "test-key", baseURL: `${state.server!.url.origin}/v1` },
