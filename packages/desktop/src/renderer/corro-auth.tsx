@@ -131,20 +131,41 @@ export function CorroGate() {
 
   onMount(() => {
     let alive = true
+    // Google sign-in is out of scope while the app itself is under test:
+    // signed-out users go straight to the full product, no gate.
     void refresh().then((status) => {
       if (!alive) return
       if (!status?.signedIn) {
-        setState("phase", "welcome")
+        setState("phase", "hidden")
         return
       }
       void settle(status)
     })
     const offDeepLink = bridge().onDeepLink((urls) => void onDeepLink(urls))
+    // Cold-start links never hit IPC: the shell queues them on
+    // window.__OPENCODE__.deepLinks and re-emits a DOM event instead.
+    const drainQueue = () => {
+      try {
+        const queued = (window as unknown as { __OPENCODE__?: { deepLinks?: unknown } }).__OPENCODE__?.deepLinks
+        if (Array.isArray(queued) && queued.length) {
+          ;(window as unknown as { __OPENCODE__: { deepLinks: unknown[] } }).__OPENCODE__.deepLinks = []
+          void onDeepLink(queued.filter((u): u is string => typeof u === "string"))
+        }
+      } catch {}
+    }
+    const onDomLinks = (event: Event) => {
+      const urls = (event as CustomEvent<{ urls?: unknown }>).detail?.urls
+      if (Array.isArray(urls)) void onDeepLink(urls.filter((u): u is string => typeof u === "string"))
+      else drainQueue()
+    }
+    window.addEventListener("opencode:deep-link", onDomLinks)
+    drainQueue()
     const poll = setInterval(() => void refresh(), 20000)
     onCleanup(() => {
       alive = false
       clearInterval(poll)
       offDeepLink()
+      window.removeEventListener("opencode:deep-link", onDomLinks)
     })
   })
 

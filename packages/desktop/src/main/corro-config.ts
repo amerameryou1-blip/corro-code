@@ -4,8 +4,16 @@
 
 export const CORRO_CHAT_PATH = "/api/chat"
 
-export const FREE_LABELS: Record<string, string> = {
-  "moonshotai/kimi-k3": "Kimi K3 (free)",
+export const FAST_MODEL_FIRST = "deepseek-ai/deepseek-v4-flash-0731"
+
+// Fast models first so the default provisioned model answers instantly;
+// slow giants tend to stall past the serverless time budget.
+export function preferFastModels(models: string[]): string[] {
+  const rest = models.filter((m) => m !== FAST_MODEL_FIRST)
+  return models.includes(FAST_MODEL_FIRST) ? [FAST_MODEL_FIRST, ...rest] : models
+}
+
+export const FREE_LABELS: Record<string, string> = {  "moonshotai/kimi-k3": "Kimi K3 (free)",
   "deepseek-ai/deepseek-v4-flash-0731": "DeepSeek V4 Flash (free)",
   "minimaxai/minimax-m3": "MiniMax M3 (free)",
   "nvidia/nemotron-3-super-120b-a12b": "Nemotron 3 Super (free)",

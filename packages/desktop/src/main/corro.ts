@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 
 import { getStore } from "./store"
 import { getLogger } from "./logging"
-import { mergeCorroConfig, parseCorroAuthLink } from "./corro-config"
+import { mergeCorroConfig, parseCorroAuthLink, preferFastModels } from "./corro-config"
 
 export { parseCorroAuthLink }
 
@@ -399,7 +399,7 @@ export async function corroProvision(ownKey?: string | null): Promise<{ changed:
   if (ownKey !== undefined) writeSession({ ownKeySet: Boolean(ownKey) })
   const { changed } = await provisionEngine({
     access: session.access,
-    models: session.models ?? [],
+    models: preferFastModels(session.models ?? []),
     ...(ownKey !== undefined ? { ownKey } : {}),
   })
   return { changed, ...(await corroStatus()) }

@@ -1,8 +1,17 @@
 import { describe, expect, test } from "bun:test"
-import { FREE_LABELS, mergeCorroConfig, parseCorroAuthLink } from "./corro-config"
+import { FREE_LABELS, mergeCorroConfig, parseCorroAuthLink, preferFastModels } from "./corro-config"
 
 const baseUrl = "https://corro-code-backend.vercel.app/api/chat"
 const models = Object.keys(FREE_LABELS)
+
+describe("preferFastModels", () => {
+  test("flash model leads so the default answers instantly", () => {
+    expect(preferFastModels(["moonshotai/kimi-k3", "deepseek-ai/deepseek-v4-flash-0731"])[0]).toBe(
+      "deepseek-ai/deepseek-v4-flash-0731",
+    )
+    expect(preferFastModels(["a", "b"])).toEqual(["a", "b"])
+  })
+})
 
 describe("parseCorroAuthLink", () => {
   test("accepts the auth shape", () => {
