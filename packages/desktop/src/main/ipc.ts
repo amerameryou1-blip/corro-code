@@ -8,6 +8,16 @@ import { parseDesktopNativeBundle, type DesktopNativeBundle } from "@opencode-ai
 
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
+import {
+  corroAccessToken,
+  corroClaimTrial,
+  corroClearOwnKey,
+  corroCompleteAuth,
+  corroLoginUrl,
+  corroSignOut,
+  corroStatus,
+  corroValidateOwnKey,
+} from "./corro"
 import { setForceFocus } from "./debug"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import { getStore, removeStoreFileIfEmpty } from "./store"
@@ -63,6 +73,20 @@ export function registerIpcHandlers(deps: Deps) {
   app.on("browser-window-created", (_event, win) => win.on("session-end", () => drafts.flush()))
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
+  ipcMain.handle("corro-login-url", () => corroLoginUrl())
+  ipcMain.handle("corro-access-token", () => corroAccessToken())
+  ipcMain.handle(
+    "corro-complete",
+    (_event: IpcMainInvokeEvent, tokens: { access: string; refresh: string }, consent: boolean) =>
+      corroCompleteAuth(tokens, consent === true),
+  )
+  ipcMain.handle("corro-status", () => corroStatus())
+  ipcMain.handle("corro-claim", () => corroClaimTrial())
+  ipcMain.handle("corro-sign-out", () => corroSignOut().then(() => corroStatus()))
+  ipcMain.handle("corro-validate-own-key", (_event: IpcMainInvokeEvent, key: string) =>
+    corroValidateOwnKey(typeof key === "string" ? key : ""),
+  )
+  ipcMain.handle("corro-clear-own-key", () => corroClearOwnKey().then(() => corroStatus()))
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())
   ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks())
   ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())

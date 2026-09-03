@@ -1,0 +1,382 @@
+import { app, safeStorage } from "electron"
+import { homedir } from "node:os"
+import { join } from "node:path"
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+
+import { getStore } from "./store"
+import { getLogger } from "./logging"
+
+// Corro Code account backend (trial seats + model pool proxy).
+// The Supabase anon key is client-safe (RLS-protected); the same values
+// already ship in the public web client.
+const CORRO_WEB = process.env.CORRO_WEB_URL ?? "https://corro-code-backend.vercel.app"
+const SUPABASE_URL = "https://orojnlnhwnsmevkxbpte.supabase.co"
+const SUPABASE_ANON =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9yb2pubG5od25zbWV2a3hicHRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyOTA0MzIsImV4cCI6MjEwMzg2NjQzMn0.66jopRYujYCSPEIBQ71-BtCjaqVZaOtrSY16n_CDZxQ"
+
+const STORE_NAME = "corro"
+const REFRESH_ACCOUNT = "corro/refresh"
+
+export type CorroTrial = {
+  state: string
+  position: number
+  expiresAt: string | null
+}
+
+export type CorroStatus = {
+  signedIn: boolean
+  email: string | null
+  trial: CorroTrial | null
+  models: string[]
+  ownKeySet: boolean
+}
+
+type Session = {
+  access?: string
+  accessExp?: number
+  userId?: string
+  email?: string
+  trial?: CorroTrial
+  consentAt?: string
+  models?: string[]
+  modelsAt?: number
+  ownKeySet?: boolean
+}
+
+function store() {
+  return getStore(STORE_NAME)
+}
+
+function readSession(): Session {
+  try {
+    const raw = store().get("session")
+    if (typeof raw !== "string" || !raw) return {}
+    const parsed = JSON.parse(raw) as Session
+    return parsed && typeof parsed === "object" ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeSession(patch: Partial<Session>) {
+  store().set("session", JSON.stringify({ ...readSession(), ...patch }))
+}
+
+function readRefresh(): string | null {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) {
+      const fallback: unknown = store().get("refresh_fallback")
+      return typeof fallback === "string" ? fallback : null
+    }
+    const encrypted = store().get("refresh_enc") as unknown
+    if (typeof encrypted !== "string" || !encrypted) return null
+    return safeStorage.decryptString(Buffer.from(encrypted, "base64"))
+  } catch {
+    return null
+  }
+}
+
+function writeRefresh(token: string | null) {
+  if (token && safeStorage.isEncryptionAvailable()) {
+    store().set("refresh_enc", safeStorage.encryptString(token).toString("base64"))
+    store().delete("refresh_fallback")
+    return
+  }
+  if (token) store().set("refresh_fallback", token)
+  else {
+    store().delete("refresh_enc")
+    store().delete("refresh_fallback")
+  }
+}
+
+// Engine auth file (~/.local/share/opencode/auth.json on Windows %LOCALAPPDATA%).
+// Written here so the refreshed access token stays valid for the provider
+// without renderer round-trips.
+function engineDataDir() {
+  if (process.env.XDG_DATA_HOME) return join(process.env.XDG_DATA_HOME, "opencode")
+  if (process.platform === "win32")
+    return join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "opencode")
+  return join(process.env.HOME ?? homedir(), ".local", "share", "opencode")
+}
+
+function writeEngineAuthKey(access: string | null) {
+  try {
+    const dir = engineDataDir()
+    mkdirSync(dir, { recursive: true })
+    const file = join(dir, "auth.json")
+    let data: Record<string, unknown> = {}
+    try {
+      const raw = readFileSync(file, "utf8")
+      const parsed: unknown = JSON.parse(raw)
+      if (parsed && typeof parsed === "object") data = parsed as Record<string, unknown>
+    } catch {}
+    if (access) data["corro"] = { type: "api", key: access }
+    else delete data["corro"]
+    writeFileSync(file, JSON.stringify(data, null, 2), { mode: 0o600 })
+  } catch (error) {
+    getLogger().warn("corro engine auth write failed", error)
+  }
+}
+
+async function supabase(path: string, init?: RequestInit) {
+  return fetch(`${SUPABASE_URL}${path}`, {
+    ...init,
+    headers: { apikey: SUPABASE_ANON, "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  })
+}
+
+async function corroApi(path: string, access: string, init?: RequestInit) {
+  return fetch(`${CORRO_WEB}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${access}`,
+      ...(init?.headers ?? {}),
+    },
+  })
+}
+
+export function corroLoginUrl() {
+  const params = new URLSearchParams({
+    provider: "google",
+    redirect_to: `${CORRO_WEB}/?desktop=1`,
+  })
+  return `${SUPABASE_URL}/auth/v1/authorize?${params.toString()}`
+}
+
+// Accepts corro://auth?access_token=..&refresh_token=.. (and the legacy
+// corro://open?jwt=..&refresh=.. shape). Carries tokens only, no workspace.
+export function parseCorroAuthLink(url: string): { access: string; refresh: string } | null {
+  if (!url.startsWith("corro://")) return null
+  try {
+    const query = new URL(url).searchParams
+    const access = query.get("access_token") ?? query.get("jwt") ?? ""
+    const refresh = query.get("refresh_token") ?? query.get("refresh") ?? ""
+    if (!access) return null
+    return { access, refresh }
+  } catch {
+    return null
+  }
+}
+
+type SupabaseUser = { id: string; email?: string }
+
+async function fetchUser(access: string): Promise<SupabaseUser | null> {
+  try {
+    const res = await supabase("/auth/v1/user", { headers: { Authorization: `Bearer ${access}` } })
+    if (!res.ok) return null
+    const user = (await res.json()) as SupabaseUser
+    if (!user || typeof user.id !== "string") return null
+    return user
+  } catch {
+    return null
+  }
+}
+
+function accessExpiry(access: string): number | null {
+  try {
+    const payload = JSON.parse(Buffer.from(access.split(".")[1] ?? "", "base64").toString("utf8")) as {
+      exp?: number
+    }
+    return typeof payload.exp === "number" ? payload.exp * 1000 : null
+  } catch {
+    return null
+  }
+}
+
+async function refreshAccess(refresh: string) {
+  try {
+    const res = await supabase("/auth/v1/token?grant_type=refresh_token", {
+      method: "POST",
+      body: JSON.stringify({ refresh_token: refresh }),
+    })
+    if (!res.ok) return null
+    const body = (await res.json()) as { access_token?: string; refresh_token?: string }
+    if (typeof body.access_token !== "string") return null
+    return {
+      access: body.access_token,
+      refresh: typeof body.refresh_token === "string" ? body.refresh_token : refresh,
+    }
+  } catch {
+    return null
+  }
+}
+
+function normalizeTrial(input: unknown): CorroTrial {
+  const body = (input ?? {}) as { state?: unknown; position?: unknown; expiresAt?: unknown }
+  return {
+    state: typeof body.state === "string" ? body.state : "none",
+    position: typeof body.position === "number" ? body.position : 0,
+    expiresAt: typeof body.expiresAt === "string" ? body.expiresAt : null,
+  }
+}
+
+async function fetchTrial(access: string): Promise<CorroTrial | null> {
+  try {
+    const res = await corroApi("/api/trial/status", access)
+    if (res.status === 401) return null
+    return normalizeTrial(await res.json().catch(() => ({})))
+  } catch {
+    return null
+  }
+}
+
+async function claimTrial(access: string) {
+  const res = await corroApi("/api/trial/join", access, {
+    method: "POST",
+    body: JSON.stringify({ consentData: true }),
+  })
+  if (!res.ok) throw new Error(`trial claim failed (${res.status})`)
+  return normalizeTrial(await res.json().catch(() => ({})))
+}
+
+async function fetchModels(): Promise<string[]> {
+  try {
+    const res = await fetch(`${CORRO_WEB}/api/health`)
+    if (!res.ok) return []
+    const body = (await res.json()) as { freeModels?: unknown }
+    if (!Array.isArray(body.freeModels)) return []
+    return body.freeModels.filter((m): m is string => typeof m === "string")
+  } catch {
+    return []
+  }
+}
+
+export function corroAccessToken(): string | null {
+  return readSession().access ?? null
+}
+
+export async function corroStatus(): Promise<CorroStatus> {
+  const session = readSession()
+  if (!session.access) return { signedIn: false, email: null, trial: null, models: [], ownKeySet: false }
+  return {
+    signedIn: true,
+    email: session.email ?? null,
+    trial: session.trial ?? null,
+    models: session.models ?? [],
+    ownKeySet: session.ownKeySet ?? false,
+  }
+}
+
+export async function corroCompleteAuth(
+  tokens: { access: string; refresh: string },
+  consent: boolean,
+): Promise<CorroStatus> {
+  const user = await fetchUser(tokens.access)
+  if (!user) throw new Error("Google sign-in did not return a valid session. Please try again.")
+  const trial = await fetchTrial(tokens.access)
+  if (!trial) throw new Error("Signed in, but the session expired immediately. Please try again.")
+  const models = await fetchModels()
+  writeSession({
+    access: tokens.access,
+    accessExp: accessExpiry(tokens.access) ?? Date.now() + 3600_000,
+    userId: user.id,
+    email: user.email,
+    trial,
+    consentAt: consent ? new Date().toISOString() : undefined,
+    models,
+    modelsAt: Date.now(),
+  })
+  writeRefresh(tokens.refresh || null)
+  writeEngineAuthKey(tokens.access)
+
+  // Grab the free seat right away when the user consented on the welcome card.
+  if (consent && trial.state === "none") {
+    try {
+      const claimed = await claimTrial(tokens.access)
+      writeSession({ trial: claimed })
+    } catch (error) {
+      getLogger().warn("corro trial auto-claim failed", error)
+    }
+  }
+  getLogger().log("corro sign-in complete", { email: user.email ?? null })
+  return corroStatus()
+}
+
+export async function corroClaimTrial(): Promise<CorroStatus> {
+  const session = readSession()
+  if (!session.access) throw new Error("Sign in with Google first.")
+  const claimed = await claimTrial(session.access)
+  writeSession({ trial: claimed })
+  return corroStatus()
+}
+
+export async function corroRefreshTrial(): Promise<CorroTrial | null> {
+  const session = readSession()
+  if (!session.access) return null
+  const trial = await fetchTrial(session.access)
+  if (trial) writeSession({ trial })
+  return trial
+}
+
+// Silent token refresh + trial poll. Keeps long sessions alive.
+export async function corroHeartbeat() {
+  const session = readSession()
+  if (!session.access) return
+  if ((session.accessExp ?? 0) - Date.now() < 15 * 60_000) {
+    const refresh = readRefresh()
+    if (refresh) {
+      const next = await refreshAccess(refresh)
+      if (next) {
+        writeSession({ access: next.access, accessExp: accessExpiry(next.access) ?? Date.now() + 3600_000 })
+        writeRefresh(next.refresh)
+        writeEngineAuthKey(next.access)
+        getLogger().log("corro access token refreshed")
+        return
+      }
+    }
+    getLogger().warn("corro session expired, sign-in required")
+    writeSession({ access: undefined, accessExp: undefined })
+    writeRefresh(null)
+    writeEngineAuthKey(null)
+    return
+  }
+  await corroRefreshTrial()
+}
+
+export async function corroSignOut() {
+  writeSession({ access: undefined, accessExp: undefined, trial: undefined, email: undefined })
+  writeRefresh(null)
+  writeEngineAuthKey(null)
+  getLogger().log("corro signed out")
+}
+
+export async function corroValidateOwnKey(key: string): Promise<{ ok: boolean; error?: string }> {
+  const trimmed = key.trim()
+  if (!trimmed) return { ok: false, error: "Paste a key first." }
+  const session = readSession()
+  if (!session.access) return { ok: false, error: "Sign in with Google first." }
+  const models = session.models?.length ? session.models : await fetchModels()
+  const model = models[0] ?? "moonshotai/kimi-k3"
+  try {
+    const res = await corroApi("/api/chat/completions", session.access, {
+      method: "POST",
+      body: JSON.stringify({ model, messages: [{ role: "user", content: "ok" }], max_tokens: 1, apiKey: trimmed }),
+    })
+    if (res.ok) {
+      writeSession({ ownKeySet: true })
+      return { ok: true }
+    }
+    return { ok: false, error: `The key was rejected (${res.status}). Check it and try again.` }
+  } catch {
+    return { ok: false, error: "Could not reach the service. Check your connection." }
+  }
+}
+
+export async function corroClearOwnKey() {
+  writeSession({ ownKeySet: false })
+}
+
+let heartbeatTimer: NodeJS.Timeout | null = null
+
+export function startCorroHeartbeat() {
+  if (heartbeatTimer) return
+  heartbeatTimer = setInterval(() => void corroHeartbeat(), 5 * 60_000)
+  heartbeatTimer.unref?.()
+  app.once("will-quit", stopCorroHeartbeat)
+}
+
+export function stopCorroHeartbeat() {
+  if (heartbeatTimer) clearInterval(heartbeatTimer)
+  heartbeatTimer = null
+}

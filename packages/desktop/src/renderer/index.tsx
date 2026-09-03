@@ -25,6 +25,7 @@ import pkg from "../../package.json"
 import { t } from "./i18n"
 import { initializationData } from "./initialization"
 import { DesktopFirstLaunchOnboarding } from "./onboarding"
+import { CorroGate } from "./corro-auth"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import { windowFullscreen } from "./window-fullscreen"
 import { availableStartupServer, readyWslConnections } from "./wsl/connections"
@@ -417,6 +418,7 @@ function DesktopRoot(props: { windowState: DesktopWindowState }) {
               }
             >
               <Inner />
+              <CorroGate />
             </AppInterface>
           )}
         </Show>

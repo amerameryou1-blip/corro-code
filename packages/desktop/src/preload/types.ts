@@ -42,6 +42,20 @@ export type FatalRendererError = {
   os?: string
 }
 
+export type CorroTrial = {
+  state: string
+  position: number
+  expiresAt: string | null
+}
+
+export type CorroStatus = {
+  signedIn: boolean
+  email: string | null
+  trial: CorroTrial | null
+  models: string[]
+  ownKeySet: boolean
+}
+
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
@@ -113,4 +127,12 @@ export type ElectronAPI = {
   setForceFocus: (enabled: boolean) => Promise<void>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
   setNativeTranslations: (bundle: DesktopNativeBundle) => Promise<void>
+  corroLoginUrl: () => Promise<string>
+  corroAccessToken: () => Promise<string | null>
+  corroComplete: (tokens: { access: string; refresh: string }, consent: boolean) => Promise<CorroStatus>
+  corroStatus: () => Promise<CorroStatus>
+  corroClaim: () => Promise<CorroStatus>
+  corroSignOut: () => Promise<CorroStatus>
+  corroValidateOwnKey: (key: string) => Promise<{ ok: boolean; error?: string }>
+  corroClearOwnKey: () => Promise<CorroStatus>
 }

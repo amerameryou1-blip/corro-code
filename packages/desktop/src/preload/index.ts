@@ -133,6 +133,14 @@ const api: ElectronAPI = {
   setForceFocus: (enabled) => ipcRenderer.invoke("set-force-focus", enabled),
   recordFatalRendererError: (error) => ipcRenderer.invoke("record-fatal-renderer-error", error),
   setNativeTranslations: (bundle) => ipcRenderer.invoke("set-native-translations", bundle),
+  corroLoginUrl: () => ipcRenderer.invoke("corro-login-url"),
+  corroAccessToken: () => ipcRenderer.invoke("corro-access-token"),
+  corroComplete: (tokens, consent) => ipcRenderer.invoke("corro-complete", tokens, consent),
+  corroStatus: () => ipcRenderer.invoke("corro-status"),
+  corroClaim: () => ipcRenderer.invoke("corro-claim"),
+  corroSignOut: () => ipcRenderer.invoke("corro-sign-out"),
+  corroValidateOwnKey: (key) => ipcRenderer.invoke("corro-validate-own-key", key),
+  corroClearOwnKey: () => ipcRenderer.invoke("corro-clear-own-key"),
 }
 
 contextBridge.exposeInMainWorld("api", api)
