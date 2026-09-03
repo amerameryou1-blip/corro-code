@@ -9,11 +9,11 @@ import { parseDesktopNativeBundle, type DesktopNativeBundle } from "@opencode-ai
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import {
-  corroAccessToken,
   corroClaimTrial,
   corroClearOwnKey,
   corroCompleteAuth,
   corroLoginUrl,
+  corroProvision,
   corroSignOut,
   corroStatus,
   corroValidateOwnKey,
@@ -74,7 +74,9 @@ export function registerIpcHandlers(deps: Deps) {
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("corro-login-url", () => corroLoginUrl())
-  ipcMain.handle("corro-access-token", () => corroAccessToken())
+  ipcMain.handle("corro-provision", (_event: IpcMainInvokeEvent, ownKey?: string | null) =>
+    corroProvision(typeof ownKey === "string" ? ownKey : undefined),
+  )
   ipcMain.handle(
     "corro-complete",
     (_event: IpcMainInvokeEvent, tokens: { access: string; refresh: string }, consent: boolean) =>

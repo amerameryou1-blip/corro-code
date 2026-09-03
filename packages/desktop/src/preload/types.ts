@@ -54,6 +54,7 @@ export type CorroStatus = {
   trial: CorroTrial | null
   models: string[]
   ownKeySet: boolean
+  provisioned: boolean
 }
 
 export type ElectronAPI = {
@@ -128,7 +129,7 @@ export type ElectronAPI = {
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
   setNativeTranslations: (bundle: DesktopNativeBundle) => Promise<void>
   corroLoginUrl: () => Promise<string>
-  corroAccessToken: () => Promise<string | null>
+  corroProvision: (ownKey?: string | null) => Promise<{ changed: boolean } & CorroStatus>
   corroComplete: (tokens: { access: string; refresh: string }, consent: boolean) => Promise<CorroStatus>
   corroStatus: () => Promise<CorroStatus>
   corroClaim: () => Promise<CorroStatus>

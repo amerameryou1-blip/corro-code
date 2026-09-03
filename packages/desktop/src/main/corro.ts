@@ -5,6 +5,9 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 
 import { getStore } from "./store"
 import { getLogger } from "./logging"
+import { mergeCorroConfig, parseCorroAuthLink } from "./corro-config"
+
+export { parseCorroAuthLink }
 
 // Corro Code account backend (trial seats + model pool proxy).
 // The Supabase anon key is client-safe (RLS-protected); the same values
@@ -29,6 +32,7 @@ export type CorroStatus = {
   trial: CorroTrial | null
   models: string[]
   ownKeySet: boolean
+  provisioned: boolean
 }
 
 type Session = {
@@ -41,6 +45,7 @@ type Session = {
   models?: string[]
   modelsAt?: number
   ownKeySet?: boolean
+  provisioned?: boolean
 }
 
 function store() {
@@ -99,23 +104,65 @@ function engineDataDir() {
   return join(process.env.HOME ?? homedir(), ".local", "share", "opencode")
 }
 
+function engineConfigDir() {
+  if (process.env.OPENCODE_CONFIG_DIR) return process.env.OPENCODE_CONFIG_DIR
+  if (process.env.XDG_CONFIG_HOME) return join(process.env.XDG_CONFIG_HOME, "opencode")
+  if (process.platform === "win32") return join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "opencode")
+  return join(process.env.HOME ?? homedir(), ".config", "opencode")
+}
+
+const CORRO_CHAT_BASE_URL = `${CORRO_WEB}/api/chat`
+
+function readJsonFile(file: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, "utf8"))
+    if (parsed && typeof parsed === "object") return parsed as Record<string, unknown>
+  } catch {}
+  return {}
+}
+
 function writeEngineAuthKey(access: string | null) {
   try {
     const dir = engineDataDir()
     mkdirSync(dir, { recursive: true })
     const file = join(dir, "auth.json")
-    let data: Record<string, unknown> = {}
-    try {
-      const raw = readFileSync(file, "utf8")
-      const parsed: unknown = JSON.parse(raw)
-      if (parsed && typeof parsed === "object") data = parsed as Record<string, unknown>
-    } catch {}
+    const data = readJsonFile(file)
     if (access) data["corro"] = { type: "api", key: access }
     else delete data["corro"]
     writeFileSync(file, JSON.stringify(data, null, 2), { mode: 0o600 })
   } catch (error) {
     getLogger().warn("corro engine auth write failed", error)
   }
+}
+
+// Idempotent engine provisioning: merges the Corro provider into the global
+// opencode.json without touching anything else (user models, other providers
+// and settings are preserved; managed keys are only added, never removed).
+export async function provisionEngine(input: {
+  access: string
+  models: string[]
+  ownKey?: string | null
+}): Promise<{ changed: boolean }> {
+  writeEngineAuthKey(input.access)
+  try {
+    const dir = engineConfigDir()
+    mkdirSync(dir, { recursive: true })
+    const file = join(dir, "opencode.json")
+    const session = readSession()
+    const { config, changed } = mergeCorroConfig({
+      existing: readJsonFile(file),
+      baseUrl: CORRO_CHAT_BASE_URL,
+      models: input.models,
+      ...(input.ownKey !== undefined ? { ownKey: input.ownKey } : {}),
+      firstProvision: !session.provisioned,
+    })
+    if (!session.provisioned) writeSession({ provisioned: true })
+    writeFileSync(file, JSON.stringify(config, null, 2))
+    return { changed }
+  } catch (error) {
+    getLogger().warn("corro engine provision failed", error)
+  }
+  return { changed: false }
 }
 
 async function supabase(path: string, init?: RequestInit) {
@@ -142,21 +189,6 @@ export function corroLoginUrl() {
     redirect_to: `${CORRO_WEB}/?desktop=1`,
   })
   return `${SUPABASE_URL}/auth/v1/authorize?${params.toString()}`
-}
-
-// Accepts corro://auth?access_token=..&refresh_token=.. (and the legacy
-// corro://open?jwt=..&refresh=.. shape). Carries tokens only, no workspace.
-export function parseCorroAuthLink(url: string): { access: string; refresh: string } | null {
-  if (!url.startsWith("corro://")) return null
-  try {
-    const query = new URL(url).searchParams
-    const access = query.get("access_token") ?? query.get("jwt") ?? ""
-    const refresh = query.get("refresh_token") ?? query.get("refresh") ?? ""
-    if (!access) return null
-    return { access, refresh }
-  } catch {
-    return null
-  }
 }
 
 type SupabaseUser = { id: string; email?: string }
@@ -242,19 +274,17 @@ async function fetchModels(): Promise<string[]> {
   }
 }
 
-export function corroAccessToken(): string | null {
-  return readSession().access ?? null
-}
-
 export async function corroStatus(): Promise<CorroStatus> {
   const session = readSession()
-  if (!session.access) return { signedIn: false, email: null, trial: null, models: [], ownKeySet: false }
+  if (!session.access)
+    return { signedIn: false, email: null, trial: null, models: [], ownKeySet: false, provisioned: false }
   return {
     signedIn: true,
     email: session.email ?? null,
     trial: session.trial ?? null,
     models: session.models ?? [],
     ownKeySet: session.ownKeySet ?? false,
+    provisioned: session.provisioned ?? false,
   }
 }
 
@@ -363,8 +393,23 @@ export async function corroValidateOwnKey(key: string): Promise<{ ok: boolean; e
   }
 }
 
+export async function corroProvision(ownKey?: string | null): Promise<{ changed: boolean } & CorroStatus> {
+  const session = readSession()
+  if (!session.access) throw new Error("Sign in with Google first.")
+  if (ownKey !== undefined) writeSession({ ownKeySet: Boolean(ownKey) })
+  const { changed } = await provisionEngine({
+    access: session.access,
+    models: session.models ?? [],
+    ...(ownKey !== undefined ? { ownKey } : {}),
+  })
+  return { changed, ...(await corroStatus()) }
+}
+
 export async function corroClearOwnKey() {
+  const session = readSession()
+  if (!session.access) return
   writeSession({ ownKeySet: false })
+  await provisionEngine({ access: session.access, models: session.models ?? [], ownKey: "" })
 }
 
 let heartbeatTimer: NodeJS.Timeout | null = null

@@ -1,4 +1,4 @@
-import { useLanguage, useServerSDK, useServerSync } from "@opencode-ai/app"
+import { useLanguage } from "@opencode-ai/app"
 import { createStore } from "solid-js/store"
 import { onCleanup, onMount, Show } from "solid-js"
 
@@ -10,16 +10,7 @@ function bridge(): ElectronAPI {
   return window.api as unknown as ElectronAPI
 }
 
-const CORRO_BASE_URL = "https://corro-code-backend.vercel.app/api/chat"
 const SKIPPED_KEY = "corro-skipped"
-const PROVISIONED_KEY = "corro-provisioned"
-
-const FREE_LABELS: Record<string, string> = {
-  "moonshotai/kimi-k3": "Kimi K3 (free)",
-  "deepseek-ai/deepseek-v4-flash-0731": "DeepSeek V4 Flash (free)",
-  "minimaxai/minimax-m3": "MiniMax M3 (free)",
-  "nvidia/nemotron-3-super-120b-a12b": "Nemotron 3 Super (free)",
-}
 
 function parseAuthLink(url: string) {
   if (!url.startsWith("corro://")) return null
@@ -36,8 +27,6 @@ function parseAuthLink(url: string) {
 
 export function CorroGate() {
   const language = useLanguage()
-  const serverSDK = useServerSDK()
-  const serverSync = useServerSync()
   const [state, setState] = createStore({
     status: null as CorroStatus | null,
     phase: "loading" as "loading" | "welcome" | "waiting" | "working" | "ready" | "hidden",
@@ -47,6 +36,7 @@ export function CorroGate() {
     ownKey: "",
     ownKeyError: null as string | null,
     ownKeySaved: false,
+    reloadNeeded: false,
   })
 
   const t = (key: string, vars?: Record<string, string | number>) => language.t(key, vars)
@@ -61,53 +51,18 @@ export function CorroGate() {
     }
   }
 
-  function provisioned() {
-    const providers = (serverSync().data.config as { providers?: Record<string, unknown> } | undefined)?.providers
-    return Boolean(providers && "corro" in providers)
-  }
-
-  async function provision(status: CorroStatus, ownKey?: string) {
-    const access = await bridge().corroAccessToken()
-    if (!access) throw new Error(t("corro.status.failed", { error: "missing session" }))
-    const ids = status.models.length ? status.models : Object.keys(FREE_LABELS)
-    const models = Object.fromEntries(ids.map((id) => [id, { name: FREE_LABELS[id] ?? id }]))
-    await serverSDK().client.auth.set({ providerID: "corro", auth: { type: "api", key: access } })
-    const config = serverSync().data.config as {
-      model?: string
-      disabled_providers?: string[]
-    }
-    const first = localStorage.getItem(PROVISIONED_KEY) !== "1"
-    const disabled = new Set(config.disabled_providers ?? [])
-    if (first) {
-      disabled.add("opencode")
-      disabled.add("opencode-go")
-    }
-    await serverSync().updateConfig({
-      provider: {
-        corro: {
-          npm: "@ai-sdk/openai-compatible",
-          name: "Corro",
-          options: {
-            baseURL: CORRO_BASE_URL,
-            ...(ownKey ? { headers: { "x-own-key": ownKey } } : {}),
-          },
-          models,
-        },
-      },
-      ...(config.model ? {} : ids[0] ? { model: `corro/${ids[0]}` } : {}),
-      ...(first ? { disabled_providers: [...disabled] } : {}),
-    } as never)
-    await serverSync().refreshProviders()
-    localStorage.setItem(PROVISIONED_KEY, "1")
-  }
-
-  async function afterAuth(status: CorroStatus) {
+  async function settle(status: CorroStatus) {
     setState({ status, error: null })
     if (status.trial?.state === "accepted" || status.ownKeySet) {
+      // Already fully set up: stay out of the way.
+      if (status.provisioned) {
+        setState("phase", "hidden")
+        return
+      }
       setState("phase", "working")
       try {
-        if (!provisioned()) await provision(status)
-        setState("phase", "ready")
+        const result = await bridge().corroProvision()
+        setState({ status: result, reloadNeeded: result.changed, phase: "ready" })
       } catch (error) {
         setState({ phase: "welcome", error: error instanceof Error ? error.message : String(error) })
       }
@@ -126,10 +81,20 @@ export function CorroGate() {
   async function rejoin() {
     setState("phase", "working")
     try {
-      await afterAuth(await bridge().corroClaim())
+      await settle(await bridge().corroClaim())
     } catch (error) {
       setState({ phase: "welcome", error: error instanceof Error ? error.message : String(error) })
     }
+  }
+
+  function startCoding() {
+    if (state.reloadNeeded) {
+      // The engine reads its config when a location opens; reload once so the
+      // Corro models appear in the picker immediately. Sessions are kept.
+      location.reload()
+      return
+    }
+    setState("phase", "hidden")
   }
 
   async function onDeepLink(urls: string[]) {
@@ -138,7 +103,7 @@ export function CorroGate() {
       if (!tokens) continue
       setState("phase", "working")
       try {
-        await afterAuth(await bridge().corroComplete(tokens, state.consent))
+        await settle(await bridge().corroComplete(tokens, state.consent))
       } catch (error) {
         setState({ phase: "welcome", error: error instanceof Error ? error.message : String(error) })
       }
@@ -155,15 +120,12 @@ export function CorroGate() {
       setState("ownKeyError", result.error ?? t("corro.status.failed", { error: "rejected" }))
       return
     }
-    const status = await refresh()
-    if (status) {
-      try {
-        await provision(status, key)
-        setState({ ownKey: "", ownKeySaved: true })
-        await afterAuth(await refresh().then((s) => s ?? status))
-      } catch (error) {
-        setState("ownKeyError", error instanceof Error ? error.message : String(error))
-      }
+    try {
+      const provisioned = await bridge().corroProvision(key)
+      setState({ ownKey: "", ownKeySaved: true, reloadNeeded: provisioned.changed })
+      await settle(provisioned)
+    } catch (error) {
+      setState("ownKeyError", error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -175,7 +137,7 @@ export function CorroGate() {
         setState("phase", "welcome")
         return
       }
-      void afterAuth(status)
+      void settle(status)
     })
     const offDeepLink = bridge().onDeepLink((urls) => void onDeepLink(urls))
     const poll = setInterval(() => void refresh(), 20000)
@@ -193,7 +155,6 @@ export function CorroGate() {
 
   const visible = () => {
     if (state.phase === "loading" || state.phase === "hidden") return false
-    if (state.phase === "ready") return false
     if (!state.status?.signedIn && state.skipped) return false
     return true
   }
@@ -265,7 +226,7 @@ export function CorroGate() {
           <Show when={state.phase === "ready"}>
             <h1 style={{ "font-size": "20px" }}>{t("corro.accepted.title")}</h1>
             <p style={{ opacity: 0.8, "font-size": "14px" }}>{t("corro.accepted.body")}</p>
-            <button onClick={() => setState("phase", "hidden")} style={{ padding: "10px 24px", "font-size": "14px", cursor: "pointer" }}>
+            <button onClick={startCoding} style={{ padding: "10px 24px", "font-size": "14px", cursor: "pointer" }}>
               {t("corro.accepted.go")}
             </button>
           </Show>

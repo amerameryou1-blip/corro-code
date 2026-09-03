@@ -1,7 +1,7 @@
 {
   "name": "@opencode-ai/desktop",
   "private": true,
-  "version": "1.18.27",
+  "version": "2.0.0",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/amerameryou1-blip/corro-code-backend",
