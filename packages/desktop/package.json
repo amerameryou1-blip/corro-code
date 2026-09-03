@@ -4,10 +4,10 @@
   "version": "1.18.27",
   "type": "module",
   "license": "MIT",
-  "homepage": "https://opencode.ai",
+  "homepage": "https://github.com/amerameryou1-blip/corro-code-backend",
   "author": {
-    "name": "OpenCode",
-    "email": "hello@opencode.ai"
+    "name": "Corro Code",
+    "email": "hello@corrocode.dev"
   },
   "scripts": {
     "typecheck": "tsgo -b",

@@ -9,7 +9,14 @@ import { app } from "electron"
 const execFileAsync = promisify(execFile)
 const root = dirname(fileURLToPath(import.meta.url))
 const stateHome = process.env.XDG_STATE_HOME
-const desktopStateNames = ["ai.opencode.desktop.dev", "ai.opencode.desktop.beta", "ai.opencode.desktop"]
+const desktopStateNames = [
+  "ai.corrocode.desktop.dev",
+  "ai.corrocode.desktop.beta",
+  "ai.corrocode.desktop",
+  "ai.opencode.desktop.dev",
+  "ai.opencode.desktop.beta",
+  "ai.opencode.desktop",
+]
 
 type Logger = {
   log(message: string, meta?: Record<string, unknown>): void
