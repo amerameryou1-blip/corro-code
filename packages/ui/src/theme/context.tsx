@@ -152,11 +152,11 @@ function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "da
   ensureThemeStyleElement().textContent = fullCss
   document.documentElement.dataset.theme = themeId
   document.documentElement.dataset.colorScheme = mode
-  document.documentElement.style.backgroundColor = isDark ? "#080808" : "#fafafa"
+  document.documentElement.style.backgroundColor = isDark ? "#16130f" : "#fbfcfe"
 
   // Update theme-color meta tag to match light/dark mode
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.setAttribute("content", isDark ? "#080808" : "#fafafa")
+  if (meta) meta.setAttribute("content", isDark ? "#16130f" : "#fbfcfe")
 }
 
 function cacheThemeVariants(theme: DesktopTheme, themeId: string) {
@@ -177,8 +177,8 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     defaultTheme?: string
     onThemeApplied?: (theme: DesktopTheme, mode: "light" | "dark", scheme: ColorScheme) => void
   }) => {
-    const themeId = normalize(read(STORAGE_KEYS.THEME_ID) ?? props.defaultTheme) ?? "oc-2"
-    const colorScheme = (read(STORAGE_KEYS.COLOR_SCHEME) as ColorScheme | null) ?? "system"
+    const themeId = normalize(read(STORAGE_KEYS.THEME_ID) ?? props.defaultTheme) ?? "opencode"
+    const colorScheme = (read(STORAGE_KEYS.COLOR_SCHEME) as ColorScheme | null) ?? "light"
     const mode = colorScheme === "system" ? getSystemMode() : colorScheme
     const [store, setStore] = createStore({
       themes: {

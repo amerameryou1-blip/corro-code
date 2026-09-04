@@ -24,7 +24,7 @@
     --v2-background-bg-inverse: var(--v2-grey-1100);
     --v2-background-bg-contrast: var(--v2-grey-1000);
     --v2-background-bg-button-neutral: var(--v2-grey-50);
-    --v2-background-bg-accent: var(--v2-blue-600);
+    --v2-background-bg-accent: var(--v2-orange-800);
 
     /* ── Text ── */
     --v2-text-text-base: var(--v2-grey-1100);
@@ -32,24 +32,24 @@
     --v2-text-text-faint: var(--v2-grey-600);
     --v2-text-text-inverse: var(--v2-grey-50);
     --v2-text-text-contrast: var(--v2-grey-50);
-    --v2-text-text-accent: var(--v2-blue-600);
-    --v2-text-text-accent-hover: var(--v2-blue-700);
-    --v2-text-text-code-accent: var(--v2-blue-900);
+    --v2-text-text-accent: var(--v2-orange-900);
+    --v2-text-text-accent-hover: var(--v2-orange-1000);
+    --v2-text-text-code-accent: var(--v2-orange-1000);
 
     /* ── Icon ── */
     --v2-icon-icon-base: var(--v2-grey-800);
     --v2-icon-icon-muted: var(--v2-grey-600);
     --v2-icon-icon-inverse: var(--v2-grey-50);
     --v2-icon-icon-contrast: var(--v2-grey-100);
-    --v2-icon-icon-accent: var(--v2-blue-600);
-    --v2-icon-icon-accent-hover: var(--v2-blue-700);
+    --v2-icon-icon-accent: var(--v2-orange-800);
+    --v2-icon-icon-accent-hover: var(--v2-orange-900);
 
     /* ── Border ── */
     --v2-border-border-muted: var(--v2-alpha-dark-8);
     --v2-border-border-base: var(--v2-alpha-dark-10);
     --v2-border-border-strong: var(--v2-alpha-dark-20);
     --v2-border-border-inverse: var(--v2-grey-1000);
-    --v2-border-border-focus: var(--v2-blue-500);
+    --v2-border-border-focus: var(--v2-orange-600);
 
     /* ── Overlay ── */
     --v2-overlay-simple-overlay-hover: var(--v2-alpha-dark-4);
@@ -270,29 +270,29 @@
     --v2-background-bg-inverse: var(--v2-grey-1100);
     --v2-background-bg-contrast: var(--v2-grey-1000);
     --v2-background-bg-button-neutral: var(--v2-grey-50);
-    --v2-background-bg-accent: var(--v2-blue-600);
+    --v2-background-bg-accent: var(--v2-orange-800);
 
     --v2-text-text-base: var(--v2-grey-1100);
     --v2-text-text-muted: var(--v2-grey-700);
     --v2-text-text-faint: var(--v2-grey-600);
     --v2-text-text-inverse: var(--v2-grey-50);
     --v2-text-text-contrast: var(--v2-grey-50);
-    --v2-text-text-accent: var(--v2-blue-600);
-    --v2-text-text-accent-hover: var(--v2-blue-700);
-    --v2-text-text-code-accent: var(--v2-blue-900);
+    --v2-text-text-accent: var(--v2-orange-900);
+    --v2-text-text-accent-hover: var(--v2-orange-1000);
+    --v2-text-text-code-accent: var(--v2-orange-1000);
 
     --v2-icon-icon-base: var(--v2-grey-800);
     --v2-icon-icon-muted: var(--v2-grey-600);
     --v2-icon-icon-inverse: var(--v2-grey-50);
     --v2-icon-icon-contrast: var(--v2-grey-100);
-    --v2-icon-icon-accent: var(--v2-blue-600);
-    --v2-icon-icon-accent-hover: var(--v2-blue-700);
+    --v2-icon-icon-accent: var(--v2-orange-800);
+    --v2-icon-icon-accent-hover: var(--v2-orange-900);
 
     --v2-border-border-muted: var(--v2-alpha-dark-8);
     --v2-border-border-base: var(--v2-alpha-dark-10);
     --v2-border-border-strong: var(--v2-alpha-dark-20);
     --v2-border-border-inverse: var(--v2-grey-1000);
-    --v2-border-border-focus: var(--v2-blue-500);
+    --v2-border-border-focus: var(--v2-orange-600);
 
     --v2-overlay-simple-overlay-hover: var(--v2-alpha-dark-4);
     --v2-overlay-simple-overlay-pressed: var(--v2-alpha-dark-8);
@@ -392,29 +392,29 @@
     --v2-background-bg-inverse: var(--v2-grey-50);
     --v2-background-bg-contrast: var(--v2-grey-700);
     --v2-background-bg-button-neutral: var(--v2-alpha-light-6);
-    --v2-background-bg-accent: var(--v2-blue-600);
+    --v2-background-bg-accent: var(--v2-orange-600);
 
     --v2-text-text-base: var(--v2-grey-100);
     --v2-text-text-muted: var(--v2-grey-500);
     --v2-text-text-faint: var(--v2-grey-600);
     --v2-text-text-inverse: var(--v2-grey-1100);
     --v2-text-text-contrast: var(--v2-grey-50);
-    --v2-text-text-accent: var(--v2-blue-400);
-    --v2-text-text-accent-hover: var(--v2-blue-300);
-    --v2-text-text-code-accent: var(--v2-blue-400);
+    --v2-text-text-accent: var(--v2-orange-400);
+    --v2-text-text-accent-hover: var(--v2-orange-300);
+    --v2-text-text-code-accent: var(--v2-orange-400);
 
     --v2-icon-icon-base: var(--v2-grey-400);
     --v2-icon-icon-muted: var(--v2-grey-600);
     --v2-icon-icon-inverse: var(--v2-grey-1100);
     --v2-icon-icon-contrast: var(--v2-grey-100);
-    --v2-icon-icon-accent: var(--v2-blue-400);
-    --v2-icon-icon-accent-hover: var(--v2-blue-300);
+    --v2-icon-icon-accent: var(--v2-orange-400);
+    --v2-icon-icon-accent-hover: var(--v2-orange-300);
 
     --v2-border-border-muted: var(--v2-alpha-light-8);
     --v2-border-border-base: var(--v2-alpha-light-10);
     --v2-border-border-strong: var(--v2-alpha-light-20);
     --v2-border-border-inverse: var(--v2-grey-100);
-    --v2-border-border-focus: var(--v2-blue-500);
+    --v2-border-border-focus: var(--v2-orange-500);
 
     --v2-overlay-simple-overlay-hover: var(--v2-alpha-light-6);
     --v2-overlay-simple-overlay-pressed: var(--v2-alpha-light-10);
@@ -499,5 +499,47 @@
     --v2-illustration-illustration-layer-01: var(--v2-grey-900);
     --v2-illustration-illustration-layer-02: var(--v2-grey-800);
     --v2-illustration-illustration-layer-03: var(--v2-grey-700);
+  }
+
+  /* ── Corro signature (Arctic Light identity, Corro theme only) ── */
+  html[data-theme="opencode"] {
+    --font-family-text: "Segoe UI Variable Text", "Segoe UI", "Inter", system-ui, sans-serif;
+    --v2-font-family-sans: "Segoe UI Variable Text", "Segoe UI", "Inter", system-ui, sans-serif;
+  }
+  html[data-theme="opencode"] body {
+    letter-spacing: 0.002em;
+  }
+  html[data-theme="opencode"] ::selection {
+    background: #f3d9c2;
+  }
+  /* Hero: soft copper dawn wash behind the wordmark */
+  html[data-theme="opencode"] [data-component="session-new-design"]::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(560px 260px at 50% 6%, rgba(209, 100, 39, 0.14), transparent 70%),
+      radial-gradient(900px 320px at 50% -4%, rgba(179, 86, 36, 0.08), transparent 70%);
+  }
+  /* Composer: lifted arctic card with copper focus glow */
+  html[data-theme="opencode"] [data-component="corro-composer"] > [class*="prompt"],
+  html[data-theme="opencode"] [data-component="corro-composer"] {
+    border-radius: 18px;
+  }
+  html[data-theme="opencode"] [data-component="corro-composer"]:focus-within {
+    filter: drop-shadow(0 8px 28px rgba(179, 86, 36, 0.18));
+  }
+  /* Sidebar rail: airy dividers + copper active marker */
+  html[data-theme="opencode"] [data-component="sidebar-rail"] {
+    border-right: 1px solid rgba(28, 39, 51, 0.08);
+  }
+  /* Dialogs + menus: softer, lifted */
+  html[data-theme="opencode"] [data-component="dialog-v2"],
+  html[data-theme="opencode"] [data-component="menu-v2-content"] {
+    border-radius: 16px;
+    box-shadow:
+      0 24px 64px -12px rgba(28, 39, 51, 0.22),
+      0 0 0 1px rgba(28, 39, 51, 0.07);
   }
 }
