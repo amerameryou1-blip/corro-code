@@ -1,5 +1,10 @@
 # CORRO CODE — HANDOFF (continue here, no context needed beyond this file)
 
+Repos (both pushed, code only — no binaries/installers in git):
+- App/engine: https://github.com/amerameryou1-blip/corro-code (branch `main`, public)
+- Trial backend: https://github.com/amerameryou1-blip/corro-code-backend (branch `main`, private, HEAD `acb092a`)
+- Code zip (tracked files only, ~82MB): `C:\Users\amera\AppData\Local\Temp\opencode\corro-code-main.zip` (local disk, NOT in OneDrive sync)
+
 ## What this is
 Full opencode engine (all tools/agents/models/sessions) rebranded end-to-end as **Corro Code**,
 Windows desktop client + trial backend. Owner tests the app live; Google login is PARKED
