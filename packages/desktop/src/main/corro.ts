@@ -1,11 +1,11 @@
 import { app, safeStorage } from "electron"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, writeFileSync, existsSync, copyFileSync } from "node:fs"
 
 import { getStore } from "./store"
 import { getLogger } from "./logging"
-import { mergeCorroConfig, parseCorroAuthLink, preferFastModels } from "./corro-config"
+import { mergeCorroConfig, curateModelsData, parseCorroAuthLink, preferFastModels } from "./corro-config"
 
 export { parseCorroAuthLink }
 
@@ -105,10 +105,12 @@ function engineDataDir() {
 }
 
 function engineConfigDir() {
+  // Mirror the engine's own resolution (xdg-basedir on every platform):
+  // XDG_CONFIG_HOME or ~/.config/opencode. Anything else provisions a file
+  // the sidecar never reads.
   if (process.env.OPENCODE_CONFIG_DIR) return process.env.OPENCODE_CONFIG_DIR
   if (process.env.XDG_CONFIG_HOME) return join(process.env.XDG_CONFIG_HOME, "opencode")
-  if (process.platform === "win32") return join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "opencode")
-  return join(process.env.HOME ?? homedir(), ".config", "opencode")
+  return join(homedir(), ".config", "opencode")
 }
 
 const CORRO_CHAT_BASE_URL = `${CORRO_WEB}/api/chat`
@@ -139,15 +141,23 @@ function writeEngineAuthKey(access: string | null) {
 // opencode.json without touching anything else (user models, other providers
 // and settings are preserved; managed keys are only added, never removed).
 export async function provisionEngine(input: {
-  access: string
+  access?: string | null
   models: string[]
   ownKey?: string | null
 }): Promise<{ changed: boolean }> {
-  writeEngineAuthKey(input.access)
+  if (input.access) writeEngineAuthKey(input.access)
   try {
     const dir = engineConfigDir()
     mkdirSync(dir, { recursive: true })
     const file = join(dir, "opencode.json")
+    // One-time safety copy before the first reconcile touches a file the
+    // user may have curated by hand.
+    try {
+      const backup = join(dir, "opencode.json.corro-backup")
+      if (!existsSync(backup) && existsSync(file)) copyFileSync(file, backup)
+    } catch (error) {
+      getLogger().warn("corro engine backup failed", error)
+    }
     const session = readSession()
     const { config, changed } = mergeCorroConfig({
       existing: readJsonFile(file),
@@ -157,7 +167,7 @@ export async function provisionEngine(input: {
       firstProvision: !session.provisioned,
     })
     if (!session.provisioned) writeSession({ provisioned: true })
-    writeFileSync(file, JSON.stringify(config, null, 2))
+    if (changed) writeFileSync(file, JSON.stringify(config, null, 2))
     return { changed }
   } catch (error) {
     getLogger().warn("corro engine provision failed", error)
@@ -413,6 +423,43 @@ export async function corroClearOwnKey() {
 }
 
 let heartbeatTimer: NodeJS.Timeout | null = null
+
+// Curated models.dev snapshot: the Zen provider renamed and stripped to free
+// models only; every other provider passes through untouched. The sidecar
+// picks it up via OPENCODE_MODELS_PATH (inherited env). Best-effort: on any
+// failure the previous file (or engine defaults) stays in effect.
+const MODELS_SOURCE_URL = "https://models.opencode.ai/api.json"
+
+export async function curateModelsFile(): Promise<void> {
+  const file = join(app.getPath("userData"), "corro-models.json")
+  const reusePrevious = () => {
+    try {
+      if (existsSync(file)) process.env.OPENCODE_MODELS_PATH = file
+    } catch {}
+  }
+  try {
+    const response = await fetch(MODELS_SOURCE_URL, { signal: AbortSignal.timeout(12_000) })
+    if (!response.ok) throw new Error(`models source responded ${response.status}`)
+    const data: unknown = await response.json()
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("models source shape")
+    writeFileSync(file, JSON.stringify(curateModelsData(data as Record<string, never>)))
+    process.env.OPENCODE_MODELS_PATH = file
+  } catch (error) {
+    getLogger().warn("corro models curation failed, reusing previous file", error)
+    reusePrevious()
+  }
+}
+
+// Runs on every launch, signed in or not: reconcile the trial provider
+// (limits/names/variants) and point the sidecar at the curated catalog.
+export async function corroStartup(): Promise<void> {
+  try {
+    await provisionEngine({ models: [] })
+  } catch (error) {
+    getLogger().warn("corro startup provision failed", error)
+  }
+  await curateModelsFile()
+}
 
 export function startCorroHeartbeat() {
   if (heartbeatTimer) return

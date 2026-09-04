@@ -23,7 +23,9 @@ export async function CorroPlugin(_input: PluginInput): Promise<Hooks> {
       if (output.message.role !== "user") return
       for (const part of output.parts) {
         if (part.type === "text" && !part.synthetic && !part.ignored) {
-          part.text = prefix + part.text
+          // Retries re-admit the same message through this hook: never stack
+          // the prefix twice.
+          if (!part.text.startsWith(prefix)) part.text = prefix + part.text
           return
         }
       }

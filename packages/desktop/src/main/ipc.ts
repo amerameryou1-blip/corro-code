@@ -19,6 +19,7 @@ import {
   corroValidateOwnKey,
 } from "./corro"
 import { setForceFocus } from "./debug"
+import { getLogger } from "./logging"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import { getStore, removeStoreFileIfEmpty } from "./store"
 import {
@@ -148,15 +149,27 @@ export function registerIpcHandlers(deps: Deps) {
     }
   })
   ipcMain.handle("store-set", (_event: IpcMainInvokeEvent, name: string, key: string, value: string) => {
-    getStore(name).set(key, value)
+    try {
+      getStore(name).set(key, value)
+    } catch (error) {
+      getLogger()?.error("store-set failed", { name, error: error instanceof Error ? error.message : String(error) })
+    }
   })
   ipcMain.handle("store-delete", (_event: IpcMainInvokeEvent, name: string, key: string) => {
-    getStore(name).delete(key)
-    void removeStoreFileIfEmpty(name)
+    try {
+      getStore(name).delete(key)
+    } catch (error) {
+      getLogger()?.error("store-delete failed", { name, error: error instanceof Error ? error.message : String(error) })
+    }
+    void removeStoreFileIfEmpty(name).catch(() => undefined)
   })
   ipcMain.handle("store-clear", (_event: IpcMainInvokeEvent, name: string) => {
-    getStore(name).clear()
-    void removeStoreFileIfEmpty(name)
+    try {
+      getStore(name).clear()
+    } catch (error) {
+      getLogger()?.error("store-clear failed", { name, error: error instanceof Error ? error.message : String(error) })
+    }
+    void removeStoreFileIfEmpty(name).catch(() => undefined)
   })
   ipcMain.handle("store-keys", (_event: IpcMainInvokeEvent, name: string) => {
     const store = getStore(name)

@@ -46,7 +46,7 @@ import { createWslServersController } from "./wsl/servers"
 import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
 import { migrate } from "./migrate"
-import { startCorroHeartbeat } from "./corro"
+import { corroStartup, startCorroHeartbeat } from "./corro"
 import { cleanupStoreFiles } from "./store-cleanup"
 import { startBackgroundCli } from "./background-cli"
 import { setNativeTranslations } from "./native-translations"
@@ -334,6 +334,7 @@ const main = Effect.gen(function* () {
 
     ensureLoopbackNoProxy()
     useEnvProxy()
+    yield* Effect.promise(() => corroStartup())
 
     if (SIDECAR_VERSION === "v2") {
       logger.log("spawning v2 sidecar")

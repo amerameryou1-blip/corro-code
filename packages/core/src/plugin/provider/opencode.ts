@@ -40,7 +40,7 @@ function oauth(http: HttpClient.HttpClient) {
     method: {
       id: methodID,
       type: "oauth",
-      label: "OpenCode Console account",
+      label: "Zen account",
     },
     authorize: () =>
       Effect.gen(function* () {
@@ -101,7 +101,7 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
       providers = credential
         ? yield* fetchProviders(http, credential).pipe(
             Effect.catch((cause) =>
-               Effect.logWarning("failed to load Zen provider config", { cause }).pipe(Effect.as(undefined)),
+               Effect.logWarning("failed to load trial provider config", { cause }).pipe(Effect.as(undefined)),
             ),
           )
         : undefined
@@ -109,7 +109,7 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
 
     yield* ctx.integration.transform((draft) => {
       draft.update("opencode", (integration) => {
-        integration.name = "Zen"
+        integration.name = "Corro Code Trial"
       })
       draft.method.update(oauth(http))
       draft.method.update({ integrationID: "opencode", method: { type: "key", label: "API key (service account)" } })
@@ -175,7 +175,7 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
       if (!item) return
       const hasKey = Boolean(process.env.OPENCODE_API_KEY || connected || item.provider.request.body.apiKey)
       catalog.provider.update(item.provider.id, (provider) => {
-        provider.name = "Zen"
+        provider.name = "Corro Code Trial"
         if (!hasKey) provider.request.body.apiKey = "public"
       })
       if (hasKey) return

@@ -23,6 +23,20 @@ describe("CorroPlugin chat.message", () => {
     expect(output.parts[0]?.text).toBe("Think step by step.\nfix it")
   })
 
+  test("never stacks the prefix on retry re-admission", async () => {
+    const hooks = await CorroPlugin({} as never)
+    const hook = hooks["chat.message"]
+    if (!hook) throw new Error("hook missing")
+    const output: HookOutput = {
+      message: { role: "user" },
+      parts: [{ type: "text", text: "fix it" }],
+    }
+    const input = { sessionID: "s", model: { providerID: "corro", modelID: "m" }, variant: "think-deep" } as never
+    await hook(input, output as never)
+    await hook(input, output as never)
+    expect(output.parts[0]?.text).toBe("Think step by step.\nfix it")
+  })
+
   test("ignores other providers, missing variants and non-user messages", async () => {
     const hooks = await CorroPlugin({} as never)
     const hook = hooks["chat.message"]
