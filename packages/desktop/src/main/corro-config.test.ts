@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { FREE_LABELS, mergeCorroConfig, parseCorroAuthLink, preferFastModels } from "./corro-config"
+import { CORRO_MODELS, mergeCorroConfig, parseCorroAuthLink, preferFastModels } from "./corro-config"
+
+const models = Object.keys(CORRO_MODELS)
 
 const baseUrl = "https://corro-code-backend.vercel.app/api/chat"
-const models = Object.keys(FREE_LABELS)
 
 describe("preferFastModels", () => {
   test("flash model leads so the default answers instantly", () => {
@@ -37,12 +38,12 @@ describe("mergeCorroConfig", () => {
     expect(config["disabled_providers"]).toContain("opencode")
   })
 
-  test("preserves user data and never removes models", () => {
+  test("preserves user data and heals managed model keys", () => {
     const existing = {
       model: "anthropic/claude",
       provider: {
         anthropic: { npm: "@ai-sdk/anthropic", models: {} },
-        corro: { models: { "custom/model": { name: "Mine" }, [models[0]]: { name: "Old label" } } },
+        corro: { models: { "custom/model": { name: "Mine" }, [models[0]]: { name: "Old label", foo: 1 } } },
       },
     }
     const { config, changed } = mergeCorroConfig({ existing, baseUrl, models, firstProvision: false })
@@ -50,7 +51,11 @@ describe("mergeCorroConfig", () => {
     expect(config["model"]).toBe("anthropic/claude")
     const corroModels = (config["provider"] as any)["corro"]["models"]
     expect(corroModels["custom/model"]).toEqual({ name: "Mine" })
-    expect(corroModels[models[0]]).toEqual({ name: "Old label" })
+    const healed = corroModels[models[0]]
+    expect(healed.name).toBe(CORRO_MODELS[models[0]].name)
+    expect(healed.foo).toBe(1) // user customizations survive
+    expect(healed.limit.context).toBeGreaterThan(0) // context budget fixed
+    expect(Object.keys(healed.variants)).toEqual(["think", "think-deep"])
     expect(changed).toBe(true) // missing free models were added
   })
 

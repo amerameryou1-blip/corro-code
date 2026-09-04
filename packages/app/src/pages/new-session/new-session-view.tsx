@@ -35,16 +35,14 @@ export function NewSessionView(props: {
     <div class="@container relative flex flex-col min-h-0 h-full flex-1">
       <div
         data-component="session-new-design"
-        class="relative flex-1 min-h-0 overflow-hidden rounded-[10px] bg-v2-background-bg-deep"
+        class="relative flex-1 min-h-0 overflow-hidden rounded-[10px] border-t-2 border-t-[#b0662a]/70 bg-v2-background-bg-deep"
       >
-        <div class="absolute inset-x-0 top-[25.375%] flex justify-center px-6">
+        <div class="absolute inset-x-0 top-[12%] flex justify-center px-6">
           <div class={NEW_SESSION_CONTENT_WIDTH}>
-            <WordmarkV2 class="h-auto w-full text-v2-background-bg-inverse" />
-            <div class="mt-8 flex flex-col gap-8">
-              <PromptInputV2Composer controller={props.input} />
-              <Show when={props.project.empty()}>
-                <PromptProjectAddButton controller={props.project} />
-              </Show>
+            <div class="mx-auto w-full max-w-xl">
+              <WordmarkV2 class="h-auto w-full text-v2-background-bg-inverse" />
+            </div>
+            <div class="mt-10 flex flex-col gap-5">
               <Show when={props.project.selected()}>
                 <div class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-0 text-v2-text-text-faint sm:flex-row">
                   <PromptProjectSelector controller={props.project} placement="bottom" />
@@ -65,6 +63,12 @@ export function NewSessionView(props: {
                   </Show>
                 </div>
               </Show>
+              <Show when={props.project.empty()}>
+                <div class="flex justify-center">
+                  <PromptProjectAddButton controller={props.project} />
+                </div>
+              </Show>
+              <PromptInputV2Composer controller={props.input} />
             </div>
           </div>
         </div>

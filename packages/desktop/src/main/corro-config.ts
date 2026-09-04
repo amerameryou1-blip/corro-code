@@ -4,19 +4,48 @@
 
 export const CORRO_CHAT_PATH = "/api/chat"
 
-export const FAST_MODEL_FIRST = "deepseek-ai/deepseek-v4-flash-0731"
+export type CorroModelDef = {
+  name: string
+  limit: { context: number; output: number }
+  variants: Record<string, Record<string, unknown>>
+}
+
+// Context/output budgets are deliberately conservative (at or under the
+// pool's hosted limits) so long sessions compact instead of overflowing.
+export const CORRO_MODELS: Record<string, CorroModelDef> = {
+  "moonshotai/kimi-k3": {
+    name: "Kimi K3 (free)",
+    limit: { context: 262144, output: 32768 },
+    variants: { think: {}, "think-deep": {} },
+  },
+  "deepseek-ai/deepseek-v4-flash-0731": {
+    name: "DeepSeek V4 Flash (free)",
+    limit: { context: 131072, output: 32768 },
+    variants: { think: {}, "think-deep": {} },
+  },
+  "minimaxai/minimax-m3": {
+    name: "MiniMax M3 (free)",
+    limit: { context: 196608, output: 32768 },
+    variants: { think: {}, "think-deep": {} },
+  },
+  "nvidia/nemotron-3-super-120b-a12b": {
+    name: "Nemotron 3 Super (free)",
+    limit: { context: 262144, output: 16384 },
+    variants: { think: {}, "think-deep": {} },
+  },
+}
+
+export const FREE_LABELS: Record<string, string> = Object.fromEntries(
+  Object.entries(CORRO_MODELS).map(([id, def]) => [id, def.name]),
+)
 
 // Fast models first so the default provisioned model answers instantly;
 // slow giants tend to stall past the serverless time budget.
+const FAST_MODEL_FIRST = "deepseek-ai/deepseek-v4-flash-0731"
+
 export function preferFastModels(models: string[]): string[] {
   const rest = models.filter((m) => m !== FAST_MODEL_FIRST)
   return models.includes(FAST_MODEL_FIRST) ? [FAST_MODEL_FIRST, ...rest] : models
-}
-
-export const FREE_LABELS: Record<string, string> = {  "moonshotai/kimi-k3": "Kimi K3 (free)",
-  "deepseek-ai/deepseek-v4-flash-0731": "DeepSeek V4 Flash (free)",
-  "minimaxai/minimax-m3": "MiniMax M3 (free)",
-  "nvidia/nemotron-3-super-120b-a12b": "Nemotron 3 Super (free)",
 }
 
 export type MergeInput = {
@@ -32,6 +61,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
+function modelEntry(id: string): Record<string, unknown> {
+  const def = CORRO_MODELS[id]
+  return {
+    name: def?.name ?? id,
+    tool_call: true,
+    modalities: { input: ["text"], output: ["text"] },
+    ...(def ? { limit: { ...def.limit } } : {}),
+    ...(def ? { variants: Object.fromEntries(Object.keys(def.variants).map((v) => [v, {}])) } : {}),
+  }
+}
+
 export function mergeCorroConfig(input: MergeInput): { config: Record<string, unknown>; changed: boolean } {
   let changed = false
   const data: Record<string, unknown> = { ...input.existing }
@@ -40,12 +80,25 @@ export function mergeCorroConfig(input: MergeInput): { config: Record<string, un
   const options = { ...(isRecord(corro["options"]) ? (corro["options"] as Record<string, unknown>) : {}) }
   const models = { ...(isRecord(corro["models"]) ? (corro["models"] as Record<string, unknown>) : {}) }
 
-  const ids = input.models.length ? input.models : Object.keys(FREE_LABELS)
+  const ids = input.models.length ? input.models : Object.keys(CORRO_MODELS)
   for (const id of ids) {
-    if (!isRecord(models[id])) {
-      models[id] = { name: FREE_LABELS[id] ?? id }
+    const current = isRecord(models[id]) ? (models[id] as Record<string, unknown>) : undefined
+    const fresh = modelEntry(id)
+    if (!current) {
+      models[id] = fresh
       changed = true
+      continue
     }
+    // Heal managed keys (name/limit/capabilities/variants) without touching
+    // anything the user customized.
+    const healed = { ...current }
+    for (const key of ["name", "tool_call", "modalities", "limit", "variants"] as const) {
+      if (JSON.stringify(healed[key]) !== JSON.stringify(fresh[key])) {
+        healed[key] = fresh[key]
+        changed = true
+      }
+    }
+    models[id] = healed
   }
 
   if (input.ownKey !== undefined) {
