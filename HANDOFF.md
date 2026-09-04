@@ -107,6 +107,33 @@ preload test updated (2 pass). Fresh installs AND the owner profile open Arctic.
 Screenshot-verified: light home, light session timeline, light new-session hero.
 Quirk: explicitly picking OC-2 in the theme picker is re-migrated to Corro on
 restart (one-way retirement). Installer rebuilt 13:02 with everything.
+ROYAL ROUND (`1c9f284` + `15053ee`, all verified on pixels):
+- Trial truth found: sidecar reads `~/.config/opencode/opencode.json` (xdg-basedir,
+  NOT %APPDATA%), which held a stale pre-window `ultracode` provider (NVIDIA-direct,
+  no limits = Context 0, stale names). Provision now targets the xdg path, migrates
+  ultracode→corro preserving its connection, heals limits/names/variants on every
+  trial model (unknown ids get default budgets), drops our dead `ff` residue, keeps
+  NVIDIA-direct baseURL while backend is blocked, never disables providers, backups
+  once to opencode.json.corro-backup. Global file now: only `corro`, 5 models, real
+  context numbers. Old sessions pinned to ultracode/* may need one model re-pick.
+- Free-only catalog: main curates models.dev at launch into
+  `%APPDATA%/ai.corrocode.desktop/corro-models.json`, sets OPENCODE_MODELS_PATH
+  (sidecar inherits env). Free pool renamed to `Corro Code Trial`, paid/opencode-go
+  dropped (31 free models, 0 paid leaks — validated against live data). Zen word
+  gone everywhere incl. Amharic/Greek/Croatian locale variants. v2 transform rename
+  kept as backup. Refresh-safe: engine re-reads OUR file after live refreshes.
+- Think prefix idempotent (no more doubling on 429 retries) + test.
+- Tabs: floating royal pills (paper active, copper crown+underline, copper + button).
+- Switches: 38x22 copper pills with check knob. New-layout toggle REMOVED from both
+  settings UIs, getter forced true. Help native menu REMOVED (export logs moved to
+  File). Home/layout Help buttons removed. Upsell external links dropped (buttons
+  hidden when linkless). Error page: copper mark, no report row, brand sanitize.
+  OAuth browser pages rebranded. Zen key hrefs kept (functional) with Trial text.
+- store IPC hardened against EPERM (log instead of throw). Earlier crash traced to
+  truncated asar from a killed package + file contention, not app code; close/open
+  session repro clean with 0 console errors.
+- PENDING OWNER: reinstall from fresh Setup (old installs show stale names/stats),
+  Vercel unblock, fresh PAT, Kimi K3 429 investigation (pool-side, parked).
 
 ## In progress / TODO (in order)
 1. **Backend unblock (OWNER)**: Vercel dashboard → redeploy `acb092a`; confirm
