@@ -98,6 +98,15 @@ Redesign live in running build (CDP: copper hero `corro code`, title `Corro Code
 screenshot: context bar above composer, copper top border, trial pill).
 Zen rename compiled into server chunk + body-wide `hasOCZen:false` via CDP.
 Owner live-tested: trial chat works, agent correctly identifies as Corro Code.
+ARCTIC LIGHT (`53c232a`): Corro theme restyled (arctic paper/slate/copper light,
+warm charcoal/copper dark), v2 accent transplant blue→orange ramp (21 tokens),
+Corro signature CSS (`html[data-theme=opencode]`: Segoe UI voice, hero copper wash,
+composer glow, 16-18px dialog/menu radii), default theme `oc-2`→`opencode`,
+default scheme `system`→`light`, preload migrates stored oc-1/oc-2→opencode once,
+preload test updated (2 pass). Fresh installs AND the owner profile open Arctic.
+Screenshot-verified: light home, light session timeline, light new-session hero.
+Quirk: explicitly picking OC-2 in the theme picker is re-migrated to Corro on
+restart (one-way retirement). Installer rebuilt 13:02 with everything.
 
 ## In progress / TODO (in order)
 1. **Backend unblock (OWNER)**: Vercel dashboard → redeploy `acb092a`; confirm
