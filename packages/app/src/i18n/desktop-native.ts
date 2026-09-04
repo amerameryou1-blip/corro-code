@@ -304,8 +304,8 @@ export const DESKTOP_NATIVE_ENGLISH = {
   "desktop.wsl.error.installDistro": "Failed to install distro: {{distro}}",
   "desktop.wsl.error.installOpencode": "Corro Code installation failed",
   "desktop.wsl.error.alreadyAdded": "{{distro}} is already added",
-  "desktop.wsl.error.opencodeMissing": "opencode is not installed in this distro",
-  "desktop.wsl.error.opencodeCannotRun": "opencode is installed but could not run",
+  "desktop.wsl.error.opencodeMissing": "Corro Code is not installed in this distro",
+  "desktop.wsl.error.opencodeCannotRun": "Corro Code is installed but could not run",
   "desktop.wsl.error.opencodeNotInstalled": "Corro Code is not installed in {{distro}}",
   "desktop.wsl.error.updateVersion":
     "Corro Code update finished but {{distro}} still reports {{installed}}; expected {{expected}}",
