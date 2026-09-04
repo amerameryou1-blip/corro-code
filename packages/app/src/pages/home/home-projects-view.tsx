@@ -57,7 +57,6 @@ export type HomeProjectsViewProps = {
   onClearNotifications: (server: ServerConnection.Any, project: LocalProject) => void
   onCloseProject: (server: ServerConnection.Any, directory: string) => void
   onOpenSettings: () => void
-  onOpenHelp: () => void
 }
 
 export function HomeProjectsView(props: HomeProjectsViewProps) {
@@ -79,7 +78,7 @@ export function HomeProjectsView(props: HomeProjectsViewProps) {
       }}
     >
       <div class="flex h-7 min-w-0 shrink-0 items-center justify-between pl-1.5 pr-3">
-        <div class="text-v2-text-text-muted [font-weight:530]">{props.language.t("home.projects")}</div>
+        <div class="text-v2-text-text-accent text-[11px] font-[700] uppercase tracking-[0.12em]">{props.language.t("home.projects")}</div>
         <Show
           when={props.servers().length === 1 && !(props.projects().length === 0 && props.recentlyClosed().length > 0)}
         >
@@ -147,7 +146,6 @@ export function HomeProjectsView(props: HomeProjectsViewProps) {
       <HomeUtilityNav
         class="mb-8 mt-4 hidden shrink-0 lg:flex"
         onOpenSettings={props.onOpenSettings}
-        onOpenHelp={props.onOpenHelp}
         language={props.language}
       />
     </aside>
@@ -157,7 +155,6 @@ export function HomeProjectsView(props: HomeProjectsViewProps) {
 export function HomeUtilityNav(props: {
   class?: string
   onOpenSettings: () => void
-  onOpenHelp: () => void
   language: ReturnType<typeof useLanguage>
 }) {
   return (
@@ -169,14 +166,6 @@ export function HomeUtilityNav(props: {
       >
         <IconV2 name="settings-gear" size="small" />
         <span class={HOME_PROJECT_NAV_LABEL}>{props.language.t("sidebar.settings")}</span>
-      </HomeProjectNavButton>
-      <HomeProjectNavButton
-        type="button"
-        class="text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted"
-        onClick={props.onOpenHelp}
-      >
-        <IconV2 name="help" size="small" />
-        <span class={HOME_PROJECT_NAV_LABEL}>{props.language.t("sidebar.help")}</span>
       </HomeProjectNavButton>
     </div>
   )
@@ -591,11 +580,12 @@ function HomeProjectNavButton(props: JSX.ButtonHTMLAttributes<HTMLButtonElement>
     <button
       {...rest}
       class={`
-        flex h-7 min-w-0 w-full shrink-0 cursor-default items-center gap-2 rounded-[6px] bg-transparent px-1.5 text-left
-        text-v2-text-text-muted [font-weight:440] transition-[background-color,color,box-shadow] duration-[120ms] ease-in-out
-        hover:bg-v2-background-bg-layer-01 hover:text-v2-text-text-base
-        data-[selected]:bg-v2-background-bg-layer-03 data-[selected]:text-v2-text-text-base
-        data-[selected]:hover:bg-v2-background-bg-layer-03
+        flex h-8 min-w-0 w-full shrink-0 cursor-default items-center gap-2.5 rounded-[10px] bg-transparent px-2 text-left
+        text-v2-text-text-muted [font-weight:500] transition-all duration-150 ease-in-out
+        hover:-translate-y-px hover:bg-v2-background-bg-layer-01 hover:text-v2-text-text-base hover:shadow-[0_4px_14px_rgba(28,39,51,0.10)]
+        data-[selected]:bg-v2-background-bg-layer-01 data-[selected]:text-v2-text-text-base
+        data-[selected]:shadow-[inset_2.5px_0_0_0_var(--v2-background-bg-accent)]
+        data-[selected]:hover:bg-v2-background-bg-layer-01
         focus-visible:bg-v2-background-bg-layer-01 focus-visible:text-v2-text-text-base focus-visible:outline-none
         focus-visible:[box-shadow:inset_0_0_0_0.5px_var(--v2-border-border-muted)]
         ${local.class ?? ""}

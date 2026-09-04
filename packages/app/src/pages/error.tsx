@@ -1,12 +1,10 @@
 import { TextField } from "@opencode-ai/ui/text-field"
 import * as Sentry from "@sentry/solid"
-import { Logo } from "@opencode-ai/ui/logo"
 import { Button } from "@opencode-ai/ui/button"
 import { Component, createSignal, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
-import { Icon } from "@opencode-ai/ui/icon"
 import { errorDescriptionKey } from "./error-description"
 
 export type InitError = {
@@ -212,7 +210,13 @@ function formatErrorChain(error: unknown, t: Translator, depth = 0, parentMessag
 }
 
 function formatError(error: unknown, t: Translator): string {
-  return formatErrorChain(error, t, 0)
+  return sanitizeBrand(formatErrorChain(error, t, 0))
+}
+
+// Error text can echo engine internals (paths, server strings). Present the
+// product name, never the engine name.
+function sanitizeBrand(text: string): string {
+  return text.split("OpenCode").join("Corro Code").split("opencode.ai").join("corrocode")
 }
 
 interface ErrorPageProps {
@@ -281,7 +285,15 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
       data-tauri-drag-region
     >
       <div class="w-2/3 max-w-3xl flex flex-col items-center justify-center gap-8">
-        <Logo class="w-58.5 opacity-12 shrink-0" />
+        <svg viewBox="0 0 81 81" fill="none" class="size-16 shrink-0 opacity-90" aria-label="Corro Code" role="img">
+          <rect width="81" height="81" rx="20" fill="#b35624" />
+          <path
+            d="M60 26H41a6 6 0 0 0-6 6v17a6 6 0 0 0 6 6h19"
+            stroke="#fff"
+            stroke-width="8"
+            stroke-linecap="round"
+          />
+        </svg>
         <div class="flex flex-col items-center gap-2 text-center">
           <h1 class="text-lg font-medium text-text-strong">{language.t("error.page.title")}</h1>
           <p class="text-sm text-text-weak">{language.t(errorDescriptionKey(props.error))}</p>
@@ -349,17 +361,6 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
           {(message) => <p class="text-xs text-text-danger-base text-center max-w-2xl">{message()}</p>}
         </Show>
         <div class="flex flex-col items-center gap-2">
-          <div class="flex items-center justify-center gap-1">
-            {language.t("error.page.report.prefix")}
-            <button
-              type="button"
-              class="flex items-center text-text-interactive-base gap-1"
-               onClick={() => platform.openExternal("https://github.com/amerameryou1-blip/corro-code-backend/issues")}
-            >
-              <div>{language.t("error.page.report.discord")}</div>
-              <Icon name="discord" class="text-text-interactive-base" />
-            </button>
-          </div>
           <Show when={platform.version}>
             {(version) => (
               <p class="text-xs text-text-weak">{language.t("error.page.version", { version: version() })}</p>

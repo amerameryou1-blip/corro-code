@@ -2,8 +2,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
-import { WordmarkV2 } from "@opencode-ai/ui/v2/wordmark-v2"
-import { Show, createMemo, createSignal, type Accessor } from "solid-js"
+import { Show, createMemo, createSignal, type Accessor, For } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Portal } from "solid-js/web"
 import createPresence from "solid-presence"
@@ -30,7 +29,9 @@ export function NewSessionView(props: {
   input: NewSessionDraftController["input"]
   project: PromptProjectController
   workspace: NewSessionWorkspaceController
+  onSuggest?: (text: string) => void
 }) {
+  const language = useLanguage()
   return (
     <div class="@container relative flex flex-col min-h-0 h-full flex-1">
       <div
@@ -39,12 +40,30 @@ export function NewSessionView(props: {
       >
         <div class="absolute inset-x-0 top-[12%] flex justify-center px-6">
           <div class={NEW_SESSION_CONTENT_WIDTH}>
-            <div class="mx-auto w-full max-w-xl">
-              <WordmarkV2 class="h-auto w-full text-v2-background-bg-inverse" />
+            <div class="flex items-center justify-center gap-7">
+              <div data-component="corro-stage" aria-hidden="true">
+                <span data-component="corro-orbit" />
+                <svg viewBox="0 0 81 81" fill="none" class="relative z-[1] size-[68px]">
+                  <rect width="81" height="81" rx="20" fill="#b35624" />
+                  <path
+                    d="M60 26H41a6 6 0 0 0-6 6v17a6 6 0 0 0 6 6h19"
+                    stroke="#fff"
+                    stroke-width="8"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </div>
+              <div class="min-w-0">
+                <span data-component="corro-hero-overline">{language.t("home.new.overline")}</span>
+                <h1 data-component="corro-hero-title">corro code</h1>
+                <p class="mt-2.5 text-[14px] font-[450] tracking-[0.01em] text-v2-text-text-muted">
+                  {language.t("home.new.tagline")}
+                </p>
+              </div>
             </div>
             <div class="mt-10 flex flex-col gap-5">
               <Show when={props.project.selected()}>
-                <div class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-0 text-v2-text-text-faint sm:flex-row">
+                <div data-component="corro-context-bar" class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-0 text-v2-text-text-faint sm:flex-row">
                   <PromptProjectSelector controller={props.project} placement="bottom" />
                   <Show
                     when={props.workspace.bar.visible()}
@@ -69,11 +88,47 @@ export function NewSessionView(props: {
                 </div>
               </Show>
               <PromptInputV2Composer controller={props.input} />
+              <Show when={props.onSuggest}>
+                <SuggestChips onSuggest={props.onSuggest!} />
+              </Show>
             </div>
           </div>
         </div>
         <ProviderTip />
       </div>
+    </div>
+  )
+}
+
+function SuggestChips(props: { onSuggest: (text: string) => void }) {
+  const language = useLanguage()
+  const chips = [
+    { icon: "help", label: "home.new.suggest.explain.label", prompt: "home.new.suggest.explain.prompt" },
+    { icon: "branch", label: "home.new.suggest.fix.label", prompt: "home.new.suggest.fix.prompt" },
+    { icon: "edit", label: "home.new.suggest.tests.label", prompt: "home.new.suggest.tests.prompt" },
+  ] as const
+  return (
+    <div class="flex flex-wrap items-center justify-center gap-2" data-component="corro-suggest">
+      <For each={chips}>
+        {(chip, index) => (
+          <button
+            type="button"
+            data-component="corro-suggest-chip"
+            class={`
+              flex h-9 min-w-0 flex-1 shrink-0 cursor-default items-center gap-2 rounded-[10px] border-0 px-3
+              bg-v2-background-bg-layer-01 text-[13px] font-[500] tracking-[-0.01em]
+              text-v2-text-text-muted transition-all duration-150 ease-in-out
+              hover:-translate-y-px hover:text-v2-text-text-base focus-visible:outline-none
+            `}
+            onClick={() => props.onSuggest(language.t(chip.prompt))}
+          >
+            <span class="corro-suggest-num">0{index() + 1}</span>
+            <IconV2 name={chip.icon} size="small" class="shrink-0 text-v2-text-text-accent" />
+            <span class="truncate">{language.t(chip.label)}</span>
+            <i class="corro-suggest-go">→</i>
+          </button>
+        )}
+      </For>
     </div>
   )
 }

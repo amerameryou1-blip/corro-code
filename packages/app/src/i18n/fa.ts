@@ -226,11 +226,11 @@ export const dict = {
   "provider.connect.apiKey.placeholder": "کلید API",
   "provider.connect.apiKey.required": "کلید API مورد نیاز است",
   "provider.connect.opencodeZen.line1":
-    "Corro Code Zen به شما امکان دسترسی به مجموعه‌ای از مدل‌های بهینه‌شده قابل اعتماد را برای عوامل کدنویسی می‌دهد.",
+    "Corro Code Trial به شما امکان دسترسی به مجموعه‌ای از مدل‌های بهینه‌شده قابل اعتماد را برای عوامل کدنویسی می‌دهد.",
   "provider.connect.opencodeZen.line2":
     "با یک کلید API به مدل هایی مانند Claude، GPT، Gemini، GLM و موارد دیگر دسترسی خواهید داشت.",
   "provider.connect.opencodeZen.visit.prefix": "بازدید کنید ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "Corro Code Trial",
   "provider.connect.opencodeZen.visit.suffix": " برای جمع آوری کلید API.",
   "provider.connect.oauth.code.visit.prefix": "بازدید کنید ",
   "provider.connect.oauth.code.visit.link": "این لینک",

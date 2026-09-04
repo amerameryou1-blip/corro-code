@@ -51,6 +51,11 @@ export function createNewSessionDraftController(workspace: { worktree: () => str
 
   return {
     input,
+    suggest: (text: string) => {
+      if (!prompt.ready()) return
+      prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+      input.restoreFocus()
+    },
     prompt: {
       ready: prompt.ready,
       readyPromise: () => prompt.ready.promise,

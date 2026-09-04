@@ -12,7 +12,6 @@ import { useSettings } from "@/context/settings"
 import { ExternalLink } from "../external-link"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import { LayoutRetirementNotice, LayoutTransitionToggle } from "./interface-transition"
 import {
   createAppearanceSettingsController,
   createPermissionScopeController,
@@ -299,31 +298,6 @@ export const SettingsGeneralV2: Component<{
     void update.catch(() => setPinchZoom(!checked))
   }
 
-  const InterfaceSection = () => (
-    <LayoutTransitionToggle
-      title={language.t("settings.general.row.newInterface.title")}
-      badge={language.t("settings.general.row.newInterface.badge")}
-      description={language.t("settings.general.row.newInterface.description")}
-      checked={settings.general.newLayoutDesigns()}
-      onChange={(checked) => {
-        settings.general.setNewLayoutDesigns(checked)
-        if (checked) return
-        void import("@/components/dialog-settings").then((module) => {
-          void dialog.show(() => <module.DialogSettings />)
-        })
-      }}
-    />
-  )
-
-  const InterfaceNoticeSection = () => (
-    <LayoutRetirementNotice
-      title={language.t("settings.general.row.newInterfaceNotice.title")}
-      description={language.t("settings.general.row.newInterfaceNotice.description")}
-      dismiss={language.t("settings.general.row.newInterfaceNotice.dismiss")}
-      onDismiss={() => settings.general.dismissNewInterfaceNotice()}
-    />
-  )
-
   const GeneralSection = () => (
     <div class="settings-v2-section">
       <SettingsListV2>
@@ -542,14 +516,6 @@ export const SettingsGeneralV2: Component<{
       </div>
 
       <div class="settings-v2-tab-body">
-        <Show when={settings.general.layoutTransitionAvailable()}>
-          <InterfaceSection />
-        </Show>
-
-        <Show when={settings.general.newInterfaceNoticeVisible()}>
-          <InterfaceNoticeSection />
-        </Show>
-
         <GeneralSection />
 
         <AppearanceSection controller={appearance} />

@@ -260,22 +260,8 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
     const layoutTransition = createMemo(() =>
       layoutTransitionState(!!sunset, layoutTransitionEligible(), oldInterfaceRetired(), newInterfaceNoticeDismissed()),
     )
-    const newLayoutDesigns = createMemo(() => {
-      if (layoutUpgrade()) return true
-      if (!ready() && !oldInterfaceRetired()) return legacyNewLayoutDesignsDefault
-      if (!layoutTransitionClassified()) {
-        return resolveNewLayoutDesigns(
-          oldInterfaceRetired(),
-          store.general?.newLayoutDesigns,
-          legacyNewLayoutDesignsDefault,
-        )
-      }
-      return resolveNewLayoutDesigns(
-        oldInterfaceRetired(),
-        store.general?.newLayoutDesigns,
-        layoutTransitionEligible() ? legacyNewLayoutDesignsDefault : newLayoutDesignsDefault,
-      )
-    })
+    // Corro ships the new layout only: always on, no toggle.
+    const newLayoutDesigns = createMemo(() => true)
     const visible = (preference: () => boolean) => createMemo(() => !newLayoutDesigns() || preference())
     const initializeAgentVisibility = (existing: boolean) => {
       const initial = initialAgentVisibility(store.general?.agentVisibilityInitialized, existing, launchState.previous)

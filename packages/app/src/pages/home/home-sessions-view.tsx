@@ -20,7 +20,7 @@ import {
 } from "./home-sessions-controller"
 
 const SHOW_HOME_SESSION_ARCHIVE = false
-const HOME_SECTION_LABEL = "text-v2-text-text-muted [font-weight:440]"
+const HOME_SECTION_LABEL = "text-v2-text-text-faint text-[10px] font-[700] uppercase tracking-[0.14em]"
 const HOME_SESSION_SEARCH_RESULTS_ID = "home-session-search-results"
 
 // Middle-click or Cmd+click on macOS (Ctrl+click elsewhere) opens a session
@@ -184,8 +184,8 @@ function HomeSessionLeading(props: {
         <span
           aria-hidden="true"
           class={`
-            pointer-events-none absolute top-1/2 h-3 w-0.5 -translate-y-1/2
-            rounded-[2px] bg-v2-background-bg-layer-04
+            pointer-events-none absolute top-1/2 h-4 w-[3px] -translate-y-1/2
+            rounded-full bg-v2-background-bg-accent
           `}
           style={{ right: "calc(100% + 4px)" }}
         />
@@ -427,10 +427,10 @@ function HomeSessionRow(props: HomeSessionsViewProps & { record: HomeSessionReco
         type="button"
         data-component="home-session-row"
         class={`
-          flex h-10 min-w-0 w-full flex-1 shrink-0 cursor-default items-center gap-2 rounded-[6px] border-0
+          flex h-11 min-w-0 w-full flex-1 shrink-0 cursor-default items-center gap-2.5 rounded-[10px] border-0
           bg-transparent py-3 pl-3 pr-10 text-left text-v2-text-text-muted [font-weight:530]
-          transition-[background-color,color,box-shadow] duration-[120ms] ease-in-out
-          hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none
+          transition-all duration-150 ease-in-out
+          hover:-translate-y-px hover:bg-v2-background-bg-layer-01 hover:shadow-[0_4px_16px_rgba(28,39,51,0.10)] focus-visible:bg-v2-background-bg-layer-01 focus-visible:outline-none
         `}
         onMouseDown={(event) => {
           if (event.button === 1) event.preventDefault()

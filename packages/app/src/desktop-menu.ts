@@ -126,6 +126,7 @@ export const DESKTOP_MENU: DesktopMenu[] = [
         accelerator: { macos: "Cmd+Shift+N", windows: "Ctrl+Shift+N" },
       },
       { type: "separator" },
+      { type: "item", labelKey: "desktop.menu.exportLogs", command: "logs.export" },
       { type: "item", labelKey: "desktop.menu.closeWindow", action: "window.close", role: "close" },
     ],
   },
@@ -273,26 +274,6 @@ export const DESKTOP_MENU: DesktopMenu[] = [
       { type: "item", labelKey: "desktop.menu.maximize", action: "window.toggleMaximize" },
       { type: "separator" },
       { type: "item", labelKey: "desktop.menu.closeWindow", action: "window.close" },
-    ],
-  },
-  {
-    id: "help",
-    labelKey: "desktop.menu.help",
-    items: [
-      { type: "item", labelKey: "desktop.menu.documentation", href: "https://github.com/amerameryou1-blip/corro-code-backend" },
-      { type: "item", labelKey: "desktop.menu.supportForum", href: "https://discord.com/invite/opencode" },
-      { type: "item", labelKey: "desktop.menu.exportLogs", command: "logs.export" },
-      { type: "separator" },
-      {
-        type: "item",
-        labelKey: "desktop.menu.shareFeedback",
-        href: "https://github.com/anomalyco/opencode/issues/new?template=feature_request.yml",
-      },
-      {
-        type: "item",
-        labelKey: "desktop.menu.reportBug",
-        href: "https://github.com/anomalyco/opencode/issues/new?template=bug_report.yml",
-      },
     ],
   },
 ]

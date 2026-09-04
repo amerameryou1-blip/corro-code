@@ -148,11 +148,11 @@ export const dict = {
   "provider.connect.apiKey.placeholder": "API key",
   "provider.connect.apiKey.required": "API key is required",
   "provider.connect.opencodeZen.line1":
-    "Corro Code Zen gives you access to a curated set of reliable optimized models for coding agents.",
+    "Corro Code Trial gives you access to a curated set of reliable optimized models for coding agents.",
   "provider.connect.opencodeZen.line2":
     "With a single API key you'll get access to models such as Claude, GPT, Gemini, GLM and more.",
   "provider.connect.opencodeZen.visit.prefix": "Visit ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "Corro Code Trial",
   "provider.connect.opencodeZen.visit.suffix": " to collect your API key.",
   "provider.connect.oauth.code.visit.prefix": "Visit ",
   "provider.connect.oauth.code.visit.link": "this link",
@@ -622,7 +622,7 @@ export const dict = {
   "error.chain.responseBody": "Response body:\n{{body}}",
   "error.chain.didYouMean": "Did you mean: {{suggestions}}",
   "error.chain.modelNotFound": "Model not found: {{provider}}/{{model}}",
-  "error.chain.checkConfig": "Check your config (opencode.json) provider/model names",
+  "error.chain.checkConfig": "Check your config provider/model names",
   "error.chain.mcpFailed": 'MCP server "{{name}}" failed. Note, Corro Code does not support MCP authentication yet.',
   "error.chain.providerAuthFailed": "Provider authentication failed ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
@@ -664,6 +664,20 @@ export const dict = {
   "home.sessions.group.yesterday": "Yesterday",
   "home.sessions.group.older": "Older",
   "home.providerTip": "Connect to 75+ providers to use other models, including Claude, GPT, Gemini, etc",
+  "home.new.tagline": "What will you build today?",
+  "home.new.overline": "Desktop intelligence / local craft",
+  "home.new.suggest.explain.label": "Explain this project",
+  "home.new.suggest.explain.prompt":
+    "Explain what this project does: its architecture, the key files, and how to run it.",
+  "home.new.suggest.fix.label": "Find and fix a bug",
+  "home.new.suggest.fix.prompt":
+    "Look through the current project for bugs or sharp edges, then propose and apply fixes.",
+  "home.new.suggest.tests.label": "Write tests",
+  "home.new.suggest.tests.prompt": "Add tests for the untested parts of this project.",
+  "home.dashboard.morning": "Good morning",
+  "home.dashboard.afternoon": "Good afternoon",
+  "home.dashboard.evening": "Good evening",
+  "home.dashboard.recent": "{{count}} recent sessions",
 
   "session.tab.session": "Session",
   "session.tab.review": "Review",

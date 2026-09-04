@@ -229,11 +229,11 @@ export const dict = {
   "provider.connect.apiKey.placeholder": "Ključ API",
   "provider.connect.apiKey.required": "Potreban je ključ API",
   "provider.connect.opencodeZen.line1":
-    "Corro Code Zen vam daje pristup odabranom skupu pouzdanih optimiziranih modela za agente za kodiranje.",
+    "Corro Code Trial vam daje pristup odabranom skupu pouzdanih optimiziranih modela za agente za kodiranje.",
   "provider.connect.opencodeZen.line2":
     "S jednim ključem API dobit ćete pristup modelima kao što su Claude, GPT, Gemini, GLM i još mnogo toga.",
   "provider.connect.opencodeZen.visit.prefix": "Posjetiti",
-  "provider.connect.opencodeZen.visit.link": "otvoreni kod.ai/zen",
+  "provider.connect.opencodeZen.visit.link": "Corro Code Trial",
   "provider.connect.opencodeZen.visit.suffix": "da preuzmete svoj ključ API.",
   "provider.connect.oauth.code.visit.prefix": "Posjetiti",
   "provider.connect.oauth.code.visit.link": "ovaj link",

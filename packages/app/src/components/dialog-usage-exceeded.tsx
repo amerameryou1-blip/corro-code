@@ -2,8 +2,7 @@ import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { Dialog } from "@opencode-ai/ui/dialog"
-import { JSX } from "solid-js"
+import { JSX, Show } from "solid-js"
 
 export type DialogGoUpsellProps = {
   title: string
@@ -36,9 +35,11 @@ export function DialogUsageExceeded(props: DialogGoUpsellProps) {
           <Button variant="ghost" size="large" onClick={dismiss}>
             {language.t("dialog.usageExceeded.dontShowAgain")}
           </Button>
-          <Button variant="primary" size="large" onClick={runAction}>
-            {props.actionLabel}
-          </Button>
+          <Show when={props.link}>
+            <Button variant="primary" size="large" onClick={runAction}>
+              {props.actionLabel}
+            </Button>
+          </Show>
         </div>
       </div>
     </Dialog>

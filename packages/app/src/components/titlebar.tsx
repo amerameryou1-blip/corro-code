@@ -360,6 +360,7 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
 
             return (
               <div
+                data-component="corro-tabstrip"
                 class="h-full flex-1 overflow-hidden flex flex-row items-center gap-1.5 px-2 md:pr-3"
                 classList={{
                   "pt-2": !bottom(),
@@ -410,6 +411,7 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
                   }}
                   onReorder={(keys) => tabsStoreActions.reorder(keys)}
                 />
+                <span data-component="corro-new-tab" class="flex shrink-0">
                 <TooltipV2
                   placement="bottom"
                   value={
@@ -429,6 +431,7 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
                     aria-label={language.t("command.session.new")}
                   />
                 </TooltipV2>
+                </span>
                 <div class="flex-1" />
                 <TitlebarV2Right state={v2RightState()} />
               </div>
